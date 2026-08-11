@@ -26,6 +26,9 @@ CREATE → GROW → RENT → BUY → REVIVE → SELL → REINVEST → BUILD AGAI
 | Sell + AI listing/valuation | ✅ |
 | Rent + rent-to-own display (configurable credit) | ✅ |
 | BUILD wizard + business blueprint | ✅ |
+| **AI Business Factory** (agents + orchestrator) | ✅ |
+| Factory preview, approvals, cost tracking | ✅ |
+| BUILD → SELL / RENT / GROW handoff | ✅ |
 | REVIVE marketplace + revival plans | ✅ |
 | Find My Business (deterministic + ranking) | ✅ |
 | Dashboard, portfolio, timeline, passport | ✅ |
@@ -36,6 +39,25 @@ CREATE → GROW → RENT → BUY → REVIVE → SELL → REINVEST → BUILD AGAI
 | Admin shell | ✅ |
 | Supabase schema + RLS migrations | ✅ |
 | Demo data mode (no env required) | ✅ |
+
+## AI Business Factory
+
+Route: `/build`
+
+Modular agents (Zod-validated) orchestrated by `BusinessFactoryOrchestrator`:
+
+Business → Market → Brand → Product → Architecture → Content → SEO → Database → Payment → Developer (landing sandbox) → Testing → Deployment → Growth → Finance
+
+- Real task statuses (no fake progress)
+- Sandbox isolation from SITEFLIP core DB
+- Approval gates for production deploy & payments
+- Cost estimates + threshold architecture
+- Business memory (no secrets)
+- Preview at `/build/[id]/preview`
+
+Migration: `supabase/migrations/002_business_factory.sql`
+
+MVP limitation: DeveloperAgent generates **landing_page_only** starter artifacts — not a full autonomous SaaS coder.
 
 ## Getting started
 
