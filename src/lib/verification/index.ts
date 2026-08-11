@@ -1,12 +1,9 @@
 /**
  * Verification architecture
  *
- * MVP: Domain ownership via DNS TXT record.
- * Prepared interfaces for Stripe, Shopify, GA, GSC, PayPal, Cloudflare.
+ * MVP: Domain ownership via DNS TXT record (DNS-over-HTTPS — Workers compatible).
+ * Prefer Web Crypto so this runs on Cloudflare Workers and Node.
  * NEVER fake verification status.
- *
- * Server-only DNS helpers — do not import this file from Client Components.
- * Use @/lib/verification/labels for badge labels on the client.
  */
 
 import type {
@@ -14,7 +11,6 @@ import type {
   VerificationStatus,
   VerificationType,
 } from "@/types/database";
-import { randomBytes } from "crypto";
 
 export {
   VERIFICATION_BADGE_LABELS,
@@ -37,11 +33,17 @@ export interface VerificationResult {
   message: string;
 }
 
+function randomHex(bytes = 16): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function createDomainVerificationChallenge(
   businessId: string,
   domain: string
 ): VerificationChallenge {
-  const token = `siteflip-verify=${randomBytes(16).toString("hex")}`;
+  const token = `siteflip-verify=${randomHex(16)}`;
   return {
     businessId,
     type: "DOMAIN",
@@ -53,18 +55,36 @@ export function createDomainVerificationChallenge(
   };
 }
 
+/** DNS-over-HTTPS lookup — works on Cloudflare Workers (no node:dns). */
+async function resolveTxtDoH(hostname: string): Promise<string[]> {
+  const url = new URL("https://cloudflare-dns.com/dns-query");
+  url.searchParams.set("name", hostname);
+  url.searchParams.set("type", "TXT");
+
+  const res = await fetch(url.toString(), {
+    headers: { Accept: "application/dns-json" },
+  });
+  if (!res.ok) {
+    throw new Error(`DoH lookup failed (${res.status})`);
+  }
+  const data = (await res.json()) as {
+    Answer?: Array<{ type: number; data: string }>;
+  };
+  return (data.Answer ?? [])
+    .filter((a) => a.type === 16)
+    .map((a) => a.data.replace(/^"|"$/g, "").replace(/" "/g, ""));
+}
+
 export async function verifyDomainDns(
   domain: string,
   expectedToken: string
 ): Promise<VerificationResult> {
   try {
-    const { promises: dns } = await import("node:dns");
-    const records = await dns.resolveTxt(`_siteflip.${domain}`);
-    const flat = records.map((r) => r.join(""));
+    const flat = await resolveTxtDoH(`_siteflip.${domain}`);
     if (flat.some((r) => r.includes(expectedToken))) {
       return {
         status: "VERIFIED",
-        evidence: { domain, records: flat, method: "dns_txt" },
+        evidence: { domain, records: flat, method: "dns_over_https" },
         message: "Domain ownership verified via DNS TXT.",
       };
     }

@@ -113,7 +113,20 @@ See `.env.example`:
 | `STRIPE_WEBHOOK_SECRET` | Webhook verification |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Client Stripe |
 
-## Deployment (Vercel)
+## Deployment
+
+### Cloudflare Workers (production URL)
+
+```bash
+npm run deploy
+# → https://siteflip.<your-subdomain>.workers.dev
+```
+
+Requires Cloudflare auth (`wrangler login` or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
+
+Worker name is configured as `siteflip` in `wrangler.jsonc`.
+
+### Vercel
 
 1. Push repo to GitHub.
 2. Import in Vercel.
