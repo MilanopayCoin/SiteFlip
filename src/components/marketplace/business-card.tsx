@@ -51,8 +51,13 @@ export function BusinessCard({
         <CardContent className="p-0">
           <div className="relative h-28 bg-gradient-to-br from-violet-950/80 via-indigo-950/60 to-zinc-950 p-4">
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-violet-500/20 via-transparent to-transparent" />
-            <div className="relative flex items-start justify-between">
-              <Badge variant={typeBadge.variant}>{typeBadge.label}</Badge>
+            <div className="relative flex items-start justify-between gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant={typeBadge.variant}>{typeBadge.label}</Badge>
+                {(b.is_demo || listing.is_demo) && (
+                  <Badge variant="warning">DEMO</Badge>
+                )}
+              </div>
               <div className={cn("text-sm font-semibold tabular-nums", scoreColor(b.ai_score))}>
                 AI {b.ai_score ?? "—"}/100
               </div>

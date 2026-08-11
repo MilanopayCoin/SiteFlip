@@ -104,8 +104,11 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string | null;
+  display_name?: string | null;
+  username?: string | null;
   avatar_url: string | null;
   bio: string | null;
+  country?: string | null;
   seller_score: number;
   successful_transactions: number;
   completed_rentals: number;
@@ -214,6 +217,7 @@ export interface Listing {
   expires_at: string | null;
   created_at: string;
   updated_at: string;
+  is_demo?: boolean;
   // Joined
   business?: Business;
   seller?: Profile;

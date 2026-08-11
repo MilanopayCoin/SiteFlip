@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateRevivalPlan } from "@/lib/ai";
-import { getBusinessById } from "@/lib/data/demo";
+import { fetchBusinessByIdOrSlug } from "@/lib/data/marketplace-data";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 const reviveSchema = z.object({
   businessId: z.string().min(1),
+  projectName: z.string().optional(),
+  website: z.string().optional(),
+  technology: z.string().optional(),
+  age: z.coerce.number().optional(),
+  currentRevenue: z.coerce.number().optional(),
+  traffic: z.coerce.number().optional(),
+  whyAbandoned: z.string().optional(),
+  askingPrice: z.coerce.number().optional(),
+  description: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -33,27 +42,36 @@ export async function POST(request: Request) {
       );
     }
 
-    const business = getBusinessById(parsed.data.businessId);
-    if (!business) {
+    const { business } = await fetchBusinessByIdOrSlug(parsed.data.businessId);
+    if (!business && !parsed.data.projectName) {
       return NextResponse.json({ error: "Business not found" }, { status: 400 });
     }
 
     const plan = await generateRevivalPlan({
-      name: business.name,
-      category: business.category,
-      original_story: business.original_story,
-      current_condition: business.current_condition,
-      monthly_traffic: business.monthly_traffic,
-      technology_stack: business.technology_stack,
-      domain_age_years: business.domain_age_years,
+      name: business?.name ?? parsed.data.projectName ?? "Untitled",
+      category: business?.category ?? "abandoned_saas",
+      original_story:
+        business?.original_story ?? parsed.data.whyAbandoned ?? null,
+      current_condition:
+        business?.current_condition ?? parsed.data.description ?? null,
+      monthly_traffic: business?.monthly_traffic ?? parsed.data.traffic ?? null,
+      technology_stack:
+        business?.technology_stack ??
+        (parsed.data.technology
+          ? parsed.data.technology.split(",").map((t) => t.trim())
+          : []),
+      domain_age_years: business?.domain_age_years ?? parsed.data.age ?? null,
     });
 
     return NextResponse.json({
-      business_id: business.id,
+      business_id: business?.id ?? null,
       plan,
+      revivalScore: plan.revival_score,
       verified_data: plan.verified_data,
       seller_claims: plan.seller_claims,
       ai_assumptions: plan.ai_assumptions,
+      notice:
+        "AI hypotheses are labeled. Historical facts are not invented.",
     });
   } catch (error) {
     console.error("[api/ai/revive]", error);

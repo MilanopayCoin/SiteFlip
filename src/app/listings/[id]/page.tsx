@@ -8,7 +8,15 @@ import {
   Zap,
   ArrowUpRight,
 } from "lucide-react";
-import { getListingById, DEMO_EVENTS, DEMO_REVIVAL_PLANS, DEMO_VALUATIONS, DEMO_SELLERS } from "@/lib/data/demo";
+import {
+  DEMO_REVIVAL_PLANS,
+  DEMO_VALUATIONS,
+} from "@/lib/data/demo";
+import {
+  fetchListingById,
+  fetchBusinessEvents,
+  fetchSeller,
+} from "@/lib/data/marketplace-data";
 import {
   formatCurrency,
   formatNumber,
@@ -28,22 +36,23 @@ type Props = { params: Promise<{ id: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const listing = getListingById(id);
+  const { listing } = await fetchListingById(id);
   return { title: listing?.title ?? "Listing" };
 }
 
 export default async function ListingDetailPage({ params }: Props) {
   const { id } = await params;
-  const listing = getListingById(id);
+  const { listing, mode } = await fetchListingById(id);
   if (!listing?.business) notFound();
 
   const b = listing.business;
-  const seller = listing.seller ?? DEMO_SELLERS.find((s) => s.id === listing.seller_id);
-  const events = DEMO_EVENTS.filter((e) => e.business_id === b.id);
+  const seller = listing.seller ?? (await fetchSeller(listing.seller_id));
+  const events = await fetchBusinessEvents(b.id);
   const revival = DEMO_REVIVAL_PLANS.find((r) => r.business_id === b.id);
   const valuation = DEMO_VALUATIONS.find((v) => v.business_id === b.id);
   const isRent = ["RENT", "RENT_TO_OWN"].includes(listing.listing_type);
   const isRevive = listing.listing_type === "REVIVE";
+  const isDemo = mode === "demo" || b.is_demo;
 
   const remainingBalance =
     isRent &&
@@ -70,6 +79,10 @@ export default async function ListingDetailPage({ params }: Props) {
         <Badge variant="outline" className={scoreColor(b.ai_score)}>
           AI Score {b.ai_score}/100
         </Badge>
+        {isDemo && <Badge variant="warning">DEMO</Badge>}
+        {b.is_demo === false && listing.verifications?.length ? (
+          <Badge variant="success">Verified signals</Badge>
+        ) : null}
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
@@ -91,14 +104,14 @@ export default async function ListingDetailPage({ params }: Props) {
               <CardTitle>About</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-zinc-300">
-              <p>{b.description}</p>
+              <p>{listing.summary || b.description}</p>
               {b.reason_for_selling && (
                 <p>
                   <span className="text-zinc-500">Reason for selling: </span>
                   {b.reason_for_selling}
                 </p>
               )}
-              {b.technology_stack.length > 0 && (
+              {(b.technology_stack?.length ?? 0) > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {b.technology_stack.map((t) => (
                     <Badge key={t} variant="outline">{t}</Badge>
@@ -209,15 +222,14 @@ export default async function ListingDetailPage({ params }: Props) {
                 </div>
                 {remainingBalance != null && (
                   <div className="sm:col-span-2">
-                    <p className="text-zinc-500">Illustrative remaining balance after full term</p>
+                    <p className="text-zinc-500">Estimated remaining balance after full term</p>
                     <p className="text-lg text-white">
                       {formatCurrency(remainingBalance, listing.currency)}
                     </p>
                   </div>
                 )}
                 <p className="sm:col-span-2 text-xs text-zinc-600">
-                  Flexible transaction architecture only — not an automatic legally binding
-                  ownership transfer.
+                  Estimates only — not an automatic legally binding ownership transfer.
                 </p>
               </CardContent>
             </Card>
@@ -284,9 +296,11 @@ export default async function ListingDetailPage({ params }: Props) {
 
               <div className="border-t border-white/10 pt-4 text-sm">
                 <p className="text-zinc-500">Seller</p>
-                <p className="font-medium text-white">{seller?.full_name ?? "Seller"}</p>
+                <p className="font-medium text-white">
+                  {seller?.display_name ?? seller?.full_name ?? "Seller"}
+                </p>
                 <p className="text-zinc-400">
-                  Seller Score {seller?.seller_score ?? "—"} ·{" "}
+                  Trust Score {seller?.seller_score ?? "—"} ·{" "}
                   {seller?.successful_transactions ?? 0} transactions
                 </p>
               </div>

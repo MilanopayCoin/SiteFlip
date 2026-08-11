@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { DEMO_BUSINESSES } from "@/lib/data/demo";
 
 const SUGGESTIONS = [
   "Analyze my business.",
@@ -14,30 +13,62 @@ const SUGGESTIONS = [
   "How can I increase revenue?",
   "Prepare my listing.",
   "Find businesses similar to mine.",
-  "Find a business I can buy for €5,000.",
+  "Should I rent or sell?",
 ];
+
+type BizCtx = {
+  name: string;
+  lifecycle: string;
+  monthly_revenue: number | null;
+  monthly_profit: number | null;
+  monthly_traffic: number | null;
+  growth_rate: number | null;
+  ai_score: number | null;
+  asking_price: number | null;
+  is_demo?: boolean;
+};
 
 export default function AiCommandCenterPage() {
   const [prompt, setPrompt] = useState("");
   const [reply, setReply] = useState<string | null>(null);
   const [assumptions, setAssumptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [owned, setOwned] = useState<BizCtx[]>([]);
+  const [mode, setMode] = useState("demo");
 
-  const context = {
-    owned_businesses: DEMO_BUSINESSES.filter((b) => b.current_owner_id === "seller-1").map(
-      (b) => ({
-        name: b.name,
-        lifecycle: b.lifecycle,
-        monthly_revenue: b.monthly_revenue,
-        monthly_profit: b.monthly_profit,
-        monthly_traffic: b.monthly_traffic,
-        growth_rate: b.growth_rate,
-        ai_score: b.ai_score,
-        asking_price: b.asking_price,
+  useEffect(() => {
+    fetch("/api/businesses")
+      .then((r) => r.json())
+      .then((d) => {
+        setMode(d.mode ?? "demo");
+        setOwned(
+          (d.businesses ?? []).map(
+            (b: {
+              name: string;
+              lifecycle: string;
+              monthly_revenue: number | null;
+              monthly_profit: number | null;
+              monthly_traffic: number | null;
+              growth_rate: number | null;
+              ai_score: number | null;
+              asking_price: number | null;
+              is_demo?: boolean;
+            }) => ({
+              name: b.name,
+              lifecycle: b.lifecycle,
+              monthly_revenue: b.monthly_revenue,
+              monthly_profit: b.monthly_profit,
+              monthly_traffic: b.monthly_traffic,
+              growth_rate: b.growth_rate,
+              ai_score: b.ai_score,
+              asking_price: b.asking_price,
+              is_demo: b.is_demo,
+            })
+          )
+        );
       })
-    ),
-    note: "Demo verified platform fields only — seller claims not auto-verified",
-  };
+      .catch(() => setOwned([]));
+  }, []);
 
   async function ask(text: string) {
     setLoading(true);
@@ -46,7 +77,15 @@ export default function AiCommandCenterPage() {
       const res = await fetch("/api/ai/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text, context }),
+        body: JSON.stringify({
+          prompt: text,
+          context: {
+            owned_businesses: owned,
+            data_mode: mode,
+            note:
+              "Use only provided platform fields as stored data. Do not invent metrics. Label assumptions.",
+          },
+        }),
       });
       const data = await res.json();
       setReply(data.reply ?? data.error);
@@ -60,7 +99,12 @@ export default function AiCommandCenterPage() {
     <div>
       <h1 className="text-2xl font-semibold text-white">AI Command Center</h1>
       <p className="mt-1 text-sm text-zinc-400">
-        Ask questions using available verified platform data. Assumptions are labeled.
+        Questions use your stored business data
+        {mode === "demo" ? " (DEMO / local)" : ""}. Assumptions are labeled.
+      </p>
+
+      <p className="mt-2 text-xs text-zinc-500">
+        Context businesses: {owned.length || "none yet — create a business first"}
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -80,10 +124,10 @@ export default function AiCommandCenterPage() {
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Ask SITEFLIP AI…"
+            placeholder="Ask about your businesses…"
             rows={3}
           />
-          <Button disabled={loading || !prompt} onClick={() => ask(prompt)}>
+          <Button disabled={loading || !prompt.trim()} onClick={() => ask(prompt)}>
             {loading ? "Thinking…" : "Ask"}
           </Button>
         </CardContent>
@@ -92,13 +136,13 @@ export default function AiCommandCenterPage() {
       {reply && (
         <Card className="mt-4">
           <CardHeader>
-            <CardTitle>Response</CardTitle>
+            <CardTitle className="text-base">Response</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="whitespace-pre-wrap text-sm text-zinc-300">{reply}</p>
+          <CardContent className="space-y-3 text-sm text-zinc-300 whitespace-pre-wrap">
+            {reply}
             {assumptions.length > 0 && (
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-200/80">
-                <p className="font-medium text-amber-300">AI assumptions</p>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200/80">
+                <p className="font-medium">Assumptions / caveats</p>
                 <ul className="mt-1 list-disc pl-4">
                   {assumptions.map((a) => (
                     <li key={a}>{a}</li>

@@ -443,7 +443,32 @@ export async function generateRevivalPlan(business: {
 export async function commandCenterReply(
   prompt: string,
   context: Record<string, unknown>
-): Promise<{ reply: string; assumptions: string[]; source: "openai" | "heuristic" }> {
+): Promise<{ reply: string; assumptions: string[]; source: "openai" | "heuristic" | string }> {
+  try {
+    const { aiJson } = await import("@/lib/ai/providers");
+    const { z } = await import("zod");
+    const schema = z.object({
+      reply: z.string(),
+      assumptions: z.array(z.string()).default([]),
+    });
+    const result = await aiJson(
+      "You are the SITEFLIP AI Command Center. Use only provided platform data as stored facts. Label assumptions clearly. Never invent revenue, traffic, or verifications. Never present estimates as financial advice. Return JSON {reply, assumptions}.",
+      { prompt, context },
+      schema,
+      () => ({
+        reply: `Stored context: ${JSON.stringify(context.owned_businesses ?? []).slice(0, 400)}… Regarding “${prompt}”: use stored metrics; label assumptions. ${VALUATION_DISCLAIMER}`,
+        assumptions: ["Heuristic fallback — no AI provider configured"],
+      })
+    );
+    return {
+      reply: result.data.reply,
+      assumptions: result.data.assumptions,
+      source: result.provider,
+    };
+  } catch {
+    // fall through to openai/heuristic below
+  }
+
   const openai = getOpenAI();
   if (openai) {
     const completion = await openai.chat.completions.create({
@@ -467,12 +492,52 @@ export async function commandCenterReply(
     };
   }
 
+  const owned = Array.isArray(context.owned_businesses)
+    ? context.owned_businesses
+    : [];
   return {
-    reply: `Based on available demo platform data: ${JSON.stringify(context).slice(0, 400)}…\n\nRegarding “${prompt}”: use verified metrics first, treat seller claims separately, and treat AI projections as assumptions only. ${VALUATION_DISCLAIMER}`,
+    reply: `Stored context (${owned.length} businesses): ${JSON.stringify(owned).slice(0, 500)}…\n\nRegarding “${prompt}”: use stored metrics first, treat seller claims separately, and treat AI projections as assumptions only. ${VALUATION_DISCLAIMER}`,
     assumptions: [
-      "OpenAI key not configured — heuristic response",
+      "No live AI provider configured — heuristic response",
       "Context may include demo/seller-claimed figures",
     ],
     source: "heuristic",
+  };
+}
+
+/** Phase 13 alias — structured revival analysis */
+export async function analyzeRevivalProject(input: {
+  name: string;
+  category: string;
+  original_story: string | null;
+  current_condition: string | null;
+  monthly_traffic: number | null;
+  technology_stack: string[];
+  domain_age_years: number | null;
+}) {
+  const plan = await generateRevivalPlan(input);
+  return {
+    revivalScore: plan.revival_score,
+    strengths: [
+      input.technology_stack.length
+        ? `Stack present: ${input.technology_stack.join(", ")}`
+        : "Asset exists to evaluate",
+    ],
+    weaknesses: [
+      input.original_story
+        ? "Failure narrative is a seller claim — not independently verified"
+        : "Limited historical evidence",
+    ],
+    opportunities: [plan.seo_opportunity, plan.new_positioning],
+    risks: plan.ai_assumptions,
+    newPositioning: plan.new_positioning,
+    newTargetCustomer: plan.new_target_customer,
+    pricingIdea: plan.new_pricing,
+    marketingPlan: plan.marketing_strategy,
+    thirtyDayPlan: plan.plan_30_day,
+    ninetyDayPlan: plan.plan_90_day,
+    verified_data: plan.verified_data,
+    seller_claims: plan.seller_claims,
+    ai_assumptions: plan.ai_assumptions,
   };
 }
