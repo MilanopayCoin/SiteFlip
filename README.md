@@ -1,1 +1,138 @@
-# SiteFlip
+# SITEFLIP
+
+**Build. Buy. Rent. Revive. Grow. Sell.**
+
+SITEFLIP is an AI-powered **Online Business Lifecycle Platform** — the operating system for digital business acquisitions. The marketplace is one part; the complete lifecycle is the product.
+
+```
+CREATE → GROW → RENT → BUY → REVIVE → SELL → REINVEST → BUILD AGAIN
+```
+
+## Stack
+
+- Next.js 16 (App Router) · TypeScript · Tailwind CSS 4
+- Supabase (Auth, PostgreSQL, RLS)
+- OpenAI API (with heuristic fallbacks)
+- Stripe (payments — **not** escrow)
+- Framer Motion · Recharts · Zod · React Hook Form
+
+## Features (MVP)
+
+| Area | Status |
+|------|--------|
+| Homepage + lifecycle narrative | ✅ |
+| Unified marketplace (Buy / Rent / Revive) | ✅ |
+| Business cards, filters, listing detail | ✅ |
+| Sell + AI listing/valuation | ✅ |
+| Rent + rent-to-own display (configurable credit) | ✅ |
+| BUILD wizard + business blueprint | ✅ |
+| REVIVE marketplace + revival plans | ✅ |
+| Find My Business (deterministic + ranking) | ✅ |
+| Dashboard, portfolio, timeline, passport | ✅ |
+| Offers / messaging / watchlist architecture | ✅ |
+| AI Command Center | ✅ |
+| Domain verification (DNS TXT) | ✅ |
+| TransactionProvider (Stripe ≠ escrow) | ✅ |
+| Admin shell | ✅ |
+| Supabase schema + RLS migrations | ✅ |
+| Demo data mode (no env required) | ✅ |
+
+## Getting started
+
+```bash
+# Install
+npm install
+
+# Configure (optional for demo mode)
+cp .env.example .env.local
+
+# Develop
+npm run dev
+
+# Lint & typecheck
+npm run lint
+npm run typecheck
+
+# Production build
+npm run build
+npm start
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+Without Supabase/OpenAI keys the app runs on **demo seed data** and heuristic AI.
+
+## Database
+
+Apply the migration in Supabase SQL editor or CLI:
+
+```bash
+# supabase/migrations/001_initial_schema.sql
+supabase db push
+# or paste into Supabase SQL editor
+```
+
+Main tables: `profiles`, `businesses`, `business_metrics`, `business_events`, `business_verifications`, `business_owners`, `listings`, `listing_images`, `offers`, `rentals`, `rental_contracts`, `transactions`, `transaction_events`, `messages`, `conversations`, `watchlists`, `reviews`, `valuations`, `ai_analyses`, `ai_matches`, `revival_plans`, `notifications`, `reports`, `subscriptions`, `payments`, `analytics_events`, `admin_actions`.
+
+Business lifecycle enum: `IDEA | BUILDING | LIVE | GROWING | FOR_SALE | FOR_RENT | RENTED | ACQUIRED | REVIVING | REVIVED | SOLD | ARCHIVED`.
+
+## Environment variables
+
+See `.env.example`:
+
+| Variable | Purpose |
+|----------|---------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only admin operations |
+| `OPENAI_API_KEY` | AI build / revive / command |
+| `OPENAI_MODEL` | Default `gpt-4o-mini` |
+| `STRIPE_SECRET_KEY` | Payment intents (not escrow) |
+| `STRIPE_WEBHOOK_SECRET` | Webhook verification |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Client Stripe |
+
+## Deployment (Vercel)
+
+1. Push repo to GitHub.
+2. Import in Vercel.
+3. Set environment variables.
+4. Apply Supabase migration.
+5. Deploy.
+
+## Important product rules
+
+- **AI valuation** is informational only — not financial, investment, legal, or tax advice.
+- **No fake verification**, revenue, or transactions.
+- **Stripe payments are not escrow** — use `TransactionProvider` + future regulated escrow.
+- **Rent-to-own** is a flexible contract architecture — not automatic legally binding ownership transfer.
+- **BUILD** produces blueprints/starter assets — not a pretend full production SaaS.
+
+## Remaining integrations
+
+- Persist listings/offers/messages to Supabase (replace demo stores)
+- Stripe Checkout + Connect for marketplace payouts
+- Regulated escrow provider
+- Revenue verification: Stripe / Shopify / PayPal OAuth
+- Traffic verification: GA / GSC / Cloudflare OAuth
+- External AI coding/building service for START BUILDING
+- Upstash Redis rate limiting
+- Email (Resend) for transactional notifications
+- Full admin CRUD with `is_admin` gate
+
+## Production security checklist
+
+- [ ] Enable Supabase RLS (included in migration)
+- [ ] Never expose `SUPABASE_SERVICE_ROLE_KEY` or `STRIPE_SECRET_KEY` client-side
+- [ ] Secure cookies / HTTPS only
+- [ ] Rotate keys; use Vercel env secrets
+- [ ] Rate-limit AI & auth endpoints (architecture included; add Redis in prod)
+- [ ] Zod validate all mutating inputs
+- [ ] Server-side authorization on offers, messages, transactions
+- [ ] Do not mark seller claims as verified
+- [ ] Webhook signature verification for Stripe
+- [ ] CSP / security headers on Vercel
+- [ ] Audit admin actions table
+
+## License
+
+Proprietary — SITEFLIP
