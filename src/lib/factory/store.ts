@@ -16,8 +16,9 @@ import type {
   FactoryTask,
   FactoryTaskStatus,
   PipelineStepId,
+  PipelineVersion,
 } from "./types";
-import { PIPELINE_STEPS } from "./types";
+import { getPipelineSteps } from "./types";
 
 const globalStore = globalThis as unknown as {
   __siteflipFactoryProjects?: Map<string, FactoryProject>;
@@ -43,6 +44,15 @@ export function getFactoryProject(id: string): FactoryProject | undefined {
 }
 
 export function saveFactoryProject(project: FactoryProject): FactoryProject {
+  if (!project.pipelineVersion) {
+    project.pipelineVersion = "v2";
+  }
+  if (project.usage.aiRequestCount == null) {
+    project.usage.aiRequestCount = 0;
+  }
+  if (project.usage.buildAttempts == null) {
+    project.usage.buildAttempts = 0;
+  }
   project.updatedAt = new Date().toISOString();
   projects().set(project.id, project);
   return project;
@@ -50,13 +60,15 @@ export function saveFactoryProject(project: FactoryProject): FactoryProject {
 
 export function createFactoryProject(
   brief: FactoryBrief,
-  ownerId = "demo-user"
+  ownerId = "demo-user",
+  pipelineVersion: PipelineVersion = "v3"
 ): FactoryProject {
   const id = `fp_${nanoid(10)}`;
   const now = new Date().toISOString();
   const slug = `project-${id.slice(3, 9)}`;
+  const steps = getPipelineSteps(pipelineVersion);
 
-  const tasks: FactoryTask[] = PIPELINE_STEPS.map((step) => ({
+  const tasks: FactoryTask[] = steps.map((step) => ({
     id: `task_${nanoid(8)}`,
     projectId: id,
     stepId: step.id,
@@ -78,6 +90,7 @@ export function createFactoryProject(
     ownerId,
     name: "Untitled Factory Project",
     slug,
+    pipelineVersion,
     state: "IDEA",
     brief,
     currentStep: "IDEA",
@@ -105,6 +118,8 @@ export function createFactoryProject(
       projectId: id,
       aiTokensEstimated: 0,
       aiCostEurEstimated: 0,
+      aiRequestCount: 0,
+      buildAttempts: 0,
       infrastructureMonthlyEur: 0,
       thirdPartyMonthlyEur: 0,
       buildCostEur: 0,
@@ -121,7 +136,9 @@ export function createFactoryProject(
         at: now,
         agent: "Orchestrator",
         message:
-          "Factory project created (LOCAL / DEMO / NOT PERSISTED). Waiting to run pipeline.",
+          pipelineVersion === "v3"
+            ? "Factory V3 project created (LOCAL / DEMO / NOT PERSISTED). Mini-SaaS pipeline ready."
+            : "Factory project created (LOCAL / DEMO / NOT PERSISTED). Waiting to run pipeline.",
         level: "info",
       },
     ],

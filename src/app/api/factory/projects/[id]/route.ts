@@ -3,7 +3,7 @@ import {
   getFactoryProject,
   saveFactoryProject,
 } from "@/lib/factory/store";
-import { PIPELINE_STEPS } from "@/lib/factory/types";
+import { getPipelineSteps } from "@/lib/factory/types";
 import type { FactoryProject } from "@/lib/factory/types";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -26,7 +26,7 @@ export async function GET(request: Request, ctx: Ctx) {
 
   return NextResponse.json({
     project,
-    pipeline: PIPELINE_STEPS,
+    pipeline: getPipelineSteps(project.pipelineVersion ?? "v2"),
     pendingApprovals: project.approvals.filter((a) => a.status === "PENDING"),
   });
 }
@@ -48,7 +48,7 @@ export async function PUT(request: Request, ctx: Ctx) {
   const saved = saveFactoryProject(incoming);
   return NextResponse.json({
     project: saved,
-    pipeline: PIPELINE_STEPS,
+    pipeline: getPipelineSteps(saved.pipelineVersion ?? "v2"),
     pendingApprovals: saved.approvals.filter((a) => a.status === "PENDING"),
   });
 }

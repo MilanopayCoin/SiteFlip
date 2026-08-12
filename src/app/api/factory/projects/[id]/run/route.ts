@@ -3,7 +3,7 @@ import {
   getFactoryProject,
   saveFactoryProject,
 } from "@/lib/factory/store";
-import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
+import { runFactoryPipeline } from "@/lib/factory/orchestrator-v3";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import type { FactoryProject } from "@/lib/factory/types";
@@ -49,8 +49,7 @@ export async function POST(request: Request, ctx: Ctx) {
   }
 
   try {
-    const orchestrator = new BusinessFactoryOrchestrator(id);
-    const result = await orchestrator.runPipeline();
+    const result = await runFactoryPipeline(id);
     return NextResponse.json({
       project: result,
       message:

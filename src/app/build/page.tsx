@@ -40,7 +40,20 @@ interface Portfolio {
   }>;
 }
 
-const PIPELINE_PREVIEW = [
+const PIPELINE_PREVIEW_V3 = [
+  "PLAN",
+  "PRODUCT SPEC",
+  "DATABASE SPEC",
+  "TECH",
+  "GENERATE",
+  "BUILD",
+  "TEST",
+  "SECURITY",
+  "PREVIEW",
+  "APPROVAL",
+];
+
+const PIPELINE_PREVIEW_V2 = [
   "IDEA",
   "ANALYSIS",
   "BLUEPRINT",
@@ -66,6 +79,7 @@ export default function BuildFactoryPage() {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pipelineMode, setPipelineMode] = useState<"v3" | "v2">("v3");
   const [costNote, setCostNote] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,6 +134,7 @@ export default function BuildFactoryPage() {
           riskLevel,
           businessModel: fd.get("businessModel") || undefined,
           workloadPreference,
+          pipelineVersion: pipelineMode,
           profileContext: profile
             ? {
                 country: profile.country,
@@ -163,14 +178,34 @@ export default function BuildFactoryPage() {
             Build your next business.
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-400">
-            Describe an idea in natural language. SITEFLIP runs a modular agent
-            pipeline — blueprint, brand, product, starter landing, tests, and preview.
-            Production deploy and payments always require your approval.
+            Describe an idea in natural language. SITEFLIP V3 runs modular agents to
+            generate a working starter mini-SaaS — plan, product spec, database spec,
+            code scaffold, tests, security scan, and preview. Production deploy and
+            payments always require your approval.
           </p>
         </div>
         <Badge variant="outline" className="gap-1">
-          <Factory className="h-3.5 w-3.5" /> Factory V1
+          <Factory className="h-3.5 w-3.5" /> Factory V3
         </Badge>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={pipelineMode === "v3" ? "default" : "outline"}
+          onClick={() => setPipelineMode("v3")}
+        >
+          V3 — Mini-SaaS
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={pipelineMode === "v2" ? "default" : "outline"}
+          onClick={() => setPipelineMode("v2")}
+        >
+          V2 — Landing page
+        </Button>
       </div>
 
       <motion.div
@@ -178,12 +213,13 @@ export default function BuildFactoryPage() {
         animate={{ opacity: 1, y: 0 }}
         className="mt-8 flex flex-wrap items-center justify-center gap-2"
       >
-        {PIPELINE_PREVIEW.map((s, i) => (
+        {(pipelineMode === "v3" ? PIPELINE_PREVIEW_V3 : PIPELINE_PREVIEW_V2).map(
+          (s, i, arr) => (
           <div key={s} className="flex items-center gap-2">
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">
               {s}
             </span>
-            {i < PIPELINE_PREVIEW.length - 1 && (
+            {i < arr.length - 1 && (
               <span className="text-zinc-600">↓</span>
             )}
           </div>

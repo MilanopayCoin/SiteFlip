@@ -9,7 +9,11 @@ export { runSeoAgent } from "./seo";
 export { runDatabaseAgent } from "./database";
 export { runPaymentAgent } from "./payment";
 export { runDeveloperAgent } from "./developer";
+export { runDeveloperAgentV3 } from "./developer-v3";
 export { runTestingAgent } from "./testing";
+export { runTestingAgentV3 } from "./testing-v3";
+export { runPlannerAgent, planToBusinessPlan } from "./planner";
+export { runSecurityScanAgent } from "./security-scan";
 export {
   runDeploymentAgent,
   runGrowthAgent,

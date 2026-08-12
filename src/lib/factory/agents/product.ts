@@ -23,9 +23,35 @@ function heuristicProduct(
   brief: FactoryBriefInput,
   plan: BusinessPlan
 ): ProductSpec {
+  const isBooking =
+    /book/i.test(brief.idea) ||
+    /clean/i.test(brief.idea) ||
+    plan.mvpScope.some((s) => /book|calendar|customer|service/i.test(s));
+
+  const bookingPages = [
+    "Landing",
+    "Register",
+    "Login",
+    "Dashboard",
+    "Customers",
+    "Services",
+    "Bookings",
+    "Calendar",
+    "Settings",
+  ];
+
   return {
     coreProduct: plan.solution,
-    mvpFeatures: plan.mvpScope,
+    mvpFeatures: isBooking
+      ? [
+          "Customer management",
+          "Service catalog",
+          "Booking CRUD",
+          "Calendar view",
+          "Demo authentication",
+          "Settings",
+        ]
+      : plan.mvpScope,
     futureFeatures: [
       "Team collaboration",
       "Advanced automations",
@@ -43,16 +69,18 @@ function heuristicProduct(
         steps: ["Login", "Dashboard", "Core workflow", "Settings"],
       },
     ],
-    pages: [
-      "Landing",
-      "Pricing",
-      "Login / Signup",
-      "Dashboard",
-      "Core resource list",
-      "Core resource detail",
-      "Settings",
-      "Billing (architecture)",
-    ],
+    pages: isBooking
+      ? bookingPages
+      : [
+          "Landing",
+          "Pricing",
+          "Login / Signup",
+          "Dashboard",
+          "Core resource list",
+          "Core resource detail",
+          "Settings",
+          "Billing (architecture)",
+        ],
     dashboard: ["KPIs", "Recent activity", "Quick actions", "Upgrade CTA"],
     onboarding: ["Welcome", "Goal selection", "Sample data", "First action checklist"],
     pricingPages: plan.pricing.tiers.map((t) => t.name),
@@ -69,13 +97,15 @@ function heuristicProduct(
       ),
     ],
     mvpScope: plan.mvpScope,
-    databaseRequirements: [
-      "profiles",
-      "organizations",
-      "memberships",
-      "core_entities",
-      "subscriptions (reference only until payments activated)",
-    ],
+    databaseRequirements: isBooking
+      ? ["profiles", "companies", "customers", "services", "bookings"]
+      : [
+          "profiles",
+          "organizations",
+          "memberships",
+          "core_entities",
+          "subscriptions (reference only until payments activated)",
+        ],
     apiRequirements: [
       "Auth session",
       "CRUD core entities",
@@ -84,7 +114,9 @@ function heuristicProduct(
     ],
     labeledAssumptions: [
       "[AI_HYPOTHESIS] MVP feature set derived from business plan — not user-validated",
-      "[VERIFIED] Full SaaS app code is not generated in Factory V1 — starter landing + specs only",
+      isBooking
+        ? "[VERIFIED] V3 generates starter mini-SaaS scaffold for booking workflow"
+        : "[VERIFIED] V3 generates starter MVP scaffold from product spec",
     ],
   };
 }

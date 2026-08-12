@@ -5,15 +5,22 @@
 
 import type { FactoryProject } from "./types";
 
-const KEY = "siteflip_factory_projects_v1";
+const KEY = "siteflip_factory_projects_v2";
 
 function readAll(): Record<string, FactoryProject> {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(sessionStorage.getItem(KEY) || "{}") as Record<
-      string,
-      FactoryProject
-    >;
+    const raw =
+      sessionStorage.getItem(KEY) ||
+      sessionStorage.getItem("siteflip_factory_projects_v1") ||
+      "{}";
+    const map = JSON.parse(raw) as Record<string, FactoryProject>;
+    for (const p of Object.values(map)) {
+      if (!p.pipelineVersion) p.pipelineVersion = "v2";
+      if (!p.usage.aiRequestCount) p.usage.aiRequestCount = 0;
+      if (!p.usage.buildAttempts) p.usage.buildAttempts = 0;
+    }
+    return map;
   } catch {
     return {};
   }

@@ -1,4 +1,6 @@
-/** AI Business Factory V1 — core types */
+/** AI Business Factory — core types (V2 landing + V3 mini-SaaS) */
+
+export type PipelineVersion = "v2" | "v3";
 
 export type FactoryProjectState =
   | "IDEA"
@@ -17,6 +19,7 @@ export type FactoryProjectState =
   | "ARCHIVED";
 
 export type FactoryAgentName =
+  | "PlannerAgent"
   | "BusinessAgent"
   | "MarketAgent"
   | "BrandAgent"
@@ -52,8 +55,8 @@ export type DeploymentStatus =
   | "LIVE"
   | "FAILED";
 
-/** Visible V1 pipeline stages */
-export type PipelineStepId =
+/** Visible V2 pipeline stages (landing page) */
+export type V2PipelineStepId =
   | "IDEA"
   | "ANALYSIS"
   | "BLUEPRINT"
@@ -66,6 +69,24 @@ export type PipelineStepId =
   | "PREVIEW"
   | "APPROVAL"
   | "READY";
+
+/** Visible V3 pipeline stages (working mini-SaaS) */
+export type V3PipelineStepId =
+  | "PLAN"
+  | "PRODUCT_SPEC"
+  | "DATABASE_SPEC"
+  | "TECH"
+  | "GENERATE"
+  | "BUILD"
+  | "TEST"
+  | "SECURITY_SCAN"
+  | "PREVIEW"
+  | "APPROVAL"
+  | "PASSPORT"
+  | "AI_SCORE"
+  | "READY";
+
+export type PipelineStepId = V2PipelineStepId | V3PipelineStepId;
 
 export type ClaimClass = "VERIFIED" | "USER_PROVIDED" | "AI_HYPOTHESIS";
 
@@ -168,6 +189,8 @@ export interface FactoryUsage {
   projectId: string;
   aiTokensEstimated: number;
   aiCostEurEstimated: number;
+  aiRequestCount: number;
+  buildAttempts: number;
   infrastructureMonthlyEur: number;
   thirdPartyMonthlyEur: number;
   buildCostEur: number;
@@ -247,6 +270,14 @@ export interface BusinessPassport {
   timeline: Array<{ at: string; label: string }>;
   persistenceMode: FactoryPersistenceMode;
   persistenceNote: string;
+  /** V3 — generated application metadata */
+  pipelineVersion?: PipelineVersion;
+  applicationVersion?: string;
+  features?: string[];
+  buildStatus?: string;
+  testStatus?: string;
+  securityStatus?: string;
+  previewUrl?: string | null;
 }
 
 export interface FactoryProject {
@@ -254,6 +285,7 @@ export interface FactoryProject {
   ownerId: string;
   name: string;
   slug: string;
+  pipelineVersion: PipelineVersion;
   state: FactoryProjectState;
   brief: FactoryBrief;
   currentStep: PipelineStepId | null;
@@ -300,6 +332,33 @@ export const PIPELINE_STEPS: Array<{
   { id: "APPROVAL", number: "11", label: "USER APPROVAL", agent: "DeploymentAgent", mvp: true },
   { id: "READY", number: "12", label: "READY TO LAUNCH", agent: "DeploymentAgent", mvp: true },
 ];
+
+/** V3 pipeline — IDEA → WORKING MINI-SAAS */
+export const V3_PIPELINE_STEPS: Array<{
+  id: V3PipelineStepId;
+  number: string;
+  label: string;
+  agent: FactoryAgentName;
+  mvp: boolean;
+}> = [
+  { id: "PLAN", number: "01", label: "PLAN", agent: "PlannerAgent", mvp: true },
+  { id: "PRODUCT_SPEC", number: "02", label: "PRODUCT SPEC", agent: "ProductAgent", mvp: true },
+  { id: "DATABASE_SPEC", number: "03", label: "DATABASE SPEC", agent: "DatabaseAgent", mvp: true },
+  { id: "TECH", number: "04", label: "TECH ARCHITECTURE", agent: "ArchitectureAgent", mvp: true },
+  { id: "GENERATE", number: "05", label: "GENERATE", agent: "DeveloperAgent", mvp: true },
+  { id: "BUILD", number: "06", label: "BUILD", agent: "DeveloperAgent", mvp: true },
+  { id: "TEST", number: "07", label: "TEST", agent: "TestingAgent", mvp: true },
+  { id: "SECURITY_SCAN", number: "08", label: "SECURITY SCAN", agent: "SecurityAgent", mvp: true },
+  { id: "PREVIEW", number: "09", label: "PREVIEW", agent: "DeploymentAgent", mvp: true },
+  { id: "APPROVAL", number: "10", label: "USER APPROVAL", agent: "DeploymentAgent", mvp: true },
+  { id: "PASSPORT", number: "11", label: "PASSPORT", agent: "PassportAgent", mvp: true },
+  { id: "AI_SCORE", number: "12", label: "AI SCORE", agent: "ScoreAgent", mvp: true },
+  { id: "READY", number: "13", label: "READY", agent: "DeploymentAgent", mvp: true },
+];
+
+export function getPipelineSteps(version: PipelineVersion = "v3") {
+  return version === "v3" ? V3_PIPELINE_STEPS : PIPELINE_STEPS;
+}
 
 /** MVP orchestrator agent order (V1) */
 export const MVP_AGENT_ORDER: FactoryAgentName[] = [

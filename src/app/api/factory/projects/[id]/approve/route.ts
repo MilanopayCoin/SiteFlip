@@ -5,6 +5,10 @@ import {
   saveFactoryProject,
 } from "@/lib/factory/store";
 import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
+import {
+  BusinessFactoryOrchestratorV3,
+  runFactoryPipeline,
+} from "@/lib/factory/orchestrator-v3";
 import { z } from "zod";
 import type { FactoryProject } from "@/lib/factory/types";
 
@@ -61,6 +65,10 @@ export async function POST(request: Request, ctx: Ctx) {
 
   // APPROVE
   if (approval.action === "production_deploy") {
+    if (project.pipelineVersion === "v3") {
+      const live = new BusinessFactoryOrchestratorV3(id).approveProduction();
+      return NextResponse.json({ project: live, approval });
+    }
     const orch = new BusinessFactoryOrchestrator(id);
     const live = orch.approveProduction();
     return NextResponse.json({ project: live, approval });
@@ -71,8 +79,7 @@ export async function POST(request: Request, ctx: Ctx) {
     approval.resolvedAt = new Date().toISOString();
     appendActivity(project, "User", "Approved cost threshold — re-run pipeline", "success");
     saveFactoryProject(project);
-    const orch = new BusinessFactoryOrchestrator(id);
-    const result = await orch.runPipeline();
+    const result = await runFactoryPipeline(id);
     return NextResponse.json({ project: result, approval });
   }
 

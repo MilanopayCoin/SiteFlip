@@ -5,7 +5,8 @@ import {
   factoryPortfolioStats,
   listFactoryProjects,
 } from "@/lib/factory/store";
-import { estimateFullPipelineCost } from "@/lib/factory/quality";
+import { estimateFullPipelineCost, estimateV3PipelineCost } from "@/lib/factory/quality";
+import type { PipelineVersion } from "@/lib/factory/types";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export async function GET() {
@@ -34,11 +35,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const cost = estimateFullPipelineCost();
+    const pipelineVersion: PipelineVersion =
+      body?.pipelineVersion === "v2" ? "v2" : "v3";
+    const cost =
+      pipelineVersion === "v3"
+        ? estimateV3PipelineCost()
+        : estimateFullPipelineCost();
     const { resolveRequestUser } = await import("@/lib/api/request-user");
     const user = await resolveRequestUser(request);
     const ownerId = user?.id || "demo-user";
-    const project = createFactoryProject(parsed.data, ownerId);
+    const project = createFactoryProject(parsed.data, ownerId, pipelineVersion);
 
     if (body?.profileContext && typeof body.profileContext === "object") {
       const { appendActivity, saveFactoryProject } = await import(
@@ -55,33 +61,42 @@ export async function POST(request: Request) {
 
     let result = project;
     if (body?.run === true || body?.startPipeline === true) {
-      const { BusinessFactoryOrchestrator } = await import(
-        "@/lib/factory/orchestrator"
-      );
+      const { runFactoryPipeline } = await import("@/lib/factory/orchestrator-v3");
       const { ensureCloudflareEnv } = await import("@/lib/supabase/env");
       await ensureCloudflareEnv();
-      const orch = new BusinessFactoryOrchestrator(project.id);
-      result = await orch.runPipeline();
+      result = await runFactoryPipeline(project.id);
     }
+
+    const limitations =
+      pipelineVersion === "v3"
+        ? [
+            "AI Business Factory V3 — generates starter mini-SaaS scaffold",
+            "AI GENERATED STARTER — not production-ready SaaS",
+            "Production deploy, payments, domains, DB, and marketplace require approval",
+            "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
+            "SANDBOX: DEVELOPMENT ISOLATION — not production-grade sandboxing",
+          ]
+        : [
+            "AI Business Factory V2 — starter landing page pipeline",
+            "AI-generated outputs require your review",
+            "Starter landing preview is not a complete production SaaS",
+            "Production deploy, payments, domains, and marketplace publish require approval",
+            "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
+            "No real-time market data unless an external API is connected",
+          ];
 
     return NextResponse.json({
       project: summarize(result),
       // Always include full project for client session cache (LOCAL isolate bridge)
       fullProject: result,
+      pipelineVersion: result.pipelineVersion,
       estimatedCost: {
         aiCostEur: cost.aiCostEur,
         infrastructureMonthlyEur: cost.infraMonthlyEur,
         thirdPartyMonthlyEur: cost.thirdPartyMonthlyEur,
-        note: "Estimates only. Uses configured AI provider (Groq preferred when GROQ_API_KEY is set). Heuristic fallback incurs €0 AI spend.",
+        note: "ESTIMATED BUILD COST — uses Groq when configured. HEURISTIC / AI FALLBACK incurs €0 AI spend.",
       },
-      limitations: [
-        "AI Business Factory V1 — not a full autonomous SaaS generator",
-        "AI-generated outputs require your review",
-        "Starter landing preview is not a complete production SaaS",
-        "Production deploy, payments, domains, and marketplace publish require approval",
-        "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
-        "No real-time market data unless an external API is connected",
-      ],
+      limitations,
       persistenceMode: result.persistenceMode,
     });
   } catch (error) {
@@ -95,6 +110,7 @@ function summarize(p: ReturnType<typeof createFactoryProject>) {
     id: p.id,
     name: p.name,
     slug: p.slug,
+    pipelineVersion: p.pipelineVersion,
     state: p.state,
     currentStep: p.currentStep,
     brief: p.brief,

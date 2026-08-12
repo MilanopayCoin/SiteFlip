@@ -16,18 +16,36 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { FactoryProject } from "@/lib/factory/types";
-import { PIPELINE_STEPS } from "@/lib/factory/types";
+import { getPipelineSteps } from "@/lib/factory/types";
 import {
   cacheFactoryProject,
   readCachedFactoryProject,
 } from "@/lib/factory/client-cache";
+import type { CodeArtifact, SecurityScan, TestReport } from "@/lib/factory/schemas";
+
+const WORKSPACE_TABS = [
+  "Overview",
+  "Pipeline",
+  "Generated App",
+  "Files",
+  "Build Logs",
+  "Tests",
+  "Security",
+  "Preview",
+  "Cost",
+  "Passport",
+  "Approval",
+] as const;
+
+type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
 
 export default function FactoryProjectPage() {
   const params = useParams<{ projectId: string }>();
   const searchParams = useSearchParams();
   const id = params.projectId;
   const [project, setProject] = useState<FactoryProject | null>(null);
-  const [pipeline, setPipeline] = useState(PIPELINE_STEPS);
+  const [pipeline, setPipeline] = useState(getPipelineSteps("v3"));
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("Overview");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "missing">(
@@ -70,7 +88,7 @@ export default function FactoryProjectPage() {
     }
     setProject(data.project);
     cacheFactoryProject(data.project);
-    setPipeline(data.pipeline ?? PIPELINE_STEPS);
+    setPipeline(data.pipeline ?? getPipelineSteps(data.project?.pipelineVersion ?? "v3"));
     setError(null);
     setLoadState("ready");
   }, [id]);
@@ -108,7 +126,7 @@ export default function FactoryProjectPage() {
       setError(null);
       setProject(data.project);
       cacheFactoryProject(data.project);
-      setPipeline(data.pipeline ?? PIPELINE_STEPS);
+      setPipeline(data.pipeline ?? getPipelineSteps(data.project?.pipelineVersion ?? "v3"));
       setLoadState("ready");
     };
     void tick();
@@ -233,13 +251,20 @@ export default function FactoryProjectPage() {
   const pending = project.approvals.filter((a) => a.status === "PENDING");
   const isLive = project.state === "LIVE";
   const failedTasks = project.tasks.filter((t) => t.status === "FAILED");
+  const code = project.outputs.find((o) => o.agent === "DeveloperAgent")
+    ?.data as CodeArtifact | undefined;
+  const tests = project.outputs.find((o) => o.agent === "TestingAgent")
+    ?.data as TestReport | undefined;
+  const security = project.outputs.find((o) => o.agent === "SecurityAgent")
+    ?.data as SecurityScan | undefined;
+  const isV3 = project.pipelineVersion === "v3";
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-violet-400">
-            Business Factory
+            Business Factory {isV3 ? "V3" : "V2"}
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-white sm:text-3xl">
             {project.name}
@@ -247,6 +272,9 @@ export default function FactoryProjectPage() {
           <div className="mt-2 flex flex-wrap gap-2">
             <Badge variant="outline">{project.state}</Badge>
             <Badge variant="info">Step {project.currentStep ?? "—"}</Badge>
+            {isV3 && (
+              <Badge variant="info">AI GENERATED STARTER</Badge>
+            )}
             {project.quality && (
               <Badge variant="success">
                 AI Score {project.quality.overall}/100
@@ -281,7 +309,28 @@ export default function FactoryProjectPage() {
         </div>
       </div>
 
-      {/* Pipeline visualization */}
+      {/* V3 workspace tabs — mobile-first horizontal scroll */}
+      <div className="mt-6 -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <div className="flex min-w-max gap-1 rounded-xl border border-white/10 bg-white/[0.02] p-1">
+          {WORKSPACE_TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setWorkspaceTab(tab)}
+              className={`rounded-lg px-3 py-2 text-xs font-medium whitespace-nowrap transition ${
+                workspaceTab === tab
+                  ? "bg-violet-600 text-white"
+                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {(workspaceTab === "Overview" || workspaceTab === "Pipeline") && (
+      <>
       <Card className="mt-8">
         <CardHeader>
           <CardTitle>Factory pipeline</CardTitle>
@@ -320,8 +369,10 @@ export default function FactoryProjectPage() {
           </div>
         </CardContent>
       </Card>
+      </>
+      )}
 
-      {failedTasks.length > 0 && (
+      {workspaceTab === "Overview" && failedTasks.length > 0 && (
         <Card className="mt-6 border-rose-500/30">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-rose-300">
@@ -350,8 +401,8 @@ export default function FactoryProjectPage() {
         </Card>
       )}
 
+      {(workspaceTab === "Overview" || workspaceTab === "Generated App") && (
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        {/* Activity */}
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle>Activity log</CardTitle>
@@ -380,7 +431,6 @@ export default function FactoryProjectPage() {
           </CardContent>
         </Card>
 
-        {/* Outputs */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Agent outputs</CardTitle>
@@ -413,9 +463,210 @@ export default function FactoryProjectPage() {
           </CardContent>
         </Card>
       </div>
+      )}
 
-      {/* Approvals */}
-      {pending.length > 0 && (
+      {workspaceTab === "Files" && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Generated files</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {!code?.files?.length && (
+              <p className="text-sm text-zinc-500">No generated files yet.</p>
+            )}
+            {code?.files?.map((f) => (
+              <div
+                key={f.path}
+                className="rounded-lg border border-white/10 bg-white/[0.02] p-3 text-sm"
+              >
+                <p className="font-mono text-violet-300">{f.path}</p>
+                <p className="text-xs text-zinc-500">{f.purpose} · {f.language}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceTab === "Build Logs" && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Build logs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 font-mono text-xs text-zinc-400">
+              {project.sandbox.buildLogs.map((log, i) => (
+                <li key={i}>{log}</li>
+              ))}
+              {project.sandbox.buildLogs.length === 0 && (
+                <li className="text-zinc-500">No build logs yet.</li>
+              )}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceTab === "Tests" && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>
+              Test status — {tests?.passed ? "PASS" : tests ? "FAIL / REVIEW" : "NOT RUN"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {!tests && <p className="text-sm text-zinc-500">Tests not run yet.</p>}
+            {tests?.checks?.map((c) => (
+              <div key={c.name} className="flex justify-between text-sm">
+                <span className="text-zinc-300">{c.name}</span>
+                <span
+                  className={
+                    c.status === "pass"
+                      ? "text-emerald-400"
+                      : c.status === "fail"
+                        ? "text-rose-400"
+                        : "text-zinc-500"
+                  }
+                >
+                  {c.status}
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceTab === "Security" && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>
+              Security status —{" "}
+              {security?.passed
+                ? "PASS"
+                : security
+                  ? "REQUIRES APPROVAL"
+                  : "NOT RUN"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {!security && <p className="text-sm text-zinc-500">Security scan not run yet.</p>}
+            {security?.findings?.map((f, i) => (
+              <div key={i} className="rounded-lg border border-white/10 p-3 text-sm">
+                <p className="text-amber-300">
+                  [{f.severity}] {f.category}
+                </p>
+                <p className="text-zinc-400">{f.detail}</p>
+                {f.file && <p className="font-mono text-xs text-zinc-500">{f.file}</p>}
+              </div>
+            ))}
+            {security?.passed && (
+              <p className="text-sm text-emerald-400">No critical security findings.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceTab === "Preview" && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+              <span>Preview — AI GENERATED STARTER</span>
+              <Button size="sm" variant="secondary" asChild>
+                <Link href={`/build/${id}/preview`}>Open full preview</Link>
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>
+              <span className="text-zinc-500">Build status:</span>{" "}
+              <span className="text-white">{project.sandbox.deploymentStatus}</span>
+            </p>
+            <p>
+              <span className="text-zinc-500">Test status:</span>{" "}
+              <span className="text-white">
+                {tests?.passed ? "PASS" : tests?.requiresHumanApproval ? "REQUIRES_HUMAN_REVIEW" : tests ? "FAIL" : "—"}
+              </span>
+            </p>
+            <p>
+              <span className="text-zinc-500">Security status:</span>{" "}
+              <span className="text-white">
+                {security?.passed ? "PASS" : security?.requiresApproval ? "REQUIRES_APPROVAL" : "—"}
+              </span>
+            </p>
+            <p>
+              <span className="text-zinc-500">Completeness:</span>{" "}
+              <span className="text-white">{code?.completeness ?? "—"}</span>
+            </p>
+            <p className="text-xs text-zinc-500">
+              SANDBOX: DEVELOPMENT ISOLATION · Generated apps are NOT auto-deployed
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceTab === "Cost" && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>ESTIMATED BUILD COST</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-zinc-500">AI cost (est.)</p>
+              <p className="text-white">€{project.usage.aiCostEurEstimated}</p>
+            </div>
+            <div>
+              <p className="text-zinc-500">AI requests</p>
+              <p className="text-white">{project.usage.aiRequestCount}</p>
+            </div>
+            <div>
+              <p className="text-zinc-500">Build attempts</p>
+              <p className="text-white">{project.usage.buildAttempts}</p>
+            </div>
+            <div>
+              <p className="text-zinc-500">Infra / mo (est.)</p>
+              <p className="text-white">€{project.usage.infrastructureMonthlyEur}</p>
+            </div>
+            <div>
+              <p className="text-zinc-500">Threshold</p>
+              <p className="text-white">€{project.usage.costThresholdEur}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceTab === "Passport" && project.passport && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Business Passport</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
+            <p className="text-zinc-500">
+              Version:{" "}
+              <span className="text-zinc-300">{project.passport.applicationVersion}</span>
+            </p>
+            <p className="text-zinc-500">
+              Build: <span className="text-zinc-300">{project.passport.buildStatus}</span>
+            </p>
+            <p className="text-zinc-500">
+              Tests: <span className="text-zinc-300">{project.passport.testStatus}</span>
+            </p>
+            <p className="text-zinc-500">
+              Security:{" "}
+              <span className="text-zinc-300">{project.passport.securityStatus}</span>
+            </p>
+            <p className="sm:col-span-2 text-zinc-500">
+              Features:{" "}
+              <span className="text-zinc-300">
+                {project.passport.features?.join(", ") || "—"}
+              </span>
+            </p>
+            <Button size="sm" variant="secondary" asChild>
+              <Link href={`/build/${id}/passport`}>Open full passport</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {(workspaceTab === "Overview" || workspaceTab === "Approval") &&
+      pending.length > 0 && (
         <Card className="mt-6 border-amber-500/30">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-amber-300">
@@ -454,7 +705,7 @@ export default function FactoryProjectPage() {
                     disabled={busy}
                     onClick={() => decide(a.id, "EDIT")}
                   >
-                    Edit
+                    Request changes
                   </Button>
                   <Button
                     size="sm"
@@ -462,7 +713,7 @@ export default function FactoryProjectPage() {
                     disabled={busy}
                     onClick={() => decide(a.id, "CANCEL")}
                   >
-                    Cancel
+                    Reject
                   </Button>
                 </div>
               </div>
@@ -471,8 +722,42 @@ export default function FactoryProjectPage() {
         </Card>
       )}
 
-      {/* Landing preview strip */}
-      {(() => {
+      {workspaceTab === "Overview" && (
+      <>
+      {isV3 && code?.files?.length ? (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+              <span>Starter MVP — AI GENERATED STARTER</span>
+              <Button size="sm" variant="secondary" asChild>
+                <Link href={`/build/${id}/preview`}>Open preview</Link>
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {code.files
+                .filter((f) => f.path.includes("/app/") && f.path.endsWith("page.tsx"))
+                .map((f) => (
+                  <div
+                    key={f.path}
+                    className="rounded-lg border border-white/10 p-3 text-sm"
+                  >
+                    <p className="font-medium text-white">
+                      {f.path.split("/").slice(-2, -1)[0] || "Landing"}
+                    </p>
+                    <p className="text-xs text-zinc-500">{f.purpose}</p>
+                  </div>
+                ))}
+            </div>
+            <p className="mt-3 text-xs text-zinc-500">
+              {code.completeness} · SANDBOX: DEVELOPMENT ISOLATION · Mollie inactive ·
+              LOCAL / DEMO / NOT PERSISTED
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+      (() => {
         const content = project.outputs.find((o) => o.agent === "ContentAgent")
           ?.data as
           | {
@@ -507,19 +792,6 @@ export default function FactoryProjectPage() {
                 <p className="mt-4 inline-block rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white">
                   {content.hero.cta}
                 </p>
-                {content.features && content.features.length > 0 && (
-                  <div className="mt-6 grid gap-3 text-left sm:grid-cols-3">
-                    {content.features.slice(0, 3).map((f) => (
-                      <div
-                        key={f.title}
-                        className="rounded-lg border border-white/10 p-3"
-                      >
-                        <p className="text-sm font-medium text-white">{f.title}</p>
-                        <p className="mt-1 text-xs text-zinc-500">{f.body}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
               <p className="mt-3 text-xs text-zinc-500">
                 Starter landing only · Mollie payments inactive · LOCAL / DEMO /
@@ -528,7 +800,8 @@ export default function FactoryProjectPage() {
             </CardContent>
           </Card>
         );
-      })()}
+      })()
+      )}
 
       {/* Handoff */}
       {isLive && (
@@ -686,6 +959,8 @@ export default function FactoryProjectPage() {
             </Button>
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </div>
   );

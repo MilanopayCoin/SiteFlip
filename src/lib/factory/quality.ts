@@ -7,8 +7,10 @@ import type { ArchitectureSpec, BusinessPlan, MarketAnalysis } from "./schemas";
  * Never fabricates external market statistics.
  */
 export function computeFactoryQuality(project: FactoryProject): FactoryQualityScore {
+  const isV3 = project.pipelineVersion === "v3";
+  const planAgent = isV3 ? "PlannerAgent" : "BusinessAgent";
   const has = (agent: string) => Boolean(getOutputByAgent(project, agent));
-  const plan = getOutputByAgent(project, "BusinessAgent")?.data as
+  const plan = getOutputByAgent(project, planAgent)?.data as
     | BusinessPlan
     | undefined;
   const market = getOutputByAgent(project, "MarketAgent")?.data as
@@ -90,10 +92,14 @@ export function computeFactoryQuality(project: FactoryProject): FactoryQualitySc
   );
 
   const businessClarity = clamp(
-    (plan?.businessDescription ? 40 : 15) + (has("BusinessAgent") ? 40 : 0)
+    (plan?.businessDescription || (plan as { summary?: string })?.summary ? 40 : 15) +
+      (has(planAgent) ? 40 : 0)
   );
   const marketFit = marketClarity;
-  const ux = has("ContentAgent") || has("BrandAgent") ? 75 : 25;
+  const ux =
+    has("ContentAgent") || has("BrandAgent") || (isV3 && has("DeveloperAgent"))
+      ? 75
+      : 25;
   const technicalQuality = has("ArchitectureAgent") ? 78 : 20;
   const seo = has("SEOAgent") ? 72 : 15;
   const performance = has("TestingAgent") ? 68 : 30;
@@ -101,18 +107,29 @@ export function computeFactoryQuality(project: FactoryProject): FactoryQualitySc
   const monetization = businessModelScore;
   const mobileReadiness = has("ContentAgent") ? 70 : 30;
 
-  const completenessParts = [
-    has("BusinessAgent"),
-    has("MarketAgent"),
-    has("BrandAgent"),
-    has("ProductAgent"),
-    has("ArchitectureAgent"),
-    has("SecurityAgent"),
-    has("ContentAgent"),
-    has("DeveloperAgent"),
-    has("TestingAgent"),
-    has("DeploymentAgent"),
-  ];
+  const completenessParts = isV3
+    ? [
+        has("PlannerAgent"),
+        has("ProductAgent"),
+        has("DatabaseAgent"),
+        has("ArchitectureAgent"),
+        has("DeveloperAgent"),
+        has("TestingAgent"),
+        has("SecurityAgent"),
+        has("DeploymentAgent"),
+      ]
+    : [
+        has("BusinessAgent"),
+        has("MarketAgent"),
+        has("BrandAgent"),
+        has("ProductAgent"),
+        has("ArchitectureAgent"),
+        has("SecurityAgent"),
+        has("ContentAgent"),
+        has("DeveloperAgent"),
+        has("TestingAgent"),
+        has("DeploymentAgent"),
+      ];
   let completeness = Math.round(
     (completenessParts.filter(Boolean).length / completenessParts.length) * 100
   );
@@ -121,6 +138,12 @@ export function computeFactoryQuality(project: FactoryProject): FactoryQualitySc
     completeness = Math.min(completeness, 55);
     explanations.push(
       "Completeness capped: DeveloperAgent produced landing_page_only (not a full SaaS)."
+    );
+  }
+  if (code?.data?.completeness === "starter_mvp_scaffold") {
+    completeness = Math.min(completeness, 78);
+    explanations.push(
+      "Completeness capped at 78: starter_mvp_scaffold — AI GENERATED STARTER, not production SaaS."
     );
   }
 
@@ -174,6 +197,7 @@ export function estimateAgentCost(agent: string): {
   costEur: number;
 } {
   const table: Record<string, { tokens: number; costEur: number }> = {
+    PlannerAgent: { tokens: 2200, costEur: 0.3 },
     BusinessAgent: { tokens: 2500, costEur: 0.35 },
     MarketAgent: { tokens: 2200, costEur: 0.3 },
     BrandAgent: { tokens: 2000, costEur: 0.28 },
@@ -193,6 +217,31 @@ export function estimateAgentCost(agent: string): {
     ScoreAgent: { tokens: 200, costEur: 0.02 },
   };
   return table[agent] ?? { tokens: 1000, costEur: 0.15 };
+}
+
+export function estimateV3PipelineCost(): {
+  aiCostEur: number;
+  infraMonthlyEur: number;
+  thirdPartyMonthlyEur: number;
+} {
+  const agents = [
+    "PlannerAgent",
+    "ProductAgent",
+    "DatabaseAgent",
+    "ArchitectureAgent",
+    "DeveloperAgent",
+    "TestingAgent",
+    "SecurityAgent",
+    "DeploymentAgent",
+    "GrowthAgent",
+    "FinanceAgent",
+  ];
+  const aiCostEur = agents.reduce((s, a) => s + estimateAgentCost(a).costEur, 0);
+  return {
+    aiCostEur: Math.round(aiCostEur * 100) / 100,
+    infraMonthlyEur: 2.5,
+    thirdPartyMonthlyEur: 0,
+  };
 }
 
 export function estimateFullPipelineCost(): {

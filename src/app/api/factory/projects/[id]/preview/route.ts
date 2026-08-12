@@ -26,9 +26,21 @@ export async function GET(_request: Request, ctx: Ctx) {
     previewReady: Boolean(code && project.sandbox.deploymentStatus !== "NOT_STARTED"),
     url: `/build/${id}/preview`,
     buildStatus: project.sandbox.deploymentStatus,
+    testStatus: (tests?.data as { passed?: boolean })?.passed ? "PASS" : tests ? "FAIL" : "NOT RUN",
+    securityStatus: (() => {
+      const scan = tests?.schemaName === "SecurityScanSchema"
+        ? tests.data
+        : project.outputs.find((o) => o.schemaName === "SecurityScanSchema")?.data;
+      const s = scan as { passed?: boolean; requiresApproval?: boolean } | undefined;
+      if (!s) return "NOT RUN";
+      return s.passed ? "PASS" : s.requiresApproval ? "REQUIRES_APPROVAL" : "FAIL";
+    })(),
+    pipelineVersion: project.pipelineVersion,
+    label: project.pipelineVersion === "v3" ? "AI GENERATED STARTER" : "Starter landing",
     tests: tests?.data ?? null,
+    securityScan:
+      project.outputs.find((o) => o.schemaName === "SecurityScanSchema")?.data ?? null,
     quality: project.quality,
-    securityStatus: "Sandbox isolated · secrets not in memory · generated code scanned",
     persistenceMode: project.persistenceMode,
     files: code?.files?.map((f) => ({
       path: f.path,
@@ -49,9 +61,12 @@ export async function GET(_request: Request, ctx: Ctx) {
         }
       : null,
     limitations: [
-      "Preview is AI-generated starter content",
+      project.pipelineVersion === "v3"
+        ? "AI GENERATED STARTER — not production-ready SaaS"
+        : "Preview is AI-generated starter content",
       "Not a complete production SaaS unless further builds are approved",
       "Payments not activated (Mollie requires approval)",
+      "SANDBOX: DEVELOPMENT ISOLATION",
       project.persistenceMode === "SUPABASE"
         ? "Persisted"
         : "LOCAL / DEMO / NOT PERSISTED",

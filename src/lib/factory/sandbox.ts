@@ -5,22 +5,55 @@
 
 import type { FactoryProject, FactorySandbox } from "./types";
 
+export type SandboxMode = "production_sandbox" | "development_isolation";
+
+export interface SandboxProvider {
+  mode: SandboxMode;
+  label: string;
+  storagePrefix: string;
+  schemaStrategy: FactorySandbox["schemaStrategy"];
+  /** Keys that generated code must never reference */
+  forbiddenEnvKeys: string[];
+  isProductionGrade: boolean;
+}
+
+/** True sandbox infrastructure is not available — use safest dev isolation */
+export function createSandboxProvider(projectId: string): SandboxProvider {
+  return {
+    mode: "development_isolation",
+    label: "SANDBOX: DEVELOPMENT ISOLATION",
+    storagePrefix: `sandboxes/${projectId}/`,
+    schemaStrategy: "isolated_schema",
+    forbiddenEnvKeys: [
+      "MOLLIE_API_KEY",
+      "GROQ_API_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_DB_URL",
+      "OPENAI_API_KEY",
+      "CLOUDFLARE_API_TOKEN",
+      "SITEFLIP_CORE",
+    ],
+    isProductionGrade: false,
+  };
+}
+
 export function createSandbox(
   projectId: string,
   ownerId: string
 ): FactorySandbox {
+  const provider = createSandboxProvider(projectId);
   return {
     projectId,
     ownerId,
-    schemaStrategy: "isolated_schema",
-    storagePrefix: `sandboxes/${projectId}/`,
+    schemaStrategy: provider.schemaStrategy,
+    storagePrefix: provider.storagePrefix,
     envConfigKeys: [
       "SANDBOX_DATABASE_URL",
       "SANDBOX_MOLLIE_API_KEY",
       "SANDBOX_SUPABASE_URL",
       "SANDBOX_SUPABASE_ANON_KEY",
     ],
-    buildLogs: [],
+    buildLogs: [provider.label],
     deploymentStatus: "NOT_STARTED",
     previewUrl: null,
     productionUrl: null,
@@ -38,11 +71,22 @@ export function assertSandboxBoundary(project: FactoryProject): void {
 
 /** Blocklist for generated code / commands */
 export const FORBIDDEN_PATTERNS = [
-  /process\.env\.(SUPABASE_SERVICE_ROLE|MOLLIE_API|OPENAI_API|GROQ_API)/i,
+  /process\.env\.(SUPABASE_SERVICE_ROLE|MOLLIE_API|OPENAI_API|GROQ_API|CLOUDFLARE)/i,
+  /SUPABASE_SERVICE_ROLE_KEY/i,
+  /SUPABASE_DB_URL/i,
+  /MOLLIE_API_KEY/i,
+  /GROQ_API_KEY/i,
   /DROP\s+TABLE/i,
   /DROP\s+DATABASE/i,
   /rm\s+-rf\s+\//,
   /SITEFLIP_CORE/i,
+  /\beval\s*\(/,
+  /new\s+Function\s*\(/,
+  /child_process/,
+  /exec\s*\(/,
+  /spawn\s*\(/,
+  /fs\.(unlink|rmdir|rm)Sync/,
+  /https?:\/\/.*\.workers\.dev\/(?!preview)/i,
 ];
 
 export function scanGeneratedContent(content: string): {

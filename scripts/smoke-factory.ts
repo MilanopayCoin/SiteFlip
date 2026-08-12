@@ -20,7 +20,7 @@ async function main() {
     businessModel: "B2B SaaS",
     preferredTechnology: "Next.js, Supabase",
     workloadPreference: "Part-time",
-  });
+  }, "demo-user", "v2");
   console.log("created", project.id, "persistence", project.persistenceMode);
   const orch = new BusinessFactoryOrchestrator(project.id);
   const result = await orch.runPipeline();

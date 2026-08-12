@@ -197,11 +197,26 @@ export const databaseSpecSchema = z.object({
   tables: z.array(
     z.object({
       name: z.string(),
-      columns: z.array(z.string()),
+      fields: z
+        .array(
+          z.object({
+            name: z.string(),
+            type: z.string(),
+            nullable: z.boolean().default(false),
+            primaryKey: z.boolean().default(false),
+            unique: z.boolean().default(false),
+          })
+        )
+        .optional(),
+      columns: z.array(z.string()).optional(),
       relationships: z.array(z.string()),
+      indexes: z.array(z.string()).optional(),
+      constraints: z.array(z.string()).optional(),
     })
   ),
   indexes: z.array(z.string()),
+  constraints: z.array(z.string()).default([]),
+  adapterArchitecture: z.array(z.string()).default([]),
   rlsPolicies: z.array(z.string()),
   migrationSql: z.string(),
   seedNotes: z.string(),
@@ -302,6 +317,56 @@ export const financeEstimateSchema = z.object({
   labeledAssumptions: z.array(z.string()).default([]),
 });
 
+export const planSpecSchema = z.object({
+  businessName: z.string(),
+  summary: z.string(),
+  problem: z.string(),
+  solution: z.string(),
+  targetCustomer: z.string(),
+  businessModel: z.string(),
+  revenueModel: z.string(),
+  mvpPages: z.array(z.string()),
+  coreWorkflows: z.array(z.string()),
+  successCriteria: z.array(z.string()),
+  constraints: z.array(z.string()),
+  pricing: z
+    .object({
+      tiers: z.array(
+        z.object({
+          name: z.string(),
+          priceMonthlyEur: z.number(),
+          features: z.array(z.string()),
+        })
+      ),
+    })
+    .default({ tiers: [] }),
+  labeledAssumptions: z.array(z.string()).default([]),
+});
+
+export const securityScanSchema = z.object({
+  passed: z.boolean(),
+  findings: z.array(
+    z.object({
+      severity: z.enum(["critical", "high", "medium", "low"]),
+      category: z.string(),
+      detail: z.string(),
+      file: z.string().optional(),
+    })
+  ),
+  requiresApproval: z.boolean(),
+  scannedFiles: z.number(),
+  labeledAssumptions: z.array(z.string()).default([]),
+});
+
+export const growthRecommendationsSchema = z.object({
+  seoPlan: z.array(z.string()),
+  growthOpportunities: z.array(z.string()),
+  conversionImprovements: z.array(z.string()),
+  pricingIdeas: z.array(z.string()),
+  customerAcquisition: z.array(z.string()),
+  labeledAssumptions: z.array(z.string()).default([]),
+});
+
 export type ClaimClass = z.infer<typeof claimClassSchema>;
 export type ClaimedStatement = z.infer<typeof claimedStatementSchema>;
 export type BusinessPlan = z.infer<typeof businessPlanSchema>;
@@ -319,4 +384,7 @@ export type TestReport = z.infer<typeof testReportSchema>;
 export type DeploymentSpec = z.infer<typeof deploymentSchema>;
 export type GrowthPlan = z.infer<typeof growthPlanSchema>;
 export type FinanceEstimate = z.infer<typeof financeEstimateSchema>;
+export type PlanSpec = z.infer<typeof planSpecSchema>;
+export type SecurityScan = z.infer<typeof securityScanSchema>;
+export type GrowthRecommendations = z.infer<typeof growthRecommendationsSchema>;
 export type FactoryBriefInput = z.infer<typeof factoryBriefSchema>;

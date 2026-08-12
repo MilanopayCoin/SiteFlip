@@ -29,12 +29,25 @@ export async function POST(request: Request, ctx: Ctx) {
   const plan = getOutputByAgent(project, "BusinessAgent")?.data as
     | BusinessPlan
     | undefined;
+  const planV3 = getOutputByAgent(project, "PlannerAgent")?.data as
+    | { businessName?: string; summary?: string; solution?: string; targetCustomer?: string; revenueModel?: string; pricing?: BusinessPlan["pricing"] }
+    | undefined;
   const brand = getOutputByAgent(project, "BrandAgent")?.data as
     | BrandPlan
     | undefined;
   const product = getOutputByAgent(project, "ProductAgent")?.data as
     | ProductSpec
     | undefined;
+
+  const effectivePlan = plan ?? (planV3 ? {
+    businessName: planV3.businessName,
+    businessDescription: planV3.summary,
+    valueProposition: planV3.summary,
+    solution: planV3.solution,
+    targetCustomer: planV3.targetCustomer,
+    revenueModel: planV3.revenueModel,
+    pricing: planV3.pricing,
+  } : undefined);
 
   const valuation = computeValuation({
     category: project.brief.businessType.toLowerCase().includes("saas")
@@ -50,17 +63,20 @@ export async function POST(request: Request, ctx: Ctx) {
   project.passport = passport;
 
   const listingDraft = {
-    title: plan?.businessName || project.name,
+    title: effectivePlan?.businessName || project.name,
     summary:
-      plan?.businessDescription ||
+      effectivePlan?.businessDescription ||
       brand?.brandDescription ||
-      `${project.name} — factory-generated early-stage digital business.`,
+      `${project.name} — factory-generated ${project.pipelineVersion === "v3" ? "starter mini-SaaS" : "early-stage digital business"}.`,
     description: [
-      plan?.valueProposition,
-      plan?.solution,
+      effectivePlan?.valueProposition,
+      effectivePlan?.solution,
       product?.coreProduct,
-      `Target customer: ${plan?.targetCustomer || project.brief.targetCustomer}`,
-      `Revenue model: ${plan?.revenueModel || "Not specified"}`,
+      `Target customer: ${effectivePlan?.targetCustomer || project.brief.targetCustomer}`,
+      `Revenue model: ${effectivePlan?.revenueModel || "Not specified"}`,
+      project.pipelineVersion === "v3"
+        ? "Technology: Next.js starter MVP scaffold (AI GENERATED STARTER)"
+        : undefined,
     ]
       .filter(Boolean)
       .join("\n\n"),
@@ -69,8 +85,11 @@ export async function POST(request: Request, ctx: Ctx) {
       minEur: valuation.minimum_value,
       maxEur: valuation.maximum_value,
       estimateEur: valuation.estimated_value,
-      note: "AI valuation estimate only — zero operating revenue assumed. User must approve before publishing.",
+      note: "AI ESTIMATE — zero operating revenue assumed. User must approve before publishing.",
     },
+    features: product?.mvpFeatures ?? [],
+    technology: project.passport?.technology ?? [],
+    businessPassport: passport,
     aiScore: project.quality?.overall ?? null,
     businessPassportPath: `/build/${project.id}/passport`,
   };
@@ -106,7 +125,7 @@ export async function POST(request: Request, ctx: Ctx) {
     listingDescription: listingDraft.summary,
     businessPassportPath: listingDraft.businessPassportPath,
     aiScore: listingDraft.aiScore,
-    risks: plan?.keyRisks ?? plan?.risks ?? ["Early-stage asset"],
+    risks: (effectivePlan as BusinessPlan)?.keyRisks ?? (effectivePlan as BusinessPlan)?.risks ?? ["Early-stage asset"],
     recommendedImprovements: [
       "Acquire first paying customers",
       "Verify domain ownership",
