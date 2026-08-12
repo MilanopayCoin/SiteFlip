@@ -200,17 +200,20 @@ export default function BuildFactoryPage() {
                   defaultValue="I want an AI booking platform for cleaning companies in the Netherlands."
                 />
               </div>
+              <p className="text-xs text-zinc-500">
+                Optional details improve the blueprint. Idea alone is enough to start.
+              </p>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Budget" name="budget" defaultValue="€2,000" />
-                <Field label="Desired revenue" name="targetRevenue" defaultValue="€1,000 MRR" />
-                <Field label="Country" name="country" defaultValue="Netherlands" />
+                <Field label="Budget (optional)" name="budget" defaultValue="€2,000" />
+                <Field label="Desired revenue (optional)" name="targetRevenue" defaultValue="€1,000 MRR" />
+                <Field label="Country (optional)" name="country" defaultValue="Netherlands" />
                 <Field
-                  label="Target customer"
+                  label="Target customer (optional)"
                   name="targetCustomer"
                   defaultValue="Cleaning companies"
                 />
                 <div>
-                  <Label htmlFor="businessType">Business type</Label>
+                  <Label htmlFor="businessType">Business type (optional)</Label>
                   <select
                     id="businessType"
                     name="businessType"

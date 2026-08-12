@@ -11,13 +11,21 @@ export const claimedStatementSchema = z.object({
   claimClass: claimClassSchema,
 });
 
+function optionalBriefField(defaultValue: string) {
+  return z.preprocess(
+    (v) => (typeof v === "string" && v.trim() ? v.trim() : defaultValue),
+    z.string().min(1)
+  );
+}
+
 export const factoryBriefSchema = z.object({
   idea: z.string().min(10, "Describe your idea in at least 10 characters"),
-  budget: z.string().min(1),
-  targetRevenue: z.string().min(1),
-  country: z.string().min(1),
-  targetCustomer: z.string().min(1),
-  businessType: z.string().min(1),
+  // Optional UX fields — defaults keep agents deterministic when omitted
+  budget: optionalBriefField("Not specified"),
+  targetRevenue: optionalBriefField("Not specified"),
+  country: optionalBriefField("Not specified"),
+  targetCustomer: optionalBriefField("Not specified"),
+  businessType: optionalBriefField("SaaS"),
   preferredTechnology: z.string().optional(),
   experienceLevel: z.string().optional(),
   availableTime: z.string().optional(),

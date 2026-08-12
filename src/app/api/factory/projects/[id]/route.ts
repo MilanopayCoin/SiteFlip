@@ -10,7 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  let project = getFactoryProject(id);
+  const project = getFactoryProject(id);
 
   // Allow client to rehydrate LOCAL project into this isolate
   if (!project) {
