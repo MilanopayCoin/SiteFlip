@@ -57,6 +57,9 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "NEXT_PUBLIC_SUPABASE_URL",
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_DB_URL",
+      "MIGRATE_TOKEN",
+      "SITEFLIP_ALLOW_MIGRATE",
       "MOLLIE_API_KEY",
       "Mollie_api", // legacy Worker secret name
       "MOLLIE_WEBHOOK_URL",
