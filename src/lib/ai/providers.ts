@@ -70,20 +70,40 @@ async function chatGroq(system: string, user: string, json = false): Promise<AiC
     apiKey: process.env.GROQ_API_KEY!,
     baseURL: "https://api.groq.com/openai/v1",
   });
-  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-  const completion = await client.chat.completions.create({
-    model,
-    response_format: json ? { type: "json_object" } : undefined,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
-  return {
-    content: completion.choices[0]?.message?.content ?? "",
-    provider: "groq",
-    model,
-  };
+  // Prefer configured model, then smaller instant model (better free-tier TPD headroom)
+  const preferred = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
+  const models = Array.from(
+    new Set([
+      preferred,
+      "llama-3.1-8b-instant",
+      "llama-3.3-70b-versatile",
+    ])
+  );
+  let lastError: unknown;
+  for (const model of models) {
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        response_format: json ? { type: "json_object" } : undefined,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      });
+      return {
+        content: completion.choices[0]?.message?.content ?? "",
+        provider: "groq",
+        model,
+      };
+    } catch (err) {
+      lastError = err;
+      const status = (err as { status?: number }).status;
+      // Try next Groq model on rate limits / model issues
+      if (status === 429 || status === 400 || status === 404) continue;
+      throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Groq failed");
 }
 
 async function chatGemini(system: string, user: string, json = false): Promise<AiChatResult> {
@@ -196,28 +216,80 @@ export async function aiJson<T>(
   if (primary === "heuristic") {
     return { data: heuristic(), provider: "heuristic", model: "none" };
   }
+
+  const tryParse = (content: string) => {
+    try {
+      return JSON.parse(content || "{}") as unknown;
+    } catch {
+      const start = content.indexOf("{");
+      const end = content.lastIndexOf("}");
+      if (start >= 0 && end > start) {
+        return JSON.parse(content.slice(start, end + 1)) as unknown;
+      }
+      throw new Error("invalid json");
+    }
+  };
+
+  const mergeWithHeuristic = (partial: unknown): T | null => {
+    if (!partial || typeof partial !== "object") return null;
+    const base = heuristic() as Record<string, unknown>;
+    const merged = deepMerge(base, partial as Record<string, unknown>);
+    const parsed = schema.safeParse(merged);
+    return parsed.success ? parsed.data : null;
+  };
+
   try {
     const result = await aiChat(
-      `${system}\n\nReturn a single JSON object only. Include every required key. Do not wrap in markdown.`,
+      `${system}\n\nReturn a single JSON object only. Include every required key. Arrays must be arrays. Do not wrap in markdown.`,
       JSON.stringify(user),
       { json: true }
     );
-    let parsed = schema.safeParse(JSON.parse(result.content || "{}"));
+    let rawObj: unknown;
+    try {
+      rawObj = tryParse(result.content || "{}");
+    } catch {
+      rawObj = null;
+    }
+    let parsed = schema.safeParse(rawObj ?? {});
     if (!parsed.success) {
+      const merged = mergeWithHeuristic(rawObj);
+      if (merged) {
+        return {
+          data: merged,
+          provider: result.provider,
+          model: result.model,
+          raw: result.content,
+        };
+      }
       // One repair attempt with validation issues (no secrets)
       const issues = parsed.error.issues
         .slice(0, 8)
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; ");
       const repair = await aiChat(
-        `${system}\n\nYour previous JSON failed validation: ${issues}. Return corrected JSON only.`,
-        JSON.stringify(user),
+        `${system}\n\nYour previous JSON failed validation: ${issues}. Return corrected JSON only with all required keys.`,
+        JSON.stringify({ user, previous: rawObj }),
         { json: true }
       );
-      parsed = schema.safeParse(JSON.parse(repair.content || "{}"));
+      let repairObj: unknown;
+      try {
+        repairObj = tryParse(repair.content || "{}");
+      } catch {
+        repairObj = null;
+      }
+      parsed = schema.safeParse(repairObj ?? {});
       if (parsed.success) {
         return {
           data: parsed.data,
+          provider: repair.provider,
+          model: repair.model,
+          raw: repair.content,
+        };
+      }
+      const repairedMerge = mergeWithHeuristic(repairObj);
+      if (repairedMerge) {
+        return {
+          data: repairedMerge,
           provider: repair.provider,
           model: repair.model,
           raw: repair.content,
@@ -239,6 +311,35 @@ export async function aiJson<T>(
   } catch {
     return { data: heuristic(), provider: "heuristic", model: "none" };
   }
+}
+
+function deepMerge(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(overlay)) {
+    if (v === undefined || v === null) continue;
+    if (
+      v &&
+      typeof v === "object" &&
+      !Array.isArray(v) &&
+      base[k] &&
+      typeof base[k] === "object" &&
+      !Array.isArray(base[k])
+    ) {
+      out[k] = deepMerge(
+        base[k] as Record<string, unknown>,
+        v as Record<string, unknown>
+      );
+    } else if (Array.isArray(v) && v.length === 0) {
+      // keep base array when model returns empty
+      continue;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 export function getAiConfigStatus() {

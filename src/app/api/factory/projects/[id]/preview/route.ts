@@ -29,6 +29,7 @@ export async function GET(_request: Request, ctx: Ctx) {
     tests: tests?.data ?? null,
     quality: project.quality,
     securityStatus: "Sandbox isolated · secrets not in memory · generated code scanned",
+    persistenceMode: project.persistenceMode,
     files: code?.files?.map((f) => ({
       path: f.path,
       purpose: f.purpose,
@@ -40,15 +41,20 @@ export async function GET(_request: Request, ctx: Ctx) {
           colors: brand?.colorDirection,
           hero: content.hero,
           features: content.features,
+          howItWorks: content.howItWorks,
           pricingCopy: content.pricingCopy,
           faq: content.faq,
+          footer: content.footer,
           completeness: code?.completeness ?? "landing_page_only",
         }
       : null,
     limitations: [
       "Preview is AI-generated starter content",
       "Not a complete production SaaS unless further builds are approved",
-      "Payments not activated",
+      "Payments not activated (Mollie requires approval)",
+      project.persistenceMode === "SUPABASE"
+        ? "Persisted"
+        : "LOCAL / DEMO / NOT PERSISTED",
     ],
   });
 }

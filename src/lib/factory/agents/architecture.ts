@@ -25,7 +25,7 @@ function heuristicArchitecture(
 ): ArchitectureSpec {
   const preferred =
     brief.preferredTechnology ||
-    "Next.js, TypeScript, Tailwind, Supabase, Stripe, Vercel";
+    "Next.js, TypeScript, Tailwind, Supabase, Mollie, Cloudflare Workers";
   const complexity =
     brief.workloadPreference?.toLowerCase().includes("full") ||
     brief.availableTime?.toLowerCase().includes("full")
@@ -51,16 +51,16 @@ function heuristicArchitecture(
       "Auth-gated mutations",
     ],
     thirdPartyIntegrations: [
-      "Stripe (architecture only)",
+      "Mollie (architecture only — not activated)",
       "Resend/email (optional)",
       "AI provider via SITEFLIP abstraction (optional)",
     ],
     fileStorage: ["Supabase Storage in sandbox bucket prefix"],
     payments: [
-      "Stripe Checkout architecture",
-      "Customer portal architecture",
-      "Webhooks — not activated without approval",
-      "Payments are NOT escrow",
+      "Mollie Checkout / payment links architecture",
+      "Customer payment management via Mollie (architecture only)",
+      "Mollie webhooks — not activated without approval",
+      "Mollie payments are NOT escrow",
     ],
     email: ["Transactional email provider abstraction"],
     analytics: ["Privacy-friendly analytics placeholder"],

@@ -191,7 +191,7 @@ export class BusinessFactoryOrchestrator {
           action: "payment_activation",
           title: "Activate payments",
           explanation:
-            "Payment architecture exists but is not activated. Approving allows connecting provider keys (never stored in AI memory). Mollie/Stripe are payment processors, not escrow.",
+            "Payment architecture exists but is not activated. Approving allows connecting Mollie (never stored in AI memory). Mollie is a payment processor, not escrow.",
           services: ["Payment provider"],
           estimatedCostEur: 0,
           risks: ["Live charges", "Webhook misconfiguration"],

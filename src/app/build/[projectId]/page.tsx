@@ -258,9 +258,14 @@ export default function FactoryProjectPage() {
                   <p className="mt-1 text-sm font-medium text-white">{step.label}</p>
                   <p className="text-[11px] text-zinc-500">{step.agent}</p>
                   <Progress value={task?.progress ?? 0} className="mt-2 h-1" />
-                  <p className="mt-1 truncate text-[10px] text-zinc-500">
-                    {task?.activity || status}
+                  <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                    {status}
                   </p>
+                  {task?.activity && (
+                    <p className="mt-0.5 truncate text-[10px] text-zinc-500">
+                      {task.activity}
+                    </p>
+                  )}
                 </motion.div>
               );
             })}
@@ -387,6 +392,65 @@ export default function FactoryProjectPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Landing preview strip */}
+      {(() => {
+        const content = project.outputs.find((o) => o.agent === "ContentAgent")
+          ?.data as
+          | {
+              hero?: { headline: string; subheadline: string; cta: string };
+              features?: Array<{ title: string; body: string }>;
+            }
+          | undefined;
+        const brand = project.outputs.find((o) => o.agent === "BrandAgent")
+          ?.data as { brandName?: string } | undefined;
+        if (!content?.hero) return null;
+        return (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+                <span>Landing preview</span>
+                <Button size="sm" variant="secondary" asChild>
+                  <Link href={`/build/${id}/preview`}>Open full preview</Link>
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-transparent p-6 text-center">
+                <p className="text-xs uppercase tracking-[0.2em] text-violet-300">
+                  {brand?.brandName || project.name}
+                </p>
+                <h2 className="mt-3 text-2xl font-semibold text-white">
+                  {content.hero.headline}
+                </h2>
+                <p className="mx-auto mt-2 max-w-xl text-sm text-zinc-400">
+                  {content.hero.subheadline}
+                </p>
+                <p className="mt-4 inline-block rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white">
+                  {content.hero.cta}
+                </p>
+                {content.features && content.features.length > 0 && (
+                  <div className="mt-6 grid gap-3 text-left sm:grid-cols-3">
+                    {content.features.slice(0, 3).map((f) => (
+                      <div
+                        key={f.title}
+                        className="rounded-lg border border-white/10 p-3"
+                      >
+                        <p className="text-sm font-medium text-white">{f.title}</p>
+                        <p className="mt-1 text-xs text-zinc-500">{f.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="mt-3 text-xs text-zinc-500">
+                Starter landing only · Mollie payments inactive · LOCAL / DEMO /
+                NOT PERSISTED
+              </p>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Handoff */}
       {isLive && (

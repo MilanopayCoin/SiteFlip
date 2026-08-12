@@ -16,7 +16,7 @@ export function createSandbox(
     storagePrefix: `sandboxes/${projectId}/`,
     envConfigKeys: [
       "SANDBOX_DATABASE_URL",
-      "SANDBOX_STRIPE_SECRET_KEY",
+      "SANDBOX_MOLLIE_API_KEY",
       "SANDBOX_SUPABASE_URL",
       "SANDBOX_SUPABASE_ANON_KEY",
     ],
@@ -38,7 +38,7 @@ export function assertSandboxBoundary(project: FactoryProject): void {
 
 /** Blocklist for generated code / commands */
 export const FORBIDDEN_PATTERNS = [
-  /process\.env\.(SUPABASE_SERVICE_ROLE|STRIPE_SECRET|OPENAI_API)/i,
+  /process\.env\.(SUPABASE_SERVICE_ROLE|STRIPE_SECRET|MOLLIE_API|OPENAI_API|GROQ_API)/i,
   /DROP\s+TABLE/i,
   /DROP\s+DATABASE/i,
   /rm\s+-rf\s+\//,

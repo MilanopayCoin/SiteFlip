@@ -40,6 +40,7 @@ put_secret NEXT_PUBLIC_SUPABASE_URL
 put_secret NEXT_PUBLIC_SUPABASE_ANON_KEY
 put_secret SUPABASE_SERVICE_ROLE_KEY
 put_secret GROQ_API_KEY
+put_secret GROQ_MODEL
 put_secret AI_PROVIDER
 put_secret MOLLIE_API_KEY
 put_secret MOLLIE_WEBHOOK_URL

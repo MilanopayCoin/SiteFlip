@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, VALUATION_DISCLAIMER } from "@/lib/utils";
+import {
+  cacheFactoryProject,
+  readCachedFactoryProject,
+} from "@/lib/factory/client-cache";
 
 export default function FactorySellPage() {
   const params = useParams<{ projectId: string }>();
@@ -39,15 +43,38 @@ export default function FactorySellPage() {
     listOnSiteflipPath: string;
     disclaimer: string;
     assumptions: string[];
+    error?: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function prepare() {
     setLoading(true);
-    const res = await fetch(`/api/factory/projects/${params.projectId}/sell`, {
+    const id = params.projectId;
+    const cached = readCachedFactoryProject(id);
+    if (cached) {
+      await fetch(`/api/factory/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: cached }),
+      });
+    }
+    const res = await fetch(`/api/factory/projects/${id}/sell`, {
       method: "POST",
     });
-    setData(await res.json());
+    const json = await res.json();
+    if (res.ok && cached) {
+      // Refresh cache after sell approval added
+      const refreshed = await fetch(`/api/factory/projects/${id}`);
+      if (refreshed.ok) {
+        const body = await refreshed.json();
+        if (body.project) cacheFactoryProject(body.project);
+      }
+    }
+    setData(
+      res.ok
+        ? json
+        : { ...json, error: json.error || "Failed to prepare BUILD → SELL draft" }
+    );
     setLoading(false);
   }
 
@@ -65,7 +92,11 @@ export default function FactorySellPage() {
         {loading ? "Analyzing…" : "Prepare for sale"}
       </Button>
 
-      {data && (
+      {data?.error && (
+        <p className="mt-4 text-sm text-rose-400">{data.error}</p>
+      )}
+
+      {data && !data.error && (
         <div className="mt-6 space-y-4">
           <Card>
             <CardContent className="flex items-center justify-between p-5">

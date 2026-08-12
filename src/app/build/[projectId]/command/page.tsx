@@ -14,7 +14,7 @@ const SUGGESTIONS = [
   "Improve my landing page.",
   "Add a referral system.",
   "Create a blog.",
-  "Add Stripe.",
+  "Add Mollie.",
   "Build an admin dashboard.",
   "Prepare this business for sale.",
 ];

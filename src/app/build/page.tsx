@@ -370,7 +370,7 @@ export default function BuildFactoryPage() {
             <CardContent className="space-y-2 text-sm text-zinc-400">
               <p>• Start with a narrow MVP for one country/customer segment.</p>
               <p>• Approve preview before production deploy.</p>
-              <p>• Keep payments inactive until Stripe keys are configured.</p>
+              <p>• Keep payments inactive until Mollie is configured and approved.</p>
             </CardContent>
           </Card>
         </div>

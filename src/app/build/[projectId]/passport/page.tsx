@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BusinessPassport, FactoryProject } from "@/lib/factory/types";
+import {
+  cacheFactoryProject,
+  readCachedFactoryProject,
+} from "@/lib/factory/client-cache";
 
 export default function FactoryPassportPage() {
   const params = useParams<{ projectId: string }>();
@@ -15,16 +19,38 @@ export default function FactoryPassportPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/factory/projects/${id}`)
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error || "Not found");
-        setProject(data.project);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "Error"));
+    let cancelled = false;
+    async function load() {
+      const cached = readCachedFactoryProject(id);
+      if (cached && !cancelled) {
+        setProject(cached);
+        setError(null);
+      }
+      let res = await fetch(`/api/factory/projects/${id}`);
+      if (!res.ok && cached) {
+        res = await fetch(`/api/factory/projects/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: cached }),
+        });
+      }
+      if (cancelled) return;
+      if (!res.ok) {
+        if (!cached) setError("Not found");
+        return;
+      }
+      const data = await res.json();
+      setProject(data.project);
+      cacheFactoryProject(data.project);
+      setError(null);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
-  if (error) {
+  if (error && !project) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <p className="text-rose-400">{error}</p>

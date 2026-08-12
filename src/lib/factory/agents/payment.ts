@@ -8,7 +8,7 @@ import { runStructuredAgent } from "./base";
 export async function runPaymentAgent(plan: BusinessPlan) {
   return runStructuredAgent({
     system:
-      "You are SITEFLIP PaymentAgent. Return Stripe integration architecture JSON. activated=false. Never store cards. Never call Stripe escrow.",
+      "You are SITEFLIP PaymentAgent. Return Mollie payment integration architecture JSON. activated=false. Never store cards. Mollie is a payment processor, not escrow. Do not mention other payment processors.",
     user: { plan },
     schema: paymentSpecSchema,
     heuristic: () => heuristicPayment(plan),
@@ -27,31 +27,33 @@ function heuristicPayment(plan: BusinessPlan): PaymentSpec {
       interval: "month",
     })),
     checkoutArchitecture: [
-      "Create Checkout Session server-side",
-      "Redirect to Stripe-hosted checkout",
+      "Create Mollie payment server-side",
+      "Redirect to Mollie-hosted checkout",
       "Success/cancel URLs in sandbox app",
     ],
     customerPortalArchitecture: [
-      "Stripe Customer Portal session endpoint",
-      "Allow plan changes / cancel",
+      "Mollie customer / subscription management endpoints (architecture only)",
+      "Allow plan changes / cancel after activation approval",
     ],
     webhookHandlers: [
-      "checkout.session.completed",
-      "customer.subscription.updated",
-      "customer.subscription.deleted",
-      "invoice.payment_failed",
+      "payment.paid",
+      "payment.failed",
+      "payment.expired",
+      "subscription.updated (if used)",
     ],
-    subscriptionStates: ["trialing", "active", "past_due", "canceled"],
+    subscriptionStates: ["pending", "paid", "failed", "canceled"],
     activated: false,
     notes: [
       "Never store card details",
-      "Never expose Stripe secret keys",
-      "Ordinary Stripe payments are NOT escrow",
+      "Never expose Mollie API keys",
+      "Ordinary Mollie payments are NOT escrow",
+      "SITEFLIP payment provider is Mollie",
       "Payment activation requires user approval",
     ],
     labeledAssumptions: [
-      "Products/prices are architectural only until Stripe is connected",
+      "Products/prices are architectural only until Mollie is connected",
       "activated=false",
+      "[VERIFIED] SITEFLIP payment provider is Mollie",
     ],
   };
 }

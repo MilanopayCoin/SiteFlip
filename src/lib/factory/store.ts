@@ -93,7 +93,7 @@ export function createFactoryProject(
       storagePrefix: `sandboxes/${id}/`,
       envConfigKeys: [
         "NEXT_PUBLIC_APP_URL",
-        "STRIPE_SECRET_KEY",
+        "MOLLIE_API_KEY",
         "SUPABASE_URL",
       ],
       buildLogs: [],

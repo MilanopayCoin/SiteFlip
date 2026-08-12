@@ -6,6 +6,16 @@ import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  cacheFactoryProject,
+  readCachedFactoryProject,
+} from "@/lib/factory/client-cache";
+import type { FactoryProject } from "@/lib/factory/types";
+import type {
+  BrandPlan,
+  CodeArtifact,
+  ContentPack,
+} from "@/lib/factory/schemas";
 
 interface PreviewPayload {
   previewReady: boolean;
@@ -23,23 +33,114 @@ interface PreviewPayload {
     };
     hero: { headline: string; subheadline: string; cta: string };
     features: Array<{ title: string; body: string }>;
+    howItWorks?: Array<{ step: string; detail: string }>;
     pricingCopy: string;
     faq: Array<{ q: string; a: string }>;
+    footer?: string;
     completeness: string;
   } | null;
   limitations: string[];
   tests: { passed?: boolean; checks?: Array<{ name: string; status: string }> } | null;
+  persistenceMode?: string;
+}
+
+function buildLandingFromProject(project: FactoryProject): PreviewPayload["landing"] {
+  const content = project.outputs.find((o) => o.agent === "ContentAgent")
+    ?.data as ContentPack | undefined;
+  const brand = project.outputs.find((o) => o.agent === "BrandAgent")
+    ?.data as BrandPlan | undefined;
+  const code = project.outputs.find((o) => o.agent === "DeveloperAgent")
+    ?.data as CodeArtifact | undefined;
+  if (!content) return null;
+  return {
+    brandName: brand?.brandName,
+    colors: brand?.colorDirection,
+    hero: content.hero,
+    features: content.features,
+    howItWorks: content.howItWorks,
+    pricingCopy: content.pricingCopy,
+    faq: content.faq,
+    footer: content.footer,
+    completeness: code?.completeness ?? "landing_page_only",
+  };
+}
+
+function buildPreviewFromProject(project: FactoryProject): PreviewPayload {
+  return {
+    previewReady: Boolean(
+      project.outputs.find((o) => o.agent === "DeveloperAgent") &&
+        project.sandbox.deploymentStatus !== "NOT_STARTED"
+    ),
+    url: `/build/${project.id}/preview`,
+    buildStatus: project.sandbox.deploymentStatus,
+    quality: project.quality,
+    securityStatus:
+      "Sandbox isolated · secrets not in memory · generated code scanned",
+    landing: buildLandingFromProject(project),
+    limitations: [
+      "Preview is AI-generated starter content",
+      "Not a complete production SaaS unless further builds are approved",
+      "Payments not activated (Mollie requires approval)",
+      project.persistenceMode === "SUPABASE"
+        ? "Persisted"
+        : "LOCAL / DEMO / NOT PERSISTED",
+    ],
+    tests:
+      (project.outputs.find((o) => o.agent === "TestingAgent")?.data as PreviewPayload["tests"]) ??
+      null,
+    persistenceMode: project.persistenceMode,
+  };
 }
 
 export default function FactoryPreviewPage() {
   const params = useParams<{ projectId: string }>();
   const [data, setData] = useState<PreviewPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/factory/projects/${params.projectId}/preview`)
-      .then((r) => r.json())
-      .then(setData);
+    let cancelled = false;
+    async function load() {
+      const id = params.projectId;
+      const cached = readCachedFactoryProject(id);
+      if (cached && !cancelled) {
+        setData(buildPreviewFromProject(cached));
+      }
+
+      let res = await fetch(`/api/factory/projects/${id}/preview`);
+      if (!res.ok && cached) {
+        await fetch(`/api/factory/projects/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: cached }),
+        });
+        res = await fetch(`/api/factory/projects/${id}/preview`);
+      }
+      if (cancelled) return;
+      if (!res.ok) {
+        if (!cached) setError("Preview not found — re-run pipeline from /build");
+        return;
+      }
+      const payload = (await res.json()) as PreviewPayload;
+      if (cached) cacheFactoryProject(cached);
+      setData(payload);
+      setError(null);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [params.projectId]);
+
+  if (error && !data) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-16 text-center">
+        <p className="text-rose-400">{error}</p>
+        <Button className="mt-4" asChild>
+          <Link href={`/build/${params.projectId}`}>Back to project</Link>
+        </Button>
+      </div>
+    );
+  }
 
   if (!data) {
     return (
@@ -62,6 +163,11 @@ export default function FactoryPreviewPage() {
               {data.previewReady ? "Preview Ready" : "Preview incomplete"}
             </Badge>
             <Badge variant="outline">{data.buildStatus}</Badge>
+            <Badge variant="warning">
+              {data.persistenceMode === "SUPABASE"
+                ? "PERSISTED"
+                : "LOCAL / DEMO / NOT PERSISTED"}
+            </Badge>
             <span className="text-xs text-zinc-500">{data.securityStatus}</span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -115,12 +221,35 @@ export default function FactoryPreviewPage() {
             ))}
           </section>
 
+          {landing.howItWorks && landing.howItWorks.length > 0 && (
+            <section className="mx-auto max-w-3xl px-4 pb-16 sm:px-6">
+              <h2 className="text-2xl font-semibold text-white">How it works</h2>
+              <ol className="mt-4 space-y-3">
+                {landing.howItWorks.map((step, i) => (
+                  <li
+                    key={`${step.step}-${i}`}
+                    className="rounded-xl border border-white/10 p-4"
+                  >
+                    <p className="font-medium text-white">
+                      {i + 1}. {step.step}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-400">{step.detail}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
           <section className="mx-auto max-w-3xl px-4 pb-16 sm:px-6">
             <h2 className="text-2xl font-semibold text-white">Pricing</h2>
             <p className="mt-2 text-zinc-400">{landing.pricingCopy}</p>
+            <p className="mt-2 text-xs text-amber-200/70">
+              Pricing is an AI estimate — Mollie payments stay inactive until
+              approved.
+            </p>
           </section>
 
-          <section className="mx-auto max-w-3xl px-4 pb-24 sm:px-6">
+          <section className="mx-auto max-w-3xl px-4 pb-16 sm:px-6">
             <h2 className="text-2xl font-semibold text-white">FAQ</h2>
             <div className="mt-4 space-y-3">
               {landing.faq.map((item) => (
@@ -134,6 +263,11 @@ export default function FactoryPreviewPage() {
               ))}
             </div>
           </section>
+
+          <footer className="border-t border-white/10 px-4 py-10 text-center text-sm text-zinc-500 sm:px-6">
+            {landing.footer ||
+              `${landing.brandName ?? "Business"} · Generated starter landing · not production`}
+          </footer>
         </main>
       ) : (
         <Card className="mx-auto mt-10 max-w-lg">
