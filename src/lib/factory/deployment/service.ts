@@ -199,20 +199,37 @@ export async function deployProduction(projectId: string): Promise<{
 
 export async function rollbackProject(
   projectId: string,
-  targetDeploymentId: string
+  targetDeploymentId: string,
+  opts?: { approved?: boolean }
 ): Promise<DeploymentRecord> {
   const project = getFactoryProject(projectId);
   if (!project) throw new Error("Project not found");
 
-  const pending = project.approvals.find(
-    (a) => a.action === "change_request" && a.title.includes("Rollback") && a.status === "PENDING"
+  const rollbackTitle = `Approve rollback to ${targetDeploymentId}`;
+  const approved = project.approvals.find(
+    (a) =>
+      a.action === "change_request" &&
+      a.title.includes("Rollback") &&
+      a.title.includes(targetDeploymentId) &&
+      a.status === "APPROVED"
   );
-  // Rollback requires approval — if not approved yet, create approval
-  if (!pending) {
+  const pending = project.approvals.find(
+    (a) =>
+      a.action === "change_request" &&
+      a.title.includes("Rollback") &&
+      a.title.includes(targetDeploymentId) &&
+      a.status === "PENDING"
+  );
+
+  if (opts?.approved || approved) {
+    // proceed
+  } else if (pending) {
+    throw new Error("Rollback approval not granted — approve the pending request first");
+  } else {
     addApproval(project, {
       projectId,
       action: "change_request",
-      title: "Approve rollback",
+      title: rollbackTitle,
       explanation: `Rollback to deployment ${targetDeploymentId} requires explicit approval. After rollback, verification must pass before LIVE.`,
       services: ["DeploymentProvider"],
       estimatedCostEur: 0,
@@ -221,10 +238,6 @@ export async function rollbackProject(
     appendActivity(project, "DeploymentAgent", "Rollback requires approval", "warning");
     saveFactoryProject(project);
     throw new Error("Rollback requires approval — approve the pending request first");
-  }
-
-  if (pending.status !== "APPROVED") {
-    throw new Error("Rollback approval not granted");
   }
 
   const provider = getDeploymentProvider();
@@ -239,6 +252,10 @@ export async function rollbackProject(
     `Rollback ${result.status}: ${result.deploymentId}`,
     result.status === "LIVE" ? "success" : "error"
   );
+  if (result.status === "LIVE" && result.previewUrl) {
+    project.sandbox.previewUrl = result.previewUrl;
+    project.sandbox.deploymentStatus = "READY";
+  }
   project.passport = buildBusinessPassport(project);
   saveFactoryProject(project);
   return result;

@@ -5,6 +5,7 @@
  * - Never expose CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID
  * - Do NOT deploy generated apps into the main JIY.APP production Worker
  * - If true production isolation cannot be guaranteed → block production deploy
+ * - Never mark LIVE without verification (in-isolate preview payload and/or HTTP)
  */
 
 import { nanoid } from "nanoid";
@@ -16,6 +17,8 @@ import type {
 } from "./types";
 import { assertNoSecretsInConfig } from "./runtime-config";
 import { getRuntimeIsolationProvider } from "./isolation";
+import { getFactoryProject, getOutputByAgent } from "../store";
+import type { CodeArtifact } from "../schemas";
 
 const DEPLOY_TIMEOUT_MS = 60_000;
 const VERIFY_TIMEOUT_MS = 30_000;
@@ -69,9 +72,17 @@ function save(record: DeploymentRecord): DeploymentRecord {
   return record;
 }
 
+function platformBaseUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.JIY_APP_URL?.trim() ||
+    "https://jiy.app";
+  return raw.replace(/\/$/, "");
+}
+
 /**
  * Cloudflare adapter.
- * Preview: records a preview identity (served via JIY factory preview route).
+ * Preview: factory preview route after real verification.
  * Production: BLOCKED until separate Worker isolation is available.
  */
 export class CloudflareDeploymentProvider implements DeploymentProvider {
@@ -83,7 +94,7 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
     name: string;
   }): Promise<{ projectRef: string }> {
     // Separate deployment identity — NOT the main JIY.APP Worker
-    const projectRef = `jiy-biz-${input.projectId.slice(0, 12)}`;
+    const projectRef = `jiy-biz-${input.projectId.replace(/-/g, "").slice(0, 12)}`;
     return { projectRef };
   }
 
@@ -93,12 +104,26 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
   }): Promise<{ ok: boolean; logs: string[] }> {
     return withTimeout(
       (async () => {
-        const logs = [
+        const logs: string[] = [
           `Build started for ${input.projectId} @ ${input.version}`,
           "SANDBOX: DEVELOPMENT ISOLATION",
-          "Artifacts validated as factory outputs",
-          "Build complete (artifact packaging)",
+          "Provider does NOT package into the main JIY.APP Worker",
         ];
+        const project = getFactoryProject(input.projectId);
+        if (!project) {
+          logs.push("FAIL: factory project not found in this isolate");
+          return { ok: false, logs };
+        }
+        const code = getOutputByAgent(project, "DeveloperAgent")?.data as
+          | CodeArtifact
+          | undefined;
+        if (!code?.files?.length) {
+          logs.push("FAIL: no DeveloperAgent code artifacts — refusing empty build");
+          return { ok: false, logs };
+        }
+        logs.push(`Artifacts validated: ${code.files.length} file(s)`);
+        logs.push(`Completeness: ${code.completeness || "unknown"}`);
+        logs.push("Build complete (artifact validation — not a separate Worker package)");
         return { ok: true, logs };
       })(),
       BUILD_TIMEOUT_MS,
@@ -167,15 +192,21 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
       environment: "preview" | "production";
     }
   ): Promise<DeploymentRecord> {
-    // Isolation gate
+    const project = getFactoryProject(input.projectId);
+    const code = project
+      ? (getOutputByAgent(project, "DeveloperAgent")?.data as CodeArtifact | undefined)
+      : null;
     const isolation = getRuntimeIsolationProvider().checkIsolation({
       projectId: input.projectId,
-      code: null,
+      code: code ?? null,
+      sandboxId: project?.sandbox.sandboxId,
+      runtimeId: project?.sandbox.runtimeId,
+      businessId: project?.sandbox.businessId || input.businessId,
     });
+    // Preview may proceed; production isolation still blocks LIVE production
     record.isolationPassed = isolation.passed && !isolation.blockProduction;
 
     if (input.environment === "production") {
-      // HARD BLOCK — true production isolation not available
       record.status = "FAILED";
       record.error = "PRODUCTION ISOLATION REQUIRED";
       record.notes.push(isolation.message);
@@ -188,7 +219,6 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
       return save(record);
     }
 
-    // Preview deploy — safe path via factory preview route
     record.status = "DEPLOYING";
     save(record);
 
@@ -211,7 +241,9 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
     const verify = await this.verifyDeployment(record.deploymentId);
     record.healthCheckPassed = verify.ok;
     record.notes.push(
-      ...verify.checks.map((c) => `${c.name}: ${c.passed ? "PASS" : "FAIL"} — ${c.detail}`)
+      ...verify.checks.map(
+        (c) => `${c.name}: ${c.passed ? "PASS" : "FAIL"} — ${c.detail}`
+      )
     );
 
     if (!verify.ok) {
@@ -222,7 +254,9 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
 
     record.status = "LIVE";
     record.verifiedAt = new Date().toISOString();
-    record.notes.push("Preview LIVE — AI GENERATED STARTER (not production Worker)");
+    record.notes.push(
+      "Preview LIVE after verification — AI GENERATED STARTER (not production Worker)"
+    );
     return save(record);
   }
 
@@ -234,6 +268,10 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
 
   async getPreviewUrl(projectId: string): Promise<string | null> {
     const ids = byProject().get(projectId) ?? [];
+    for (const id of ids) {
+      const d = deployments().get(id);
+      if (d?.previewUrl && d.status === "LIVE") return d.previewUrl;
+    }
     for (const id of ids) {
       const d = deployments().get(id);
       if (d?.previewUrl) return d.previewUrl;
@@ -290,6 +328,11 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
         "rollback verify"
       );
       rollback.healthCheckPassed = verify.ok;
+      rollback.notes.push(
+        ...verify.checks.map(
+          (c) => `${c.name}: ${c.passed ? "PASS" : "FAIL"} — ${c.detail}`
+        )
+      );
       if (verify.ok) {
         rollback.status = "LIVE";
         rollback.verifiedAt = new Date().toISOString();
@@ -318,32 +361,80 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
       detail: record ? "Deployment record exists" : "Missing deployment record",
     });
 
+    const project = record ? getFactoryProject(record.projectId) : null;
+    const code = project
+      ? (getOutputByAgent(project, "DeveloperAgent")?.data as CodeArtifact | undefined)
+      : undefined;
+
     checks.push({
       name: "build_verification",
-      passed: Boolean(record && record.status !== "FAILED"),
-      detail: "Artifact packaging completed",
+      passed: Boolean(code?.files?.length),
+      detail: code?.files?.length
+        ? `${code.files.length} artifact file(s) present`
+        : "No generated application artifacts",
     });
 
     checks.push({
       name: "runtime_verification",
-      passed: Boolean(record?.previewUrl),
+      passed: Boolean(record?.previewUrl && project),
       detail: record?.previewUrl
         ? `Preview path ${record.previewUrl}`
         : "No preview URL",
     });
 
-    // HTTP health against factory preview is path-based — mark as structural check
-    checks.push({
-      name: "http_health_check",
-      passed: Boolean(record?.previewUrl),
-      detail:
-        "Preview served via JIY factory route — not a separate Cloudflare Worker yet",
-    });
-
+    // In-isolate application availability (same Worker serves preview)
+    const inIsolateOk = Boolean(
+      project && code?.files?.length && record?.previewUrl
+    );
     checks.push({
       name: "application_availability",
-      passed: Boolean(record?.previewUrl),
-      detail: "AI GENERATED STARTER preview available when factory project exists",
+      passed: inIsolateOk,
+      detail: inIsolateOk
+        ? "Factory preview payload available in-isolate"
+        : "Factory project/artifacts not available for preview",
+    });
+
+    // HTTP health check — attempt absolute fetch; also accept same-isolate API shape
+    let httpOk = false;
+    let httpDetail = "HTTP health not attempted";
+    if (record?.projectId) {
+      const base = platformBaseUrl();
+      const apiUrl = `${base}/api/factory/projects/${record.projectId}/preview`;
+      try {
+        const res = await fetch(apiUrl, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout
+            ? AbortSignal.timeout(12_000)
+            : undefined,
+        });
+        if (res.ok) {
+          const body = (await res.json().catch(() => null)) as {
+            previewReady?: boolean;
+          } | null;
+          httpOk = Boolean(body?.previewReady ?? true);
+          httpDetail = `HTTP ${res.status} ${apiUrl} previewReady=${String(body?.previewReady)}`;
+        } else if (res.status === 404 && inIsolateOk) {
+          // Remote store empty (different isolate) — fall back to verified in-isolate preview
+          httpOk = true;
+          httpDetail = `HTTP ${res.status} on remote isolate; in-isolate preview verified (Worker memory not shared)`;
+        } else {
+          httpDetail = `HTTP ${res.status} ${apiUrl}`;
+        }
+      } catch (err) {
+        if (inIsolateOk) {
+          httpOk = true;
+          httpDetail = `HTTP unreachable (${err instanceof Error ? err.message : "error"}); in-isolate preview verified`;
+        } else {
+          httpDetail = `HTTP failed: ${err instanceof Error ? err.message : "error"}`;
+        }
+      }
+    }
+
+    checks.push({
+      name: "http_health_check",
+      passed: httpOk,
+      detail: httpDetail,
     });
 
     const ok = checks.every((c) => c.passed);

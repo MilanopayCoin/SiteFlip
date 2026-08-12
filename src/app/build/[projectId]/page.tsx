@@ -52,6 +52,28 @@ export default function FactoryProjectPage() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "missing">(
     "loading"
   );
+  const [deployments, setDeployments] = useState<
+    Array<{
+      deploymentId: string;
+      version: string;
+      status: string;
+      previewUrl: string | null;
+      productionUrl: string | null;
+      healthCheckPassed: boolean | null;
+      verifiedAt: string | null;
+      error: string | null;
+      notes: string[];
+      createdAt: string;
+    }>
+  >([]);
+  const [deployMeta, setDeployMeta] = useState<{
+    productionGate?: { ok: boolean; blockers: string[] };
+    isolation?: { blockProduction?: boolean; message?: string };
+  } | null>(null);
+  const [domains, setDomains] = useState<
+    Array<{ domain: string; status: string; notes?: string[] }>
+  >([]);
+  const [domainInput, setDomainInput] = useState("");
   const autoStarted = useRef(false);
 
   const load = useCallback(async () => {
@@ -197,7 +219,34 @@ export default function FactoryProjectPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, searchParams]);
 
-  async function deployAction(action: "preview" | "production") {
+  const loadDeployments = useCallback(async () => {
+    const res = await fetch(`/api/factory/projects/${id}/deploy`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setDeployments(data.deployments || []);
+    setDeployMeta({
+      productionGate: data.productionGate,
+      isolation: data.isolation,
+    });
+  }, [id]);
+
+  const loadDomains = useCallback(async () => {
+    const res = await fetch(`/api/factory/projects/${id}/domains`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setDomains(data.domains || []);
+  }, [id]);
+
+  useEffect(() => {
+    if (workspaceTab !== "Deployment") return;
+    const t = window.setTimeout(() => {
+      void loadDeployments();
+      void loadDomains();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [workspaceTab, loadDeployments, loadDomains]);
+
+  async function deployAction(action: "preview" | "production" | "rollback", targetDeploymentId?: string) {
     setBusy(true);
     setError(null);
     const cached = readCachedFactoryProject(id);
@@ -213,6 +262,7 @@ export default function FactoryProjectPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action,
+        targetDeploymentId,
         project: cached ?? project,
       }),
     });
@@ -229,6 +279,31 @@ export default function FactoryProjectPage() {
       );
     }
     await load();
+    await loadDeployments();
+    setBusy(false);
+  }
+
+  async function domainAction(
+    action: "add" | "verify" | "connect" | "remove",
+    domain?: string
+  ) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/factory/projects/${id}/domains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        domain: domain || domainInput,
+        project: readCachedFactoryProject(id) ?? project,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(data.error || "Domain action failed");
+    }
+    if (action === "add") setDomainInput("");
+    await loadDomains();
     setBusy(false);
   }
 
@@ -641,7 +716,7 @@ export default function FactoryProjectPage() {
       {workspaceTab === "Deployment" && (
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Deployment — JIY.APP V4</CardTitle>
+            <CardTitle>Deployment — JIY.APP V4.4</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
@@ -649,10 +724,14 @@ export default function FactoryProjectPage() {
                 PRODUCTION ISOLATION REQUIRED
               </p>
               <p className="mt-1 text-zinc-400">
-                Current mode is SANDBOX: DEVELOPMENT ISOLATION. Generated apps are
-                not deployed into the main JIY.APP Worker. Production LIVE is blocked
-                until separate Worker identities and resource isolation exist.
+                {deployMeta?.isolation?.message ||
+                  "Current mode is SANDBOX: DEVELOPMENT ISOLATION. Generated apps are not deployed into the main JIY.APP Worker. Production LIVE is blocked until separate Worker identities and resource isolation exist."}
               </p>
+              {deployMeta?.productionGate && !deployMeta.productionGate.ok && (
+                <p className="mt-2 text-xs text-amber-300/90">
+                  Gate blockers: {deployMeta.productionGate.blockers.join(" · ")}
+                </p>
+              )}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -692,9 +771,121 @@ export default function FactoryProjectPage() {
                 <Link href={`/build/${id}/preview`}>Open preview</Link>
               </Button>
             </div>
+
+            <div className="space-y-2 border-t border-white/5 pt-4">
+              <p className="font-medium text-zinc-200">Deployment versions</p>
+              {deployments.length === 0 ? (
+                <p className="text-xs text-zinc-500">
+                  No deployments yet — deploy preview to create a version record.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {deployments.map((d) => (
+                    <li
+                      key={d.deploymentId}
+                      className="rounded-lg border border-white/10 bg-black/20 p-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={d.status === "LIVE" ? "success" : "outline"}>
+                          {d.status}
+                        </Badge>
+                        <span className="text-xs text-zinc-400">{d.version}</span>
+                        <span className="text-xs text-zinc-600">{d.deploymentId}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Health:{" "}
+                        {d.healthCheckPassed === true
+                          ? "PASS"
+                          : d.healthCheckPassed === false
+                            ? "FAIL"
+                            : "—"}
+                        {d.verifiedAt ? ` · verified ${d.verifiedAt}` : ""}
+                      </p>
+                      {d.error && (
+                        <p className="mt-1 text-xs text-rose-400">{d.error}</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => deployAction("rollback", d.deploymentId)}
+                        >
+                          Request rollback
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="space-y-2 border-t border-white/5 pt-4">
+              <p className="font-medium text-zinc-200">Domains</p>
+              <p className="text-xs text-zinc-500">
+                Architecture supports businessname.jiy.app and custom domains. DNS is
+                never auto-modified — verification uses DNS-over-HTTPS only.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  className="min-w-[200px] flex-1 rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100"
+                  placeholder="custom.example.com"
+                  value={domainInput}
+                  onChange={(e) => setDomainInput(e.target.value)}
+                />
+                <Button
+                  size="sm"
+                  disabled={busy || !domainInput.trim()}
+                  onClick={() => domainAction("add")}
+                >
+                  Add domain
+                </Button>
+              </div>
+              {domains.length === 0 ? (
+                <p className="text-xs text-zinc-500">No domains registered.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {domains.map((d) => (
+                    <li
+                      key={d.domain}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 p-2"
+                    >
+                      <span className="text-zinc-200">{d.domain}</span>
+                      <Badge variant="outline">{d.status}</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => domainAction("verify", d.domain)}
+                      >
+                        Verify DNS
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => domainAction("connect", d.domain)}
+                      >
+                        Connect
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => domainAction("remove", d.domain)}
+                      >
+                        Remove
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             <p className="text-xs text-zinc-500">
               AI GENERATED STARTER · Approval required before production attempt ·
-              Mollie not auto-connected · Domain DNS never auto-modified
+              LIVE only after health verification · Mollie not auto-connected · Domain
+              DNS never auto-modified
             </p>
           </CardContent>
         </Card>
