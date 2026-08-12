@@ -20,6 +20,7 @@ const FILES = [
   "002_business_factory.sql",
   "003_mvp_production.sql",
   "004_mollie_payments.sql",
+  "005_fix_profiles_rls_recursion.sql",
 ];
 
 /** Postgres codes we treat as "already applied" (non-destructive continue). */
@@ -208,7 +209,7 @@ function resolveConnection(dbUrl) {
     const ref = m[1];
     return {
       host: "aws-0-eu-central-1.pooler.supabase.com",
-      port: 6543,
+      port: 5432, // Session mode (Cloudflare Free / external migrator)
       user: user.includes(".") ? user : `postgres.${ref}`,
       password,
       database,

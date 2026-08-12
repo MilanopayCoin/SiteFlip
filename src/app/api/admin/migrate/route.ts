@@ -30,6 +30,7 @@ const MIGRATION_FILES = [
   "002_business_factory.sql",
   "003_mvp_production.sql",
   "004_mollie_payments.sql",
+  "005_fix_profiles_rls_recursion.sql",
 ] as const;
 
 async function statusPayload() {

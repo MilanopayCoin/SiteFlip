@@ -106,8 +106,10 @@ export async function upsertProfile(input: {
   const status = await getSchemaStatus();
   if (status.productionPersistence) {
     // Prefer authenticated session (RLS: insert/update own profile).
-    // Fall back to service role only if session client is unavailable.
-    const supabase = await persistenceClient(false);
+    // Fall back to service role for signup bootstrap (no session yet / trigger race).
+    const sessionClient = await createClient();
+    const serviceClient = await createServiceClient();
+    const supabase = sessionClient || serviceClient;
     if (!supabase) {
       return {
         profile: ensureMemoryProfile(input.id, input.email, {
@@ -119,23 +121,54 @@ export async function upsertProfile(input: {
       };
     }
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: input.id,
-          email: input.email,
-          username: input.username,
-          display_name: input.displayName,
-          full_name: input.displayName,
-          country: input.country || null,
-          bio: input.bio || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" }
-      )
-      .select("*")
-      .single();
+    const row = {
+      id: input.id,
+      email: input.email,
+      username: input.username,
+      display_name: input.displayName,
+      full_name: input.displayName,
+      country: input.country || null,
+      bio: input.bio || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    let data: Record<string, unknown> | null = null;
+    let error: { message?: string } | null = null;
+
+    {
+      const first = await supabase
+        .from("profiles")
+        .upsert(row, { onConflict: "id" })
+        .select("*")
+        .single();
+      data = (first.data as Record<string, unknown> | null) ?? null;
+      error = first.error;
+    }
+
+    // Session upsert can fail before email confirmation or if RLS misbehaves;
+    // service role is server-only and used only to finish profile bootstrap.
+    if ((error || !data) && serviceClient && serviceClient !== supabase) {
+      const second = await serviceClient
+        .from("profiles")
+        .upsert(row, { onConflict: "id" })
+        .select("*")
+        .single();
+      data = (second.data as Record<string, unknown> | null) ?? null;
+      error = second.error;
+    }
+
+    // Signup trigger may already have created the row — treat that as success.
+    if ((error || !data) && serviceClient) {
+      const existing = await serviceClient
+        .from("profiles")
+        .select("*")
+        .eq("id", input.id)
+        .maybeSingle();
+      if (existing.data) {
+        data = existing.data as Record<string, unknown>;
+        error = null;
+      }
+    }
 
     if (error || !data) {
       return {

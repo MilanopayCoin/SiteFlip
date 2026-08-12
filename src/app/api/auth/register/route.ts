@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { profileCompletionPercent } from "@/lib/profile/completion";
 import {
+  loadProfileById,
   loadProfileByUsername,
   upsertProfile,
 } from "@/lib/profile/supabase-store";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 
@@ -97,7 +98,32 @@ export async function POST(request: Request) {
       );
     }
 
-    const persisted = await upsertProfile({
+    // Supabase "Confirm email" leaves signUp without a session. When the Worker
+    // has the service role, confirm + sign-in so production apps get a session
+    // cookie immediately (email magic-link confirm remains available otherwise).
+    let session = data.session;
+    let emailAutoConfirmed = false;
+    if (!session) {
+      const admin = await createServiceClient();
+      if (admin) {
+        const { error: confirmErr } = await admin.auth.admin.updateUserById(
+          userId,
+          { email_confirm: true }
+        );
+        if (!confirmErr) {
+          emailAutoConfirmed = true;
+          const signed = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+          if (signed.data.session) {
+            session = signed.data.session;
+          }
+        }
+      }
+    }
+
+    let persisted = await upsertProfile({
       id: userId,
       email,
       username,
@@ -105,9 +131,26 @@ export async function POST(request: Request) {
       country: country || "",
     });
 
+    // Signup trigger may already have written the row — prefer DB truth over LOCAL mirror.
+    if (persisted.mode !== "supabase") {
+      const fromDb = await loadProfileById(userId);
+      if (fromDb.profile && fromDb.mode === "supabase") {
+        persisted = {
+          profile: {
+            ...fromDb.profile,
+            username: username || fromDb.profile.username,
+            displayName: displayName || fromDb.profile.displayName,
+            country: country || fromDb.profile.country,
+            persistenceMode: "SUPABASE",
+          },
+          mode: "supabase",
+        };
+      }
+    }
+
     return NextResponse.json({
       ok: true,
-      mode: data.session
+      mode: session
         ? persisted.mode === "supabase"
           ? "supabase_session"
           : "supabase_session_profile_pending"
@@ -115,12 +158,15 @@ export async function POST(request: Request) {
       user: { id: userId, email },
       profile: persisted.profile,
       completionPercent: profileCompletionPercent(persisted.profile),
-      hasSession: Boolean(data.session),
+      hasSession: Boolean(session),
+      emailAutoConfirmed,
       persistenceMode: persisted.profile.persistenceMode,
       schemaReady: status.schemaReady,
       note:
         persisted.mode === "supabase"
-          ? "Profile persisted to Supabase"
+          ? session
+            ? "Profile persisted to Supabase"
+            : "Profile persisted — confirm email to obtain a session"
           : `Profile not fully persisted — ${persisted.error || status.reason || "schema pending"}`,
     });
   }

@@ -12,7 +12,7 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy && npm run cf:secrets || true",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "cf:secrets": "bash scripts/cf-put-secrets.sh",
-    "db:migrate": "node scripts/apply-migrations.mjs"
+    "db:migrate": "node scripts/apply-migrations.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

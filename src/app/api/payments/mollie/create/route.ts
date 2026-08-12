@@ -163,8 +163,16 @@ export async function POST(request: Request) {
       provider_ref: payment.id,
       purpose: input.type,
       status: payment.status,
+      transaction_id: transactionId,
+      checkout_url: checkoutUrl,
+      idempotency_key: idempotencyKey,
+      raw_status: payment.status,
+      updated_at: new Date().toISOString(),
     });
-    void payErr; // table/RLS may be pending — transaction still stores payment_ref
+    if (payErr) {
+      // Transaction + payment_ref still authoritative; surface payment row failure honestly
+      console.error("payments insert failed", payErr.message);
+    }
     await supabase
       .from("transactions")
       .update({
