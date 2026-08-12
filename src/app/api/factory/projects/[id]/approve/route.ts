@@ -76,15 +76,61 @@ export async function POST(request: Request, ctx: Ctx) {
     appendActivity(
       project,
       "User",
-      "Payment activation approved — connect Stripe keys in env (not stored in AI memory)",
+      "Payment activation approved — connect provider keys in env (not stored in AI memory)",
       "success"
     );
-    // Mark payment output as user-approved architecture, still needs integration
     const pay = [...project.outputs].reverse().find((o) => o.agent === "PaymentAgent");
     if (pay) {
       pay.implementationStatus = "requires_external_integration";
       pay.data = { ...pay.data, userApprovedActivation: true, activated: false };
     }
+    saveFactoryProject(project);
+    return NextResponse.json({ project, approval });
+  }
+
+  if (approval.action === "landing_page_finalize") {
+    approval.status = "APPROVED";
+    approval.resolvedAt = new Date().toISOString();
+    const landing = [...project.outputs]
+      .reverse()
+      .find((o) => o.agent === "DeveloperAgent");
+    if (landing) landing.implementationStatus = "user_approved";
+    appendActivity(project, "User", "Landing page finalized (sandbox only)", "success");
+    saveFactoryProject(project);
+    return NextResponse.json({ project, approval });
+  }
+
+  if (
+    approval.action === "marketplace_listing" ||
+    approval.action === "publish_listing"
+  ) {
+    approval.status = "APPROVED";
+    approval.resolvedAt = new Date().toISOString();
+    appendActivity(
+      project,
+      "User",
+      approval.action === "publish_listing"
+        ? "Marketplace publish approved — complete listing on /sell (not auto-published)"
+        : "Marketplace listing prep approved — use BUILD → SELL to generate draft",
+      "success"
+    );
+    saveFactoryProject(project);
+    return NextResponse.json({
+      project,
+      approval,
+      next: `/build/${id}/sell`,
+    });
+  }
+
+  if (approval.action === "domain_connect") {
+    approval.status = "APPROVED";
+    approval.resolvedAt = new Date().toISOString();
+    appendActivity(
+      project,
+      "User",
+      "Domain connection approved — configure DNS externally (not automated)",
+      "success"
+    );
     saveFactoryProject(project);
     return NextResponse.json({ project, approval });
   }

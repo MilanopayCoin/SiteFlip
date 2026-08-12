@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+export const claimClassSchema = z.enum([
+  "VERIFIED",
+  "USER_PROVIDED",
+  "AI_HYPOTHESIS",
+]);
+
+export const claimedStatementSchema = z.object({
+  statement: z.string(),
+  claimClass: claimClassSchema,
+});
+
 export const factoryBriefSchema = z.object({
   idea: z.string().min(10, "Describe your idea in at least 10 characters"),
   budget: z.string().min(1),
@@ -11,15 +22,21 @@ export const factoryBriefSchema = z.object({
   experienceLevel: z.string().optional(),
   availableTime: z.string().optional(),
   riskLevel: z.string().optional(),
+  businessModel: z.string().optional(),
+  workloadPreference: z.string().optional(),
 });
 
 export const businessPlanSchema = z.object({
   businessName: z.string(),
+  businessDescription: z.string().default(""),
   businessModel: z.string(),
   targetCustomer: z.string(),
   problem: z.string(),
   solution: z.string(),
+  valueProposition: z.string().default(""),
   revenueModel: z.string(),
+  mainCompetitors: z.array(z.string()).default([]),
+  growthOpportunities: z.array(z.string()).default([]),
   pricing: z.object({
     tiers: z.array(
       z.object({
@@ -32,25 +49,36 @@ export const businessPlanSchema = z.object({
   mvpScope: z.array(z.string()),
   growthStrategy: z.array(z.string()),
   risks: z.array(z.string()),
-  labeledAssumptions: z.array(z.string()),
+  keyRisks: z.array(z.string()).default([]),
+  labeledAssumptions: z.array(z.string()).default([]),
+  claims: z.array(claimedStatementSchema).optional(),
 });
 
 export const marketAnalysisSchema = z.object({
   targetMarket: z.string(),
+  customerSegments: z.array(z.string()).default([]),
+  marketAssumptions: z.array(claimedStatementSchema).default([]),
   competitorCategories: z.array(z.string()),
+  competitivePositioning: z.array(z.string()).default([]),
   customerPainPoints: z.array(z.string()),
   pricingOpportunities: z.array(z.string()),
   differentiation: z.array(z.string()),
+  opportunities: z.array(z.string()).default([]),
   marketRisks: z.array(z.string()),
   aiHypotheses: z.array(z.string()),
   verifiedResearch: z.array(z.string()),
   userProvided: z.array(z.string()),
+  claims: z.array(claimedStatementSchema).default([]),
 });
 
 export const brandSchema = z.object({
   brandName: z.string(),
+  brandNameOptions: z.array(z.string()).min(1).default(["Brand"]),
   tagline: z.string(),
   brandDescription: z.string(),
+  brandPositioning: z.string().default(""),
+  tone: z.array(z.string()).default([]),
+  visualDirection: z.string().default(""),
   colorDirection: z.object({
     primary: z.string(),
     secondary: z.string(),
@@ -66,11 +94,13 @@ export const brandSchema = z.object({
   domainSuggestions: z.array(z.string()),
   socialHandleSuggestions: z.array(z.string()),
   domainAvailabilityNote: z.string(),
-  labeledAssumptions: z.array(z.string()),
+  labeledAssumptions: z.array(z.string()).default([]),
 });
 
 export const productSpecSchema = z.object({
+  coreProduct: z.string().default(""),
   mvpFeatures: z.array(z.string()),
+  futureFeatures: z.array(z.string()).default([]),
   userRoles: z.array(z.string()),
   userJourneys: z.array(
     z.object({ name: z.string(), steps: z.array(z.string()) })
@@ -81,9 +111,11 @@ export const productSpecSchema = z.object({
   pricingPages: z.array(z.string()),
   settings: z.array(z.string()),
   coreWorkflows: z.array(z.string()),
+  monetization: z.array(z.string()).default([]),
+  mvpScope: z.array(z.string()).default([]),
   databaseRequirements: z.array(z.string()),
   apiRequirements: z.array(z.string()),
-  labeledAssumptions: z.array(z.string()),
+  labeledAssumptions: z.array(z.string()).default([]),
 });
 
 export const architectureSchema = z.object({
@@ -92,31 +124,49 @@ export const architectureSchema = z.object({
   database: z.array(z.string()),
   authentication: z.array(z.string()),
   apis: z.array(z.string()),
+  apiStructure: z.array(z.string()).default([]),
   thirdPartyIntegrations: z.array(z.string()),
   fileStorage: z.array(z.string()),
   payments: z.array(z.string()),
   email: z.array(z.string()),
   analytics: z.array(z.string()),
+  hosting: z.array(z.string()).default([]),
   security: z.array(z.string()),
+  securityConsiderations: z.array(z.string()).default([]),
+  estimatedComplexity: z.enum(["low", "medium", "high"]).default("medium"),
   techStack: z.array(z.string()),
+  labeledAssumptions: z.array(z.string()).default([]),
+});
+
+export const securityReviewSchema = z.object({
+  risks: z.array(z.string()),
+  mitigations: z.array(z.string()),
+  rlsRequirements: z.array(z.string()),
+  secretHandling: z.array(z.string()),
+  sandboxBoundaries: z.array(z.string()),
+  forbiddenActions: z.array(z.string()),
   labeledAssumptions: z.array(z.string()),
 });
 
 export const contentSchema = z.object({
   hero: z.object({ headline: z.string(), subheadline: z.string(), cta: z.string() }),
   features: z.array(z.object({ title: z.string(), body: z.string() })),
+  howItWorks: z
+    .array(z.object({ step: z.string(), detail: z.string() }))
+    .default([]),
   benefits: z.array(z.string()),
   pricingCopy: z.string(),
   faq: z.array(z.object({ q: z.string(), a: z.string() })),
   about: z.string(),
   contact: z.string(),
+  footer: z.string().default(""),
   termsPlaceholder: z.string(),
   privacyPlaceholder: z.string(),
   seoMetadata: z.object({
     title: z.string(),
     description: z.string(),
   }),
-  labeledAssumptions: z.array(z.string()),
+  labeledAssumptions: z.array(z.string()).default([]),
 });
 
 export const seoSchema = z.object({
@@ -177,7 +227,6 @@ export const codeArtifactSchema = z.object({
   ),
   dependencies: z.array(z.string()),
   notes: z.array(z.string()),
-  /** Never claims full production SaaS if only landing exists */
   completeness: z.enum([
     "landing_page_only",
     "starter_mvp_scaffold",
@@ -228,23 +277,31 @@ export const growthPlanSchema = z.object({
       actions: z.array(z.string()),
     })
   ),
-  labeledAssumptions: z.array(z.string()),
+  seoSuggestions: z.array(z.string()).default([]),
+  conversionSuggestions: z.array(z.string()).default([]),
+  productImprovements: z.array(z.string()).default([]),
+  labeledAssumptions: z.array(z.string()).default([]),
 });
 
 export const financeEstimateSchema = z.object({
   estimatedAiCostEur: z.number(),
   estimatedInfraMonthlyEur: z.number(),
   estimatedThirdPartyMonthlyEur: z.number(),
+  developmentComplexity: z.enum(["low", "medium", "high"]).default("medium"),
+  monthlyOperatingEstimateEur: z.number().default(0),
   businessValueEstimateEur: z.number().nullable(),
   valueEstimateNote: z.string(),
-  labeledAssumptions: z.array(z.string()),
+  labeledAssumptions: z.array(z.string()).default([]),
 });
 
+export type ClaimClass = z.infer<typeof claimClassSchema>;
+export type ClaimedStatement = z.infer<typeof claimedStatementSchema>;
 export type BusinessPlan = z.infer<typeof businessPlanSchema>;
 export type MarketAnalysis = z.infer<typeof marketAnalysisSchema>;
 export type BrandPlan = z.infer<typeof brandSchema>;
 export type ProductSpec = z.infer<typeof productSpecSchema>;
 export type ArchitectureSpec = z.infer<typeof architectureSchema>;
+export type SecurityReview = z.infer<typeof securityReviewSchema>;
 export type ContentPack = z.infer<typeof contentSchema>;
 export type SeoPack = z.infer<typeof seoSchema>;
 export type DatabaseSpec = z.infer<typeof databaseSpecSchema>;

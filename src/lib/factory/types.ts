@@ -1,4 +1,4 @@
-/** AI Business Factory — core types */
+/** AI Business Factory V1 — core types */
 
 export type FactoryProjectState =
   | "IDEA"
@@ -9,6 +9,7 @@ export type FactoryProjectState =
   | "TESTING"
   | "PREVIEW"
   | "APPROVAL_REQUIRED"
+  | "READY"
   | "DEPLOYING"
   | "LIVE"
   | "FAILED"
@@ -21,6 +22,7 @@ export type FactoryAgentName =
   | "BrandAgent"
   | "ProductAgent"
   | "ArchitectureAgent"
+  | "SecurityAgent"
   | "DeveloperAgent"
   | "DatabaseAgent"
   | "PaymentAgent"
@@ -29,7 +31,9 @@ export type FactoryAgentName =
   | "TestingAgent"
   | "GrowthAgent"
   | "FinanceAgent"
-  | "DeploymentAgent";
+  | "DeploymentAgent"
+  | "PassportAgent"
+  | "ScoreAgent";
 
 export type FactoryTaskStatus =
   | "WAITING"
@@ -48,19 +52,31 @@ export type DeploymentStatus =
   | "LIVE"
   | "FAILED";
 
+/** Visible V1 pipeline stages */
 export type PipelineStepId =
   | "IDEA"
-  | "MARKET"
-  | "BUSINESS"
+  | "ANALYSIS"
+  | "BLUEPRINT"
   | "BRAND"
   | "PRODUCT"
-  | "CODE"
-  | "DATABASE"
-  | "PAYMENTS"
-  | "SEO"
-  | "TEST"
-  | "DEPLOY"
-  | "LIVE";
+  | "TECH"
+  | "LANDING"
+  | "PASSPORT"
+  | "AI_SCORE"
+  | "PREVIEW"
+  | "APPROVAL"
+  | "READY";
+
+export type ClaimClass = "VERIFIED" | "USER_PROVIDED" | "AI_HYPOTHESIS";
+
+export type FactoryPersistenceMode = "LOCAL" | "DEMO" | "SUPABASE";
+
+export type FactoryOutputSource =
+  | "openai"
+  | "groq"
+  | "gemini"
+  | "ollama"
+  | "heuristic";
 
 export interface FactoryBrief {
   idea: string;
@@ -73,6 +89,8 @@ export interface FactoryBrief {
   experienceLevel?: string;
   availableTime?: string;
   riskLevel?: string;
+  businessModel?: string;
+  workloadPreference?: string;
 }
 
 export interface FactoryTask {
@@ -98,8 +116,7 @@ export interface FactoryOutput {
   schemaName: string;
   data: Record<string, unknown>;
   labeledAssumptions: string[];
-  source: "openai" | "heuristic";
-  /** AI-generated | user-approved | auto-implemented | needs-integration | needs-human */
+  source: FactoryOutputSource;
   implementationStatus:
     | "ai_generated"
     | "user_approved"
@@ -121,7 +138,10 @@ export interface FactoryApproval {
     | "delete_resources"
     | "publish_legal"
     | "cost_threshold"
-    | "change_request";
+    | "change_request"
+    | "landing_page_finalize"
+    | "marketplace_listing"
+    | "publish_listing";
   title: string;
   explanation: string;
   services: string[];
@@ -167,11 +187,12 @@ export interface FactoryMemoryEntry {
     | "ai_decision"
     | "user_approval"
     | "deployment_history"
-    | "growth_plan";
+    | "growth_plan"
+    | "business_passport"
+    | "security_review";
   key: string;
   value: Record<string, unknown>;
   createdAt: string;
-  /** Never store secrets here */
 }
 
 export interface FactorySandbox {
@@ -179,7 +200,7 @@ export interface FactorySandbox {
   ownerId: string;
   schemaStrategy: "isolated_schema" | "isolated_project";
   storagePrefix: string;
-  envConfigKeys: string[]; // names only — never values
+  envConfigKeys: string[];
   buildLogs: string[];
   deploymentStatus: DeploymentStatus;
   previewUrl: string | null;
@@ -188,6 +209,15 @@ export interface FactorySandbox {
 
 export interface FactoryQualityScore {
   overall: number;
+  /** V1 AI Score factors */
+  marketClarity: number;
+  problemStrength: number;
+  businessModel: number;
+  competition: number;
+  executionComplexity: number;
+  growthPotential: number;
+  risk: number;
+  /** Supporting dimensions */
   businessClarity: number;
   marketFit: number;
   ux: number;
@@ -198,6 +228,25 @@ export interface FactoryQualityScore {
   monetization: number;
   mobileReadiness: number;
   completeness: number;
+  /** Why the score was calculated — never fabricate external data */
+  explanations: string[];
+}
+
+export interface BusinessPassport {
+  businessId: string;
+  businessName: string;
+  createdAt: string;
+  businessModel: string;
+  targetCustomer: string;
+  technology: string[];
+  revenueModel: string;
+  aiScore: number | null;
+  factoryStatus: FactoryProjectState;
+  lifecycle: "BUILDING" | "READY" | "LISTED" | "GROWING" | "SOLD";
+  owner: string;
+  timeline: Array<{ at: string; label: string }>;
+  persistenceMode: FactoryPersistenceMode;
+  persistenceNote: string;
 }
 
 export interface FactoryProject {
@@ -216,7 +265,9 @@ export interface FactoryProject {
   sandbox: FactorySandbox;
   usage: FactoryUsage;
   quality: FactoryQualityScore | null;
+  passport: BusinessPassport | null;
   growthPlan: string[] | null;
+  persistenceMode: FactoryPersistenceMode;
   activityLog: Array<{
     id: string;
     at: string;
@@ -237,26 +288,27 @@ export const PIPELINE_STEPS: Array<{
   mvp: boolean;
 }> = [
   { id: "IDEA", number: "01", label: "IDEA", agent: "BusinessAgent", mvp: true },
-  { id: "MARKET", number: "02", label: "MARKET", agent: "MarketAgent", mvp: true },
-  { id: "BUSINESS", number: "03", label: "BUSINESS", agent: "BusinessAgent", mvp: true },
+  { id: "ANALYSIS", number: "02", label: "ANALYSIS", agent: "MarketAgent", mvp: true },
+  { id: "BLUEPRINT", number: "03", label: "BUSINESS BLUEPRINT", agent: "BusinessAgent", mvp: true },
   { id: "BRAND", number: "04", label: "BRAND", agent: "BrandAgent", mvp: true },
   { id: "PRODUCT", number: "05", label: "PRODUCT", agent: "ProductAgent", mvp: true },
-  { id: "CODE", number: "06", label: "CODE", agent: "DeveloperAgent", mvp: true },
-  { id: "DATABASE", number: "07", label: "DATABASE", agent: "DatabaseAgent", mvp: true },
-  { id: "PAYMENTS", number: "08", label: "PAYMENTS", agent: "PaymentAgent", mvp: true },
-  { id: "SEO", number: "09", label: "SEO", agent: "SEOAgent", mvp: true },
-  { id: "TEST", number: "10", label: "TEST", agent: "TestingAgent", mvp: true },
-  { id: "DEPLOY", number: "11", label: "DEPLOY", agent: "DeploymentAgent", mvp: true },
-  { id: "LIVE", number: "12", label: "LIVE", agent: "DeploymentAgent", mvp: true },
+  { id: "TECH", number: "06", label: "TECH ARCHITECTURE", agent: "ArchitectureAgent", mvp: true },
+  { id: "LANDING", number: "07", label: "LANDING PAGE", agent: "DeveloperAgent", mvp: true },
+  { id: "PASSPORT", number: "08", label: "BUSINESS PASSPORT", agent: "PassportAgent", mvp: true },
+  { id: "AI_SCORE", number: "09", label: "AI SCORE", agent: "ScoreAgent", mvp: true },
+  { id: "PREVIEW", number: "10", label: "PREVIEW", agent: "DeploymentAgent", mvp: true },
+  { id: "APPROVAL", number: "11", label: "USER APPROVAL", agent: "DeploymentAgent", mvp: true },
+  { id: "READY", number: "12", label: "READY TO LAUNCH", agent: "DeploymentAgent", mvp: true },
 ];
 
-/** MVP orchestrator order (ContentAgent runs between Product and Code for landing copy) */
+/** MVP orchestrator agent order (V1) */
 export const MVP_AGENT_ORDER: FactoryAgentName[] = [
   "BusinessAgent",
   "MarketAgent",
   "BrandAgent",
   "ProductAgent",
   "ArchitectureAgent",
+  "SecurityAgent",
   "ContentAgent",
   "SEOAgent",
   "DatabaseAgent",

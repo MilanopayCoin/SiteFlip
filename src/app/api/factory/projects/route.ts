@@ -43,14 +43,17 @@ export async function POST(request: Request) {
         aiCostEur: cost.aiCostEur,
         infrastructureMonthlyEur: cost.infraMonthlyEur,
         thirdPartyMonthlyEur: cost.thirdPartyMonthlyEur,
-        note: "Estimates only. Heuristic agents incur €0 AI spend when OPENAI_API_KEY is unset.",
+        note: "Estimates only. Uses configured AI provider (Groq preferred when GROQ_API_KEY is set). Heuristic fallback incurs €0 AI spend.",
       },
       limitations: [
+        "AI Business Factory V1 — not a full autonomous SaaS generator",
         "AI-generated outputs require your review",
-        "Landing preview is not a full production SaaS",
-        "Production deploy, payments, and domains require approval",
+        "Starter landing preview is not a complete production SaaS",
+        "Production deploy, payments, domains, and marketplace publish require approval",
+        "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
         "No real-time market data unless an external API is connected",
       ],
+      persistenceMode: project.persistenceMode,
     });
   } catch (error) {
     console.error("[factory/projects]", error);
@@ -67,6 +70,8 @@ function summarize(p: ReturnType<typeof createFactoryProject>) {
     currentStep: p.currentStep,
     brief: p.brief,
     quality: p.quality,
+    passport: p.passport,
+    persistenceMode: p.persistenceMode,
     usage: p.usage,
     sandbox: {
       previewUrl: p.sandbox.previewUrl,

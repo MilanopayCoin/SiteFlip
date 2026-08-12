@@ -35,10 +35,17 @@ interface Portfolio {
 
 const PIPELINE_PREVIEW = [
   "IDEA",
-  "AI",
-  "BUILD",
-  "TEST",
-  "LIVE",
+  "ANALYSIS",
+  "BLUEPRINT",
+  "BRAND",
+  "PRODUCT",
+  "TECH",
+  "LANDING",
+  "PASSPORT",
+  "AI SCORE",
+  "PREVIEW",
+  "APPROVAL",
+  "READY",
 ];
 
 export default function BuildFactoryPage() {
@@ -75,6 +82,8 @@ export default function BuildFactoryPage() {
           experienceLevel: fd.get("experienceLevel") || undefined,
           availableTime: fd.get("availableTime") || undefined,
           riskLevel: fd.get("riskLevel") || undefined,
+          businessModel: fd.get("businessModel") || undefined,
+          workloadPreference: fd.get("workloadPreference") || undefined,
         }),
       });
       const data = await create.json();
@@ -115,7 +124,7 @@ export default function BuildFactoryPage() {
           </p>
         </div>
         <Badge variant="outline" className="gap-1">
-          <Factory className="h-3.5 w-3.5" /> Factory MVP
+          <Factory className="h-3.5 w-3.5" /> Factory V1
         </Badge>
       </div>
 
@@ -180,18 +189,18 @@ export default function BuildFactoryPage() {
                   required
                   rows={4}
                   className="mt-1.5"
-                  placeholder='Build me a SaaS for small Dutch businesses that helps create invoices. Budget €2,000. Target €1,000 MRR.'
-                  defaultValue="Build me a SaaS for small Dutch businesses that helps create invoices."
+                  placeholder='I want an AI booking platform for cleaning companies in the Netherlands.'
+                  defaultValue="I want an AI booking platform for cleaning companies in the Netherlands."
                 />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Budget" name="budget" defaultValue="€2,000" />
-                <Field label="Target revenue" name="targetRevenue" defaultValue="€1,000 MRR" />
+                <Field label="Desired revenue" name="targetRevenue" defaultValue="€1,000 MRR" />
                 <Field label="Country" name="country" defaultValue="Netherlands" />
                 <Field
                   label="Target customer"
                   name="targetCustomer"
-                  defaultValue="Small Dutch businesses"
+                  defaultValue="Cleaning companies"
                 />
                 <div>
                   <Label htmlFor="businessType">Business type</Label>
@@ -201,7 +210,7 @@ export default function BuildFactoryPage() {
                     className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
                     defaultValue="SaaS"
                   >
-                    {["SaaS", "AI Tool", "Ecommerce", "Newsletter", "Digital Product"].map(
+                    {["SaaS", "AI Tool", "Ecommerce", "Newsletter", "Digital Product", "Marketplace"].map(
                       (o) => (
                         <option key={o} value={o} className="bg-zinc-900">
                           {o}
@@ -211,10 +220,30 @@ export default function BuildFactoryPage() {
                   </select>
                 </div>
                 <Field
+                  label="Business model"
+                  name="businessModel"
+                  defaultValue="B2B SaaS subscription"
+                />
+                <Field
                   label="Preferred technology"
                   name="preferredTechnology"
-                  defaultValue="Next.js, Supabase, Stripe"
+                  defaultValue="Next.js, Supabase"
                 />
+                <div>
+                  <Label htmlFor="workloadPreference">Workload preference</Label>
+                  <select
+                    id="workloadPreference"
+                    name="workloadPreference"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
+                    defaultValue="Part-time"
+                  >
+                    {["Side project", "Part-time", "Full-time"].map((o) => (
+                      <option key={o} value={o} className="bg-zinc-900">
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <Label htmlFor="experienceLevel">Experience level</Label>
                   <select
@@ -265,9 +294,10 @@ export default function BuildFactoryPage() {
               </div>
 
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100/80">
-                The factory does not automatically create any business. Outputs are
-                AI-generated, then user-approved. Starter landing ≠ full production SaaS.
-                Deploy, domain, and payments require approval.
+                Factory V1 generates blueprints and a starter landing preview — not a full
+                autonomous SaaS. Projects are LOCAL / DEMO / NOT PERSISTED until Supabase
+                factory tables are available. Deploy, domain, payments, and marketplace
+                publish always require your approval.
               </div>
 
               {costNote && (
@@ -303,7 +333,7 @@ export default function BuildFactoryPage() {
                     <Badge variant="outline">{p.state}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-zinc-500">
-                    AI Score {p.quality?.overall ?? "—"} ·{" "}
+                    AI Score {p.quality?.overall ?? "—"} · LOCAL/DEMO ·{" "}
                     {new Date(p.updatedAt).toLocaleString()}
                   </p>
                 </Link>

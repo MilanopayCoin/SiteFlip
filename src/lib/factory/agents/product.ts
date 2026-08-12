@@ -12,7 +12,7 @@ export async function runProductAgent(
 ) {
   return runStructuredAgent({
     system:
-      "You are SITEFLIP ProductAgent. Return a structured Product Specification JSON for an MVP.",
+      "You are SITEFLIP ProductAgent. Return a structured Product Specification JSON for an MVP including coreProduct, mvpFeatures, futureFeatures, userRoles, journeys, monetization, and mvpScope.",
     user: { brief, plan },
     schema: productSpecSchema,
     heuristic: () => heuristicProduct(brief, plan),
@@ -24,7 +24,14 @@ function heuristicProduct(
   plan: BusinessPlan
 ): ProductSpec {
   return {
+    coreProduct: plan.solution,
     mvpFeatures: plan.mvpScope,
+    futureFeatures: [
+      "Team collaboration",
+      "Advanced automations",
+      "Integrations marketplace",
+      "White-label options",
+    ],
     userRoles: ["Owner", "Member", "Admin"],
     userJourneys: [
       {
@@ -55,6 +62,13 @@ function heuristicProduct(
       "Export / share",
       "Notification hooks",
     ],
+    monetization: [
+      plan.revenueModel,
+      ...plan.pricing.tiers.map(
+        (t) => `${t.name}: €${t.priceMonthlyEur}/mo (planned pricing — not live)`
+      ),
+    ],
+    mvpScope: plan.mvpScope,
     databaseRequirements: [
       "profiles",
       "organizations",
@@ -69,8 +83,8 @@ function heuristicProduct(
       "Health check",
     ],
     labeledAssumptions: [
-      "MVP feature set derived from business plan — not user-validated",
-      "Full app code is not generated in MVP factory; landing + specs first",
+      "[AI_HYPOTHESIS] MVP feature set derived from business plan — not user-validated",
+      "[VERIFIED] Full SaaS app code is not generated in Factory V1 — starter landing + specs only",
     ],
   };
 }

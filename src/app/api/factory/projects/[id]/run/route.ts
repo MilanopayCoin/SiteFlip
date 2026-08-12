@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { getFactoryProject } from "@/lib/factory/store";
 import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { ensureCloudflareEnv } from "@/lib/supabase/env";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const ip = clientIp(request);
   const rl = rateLimit(`factory:run:${ip}`, 5, 60_000);
   if (!rl.success) {

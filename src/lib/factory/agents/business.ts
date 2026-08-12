@@ -7,8 +7,10 @@ import { runStructuredAgent, slugifyName } from "./base";
 
 export async function runBusinessAgent(brief: FactoryBriefInput) {
   return runStructuredAgent({
-    system:
-      "You are SITEFLIP BusinessAgent. Return a realistic MVP business plan as JSON matching the schema. Label assumptions. Never invent verified revenue.",
+    system: `You are SITEFLIP BusinessAgent. Return a realistic MVP business blueprint as JSON matching the schema.
+Include: businessName, businessDescription, problem, targetCustomer, businessModel, revenueModel, valueProposition, mainCompetitors, keyRisks, growthOpportunities.
+Label assumptions. Never invent verified revenue or market statistics.
+Classify any factual-sounding claims carefully — prefer AI_HYPOTHESIS unless user-provided.`,
     user: brief,
     schema: businessPlanSchema,
     heuristic: () => heuristicBusiness(brief),
@@ -28,13 +30,29 @@ function heuristicBusiness(brief: FactoryBriefInput): BusinessPlan {
         }`
       : `${brief.businessType} Starter`;
 
+  const businessModel =
+    brief.businessModel ||
+    `${brief.businessType} subscription for ${brief.targetCustomer}`;
+
   return {
     businessName,
-    businessModel: `${brief.businessType} subscription for ${brief.targetCustomer}`,
+    businessDescription: `${businessName} is a focused ${brief.businessType} for ${brief.targetCustomer} in ${brief.country}. Idea: ${brief.idea.slice(0, 180)}`,
+    businessModel,
     targetCustomer: brief.targetCustomer,
     problem: `Operators in ${brief.country} lack a simple tool for: ${brief.idea.slice(0, 120)}`,
     solution: `A focused ${brief.businessType} MVP that solves one painful workflow end-to-end within budget ${brief.budget}.`,
-    revenueModel: "Monthly SaaS subscription with free trial",
+    valueProposition: `Help ${brief.targetCustomer} get results faster with a narrow, practical MVP — not an overbuilt suite.`,
+    revenueModel: "Monthly SaaS subscription with free trial (estimate)",
+    mainCompetitors: [
+      "Category incumbents (generalist tools)",
+      "Spreadsheet / manual workflows",
+      "Local agencies offering bespoke builds",
+    ],
+    growthOpportunities: [
+      `Niche community launch in ${brief.country}`,
+      "SEO around the core problem",
+      "Partner with local service providers",
+    ],
     pricing: {
       tiers: [
         {
@@ -53,7 +71,7 @@ function heuristicBusiness(brief: FactoryBriefInput): BusinessPlan {
       "Landing page + waitlist/auth",
       "Core create/list workflow",
       "Basic dashboard",
-      "Stripe checkout architecture (not activated)",
+      "Payments architecture (not activated)",
       "SEO metadata",
     ],
     growthStrategy: [
@@ -67,11 +85,27 @@ function heuristicBusiness(brief: FactoryBriefInput): BusinessPlan {
       `Budget ${brief.budget} may constrain feature depth`,
       "Payment activation requires user approval",
     ],
+    keyRisks: [
+      "Unvalidated willingness to pay",
+      "Execution complexity vs available time",
+      "Competition from generalist tools",
+    ],
     labeledAssumptions: [
-      `Revenue goal ${brief.targetRevenue} is aspirational — not a forecast`,
+      `[USER_PROVIDED] Idea, budget ${brief.budget}, target ${brief.targetRevenue}, country ${brief.country}`,
+      "[AI_HYPOTHESIS] Revenue model and pricing tiers are estimates — not forecasts",
       "No real-time market data was queried",
       `Name "${businessName}" / domain suggestions are not availability-checked`,
       `Slug candidate: ${slugifyName(businessName)}`,
+    ],
+    claims: [
+      {
+        statement: `Target customer: ${brief.targetCustomer}`,
+        claimClass: "USER_PROVIDED",
+      },
+      {
+        statement: "Category has unmet demand for a simpler product",
+        claimClass: "AI_HYPOTHESIS",
+      },
     ],
   };
 }

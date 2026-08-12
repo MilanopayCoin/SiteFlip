@@ -11,8 +11,10 @@ export async function runMarketAgent(
   plan: BusinessPlan
 ) {
   return runStructuredAgent({
-    system:
-      "You are SITEFLIP MarketAgent. Analyze market as JSON. Never claim real-time market data unless an external API is connected. Separate aiHypotheses, verifiedResearch, userProvided.",
+    system: `You are SITEFLIP MarketAgent. Analyze market as JSON.
+Never fabricate verified market statistics.
+Every factual statement must be classified VERIFIED, USER_PROVIDED, or AI_HYPOTHESIS.
+If real-time research is unavailable, put hypotheses in aiHypotheses/claims with AI_HYPOTHESIS and leave verifiedResearch empty (or state that no external research API was connected).`,
     user: { brief, plan },
     schema: marketAnalysisSchema,
     heuristic: () => heuristicMarket(brief, plan),
@@ -25,10 +27,30 @@ function heuristicMarket(
 ): MarketAnalysis {
   return {
     targetMarket: `${brief.targetCustomer} in ${brief.country}`,
+    customerSegments: [
+      brief.targetCustomer,
+      `Early adopters in ${brief.country}`,
+      "Operators replacing spreadsheets",
+    ],
+    marketAssumptions: [
+      {
+        statement: "A simpler niche tool can win onboarding against generalists",
+        claimClass: "AI_HYPOTHESIS",
+      },
+      {
+        statement: `User budget constraint: ${brief.budget}`,
+        claimClass: "USER_PROVIDED",
+      },
+    ],
     competitorCategories: [
       `${brief.businessType} incumbents`,
       "Spreadsheet / manual workflows",
       "Generalist productivity tools",
+    ],
+    competitivePositioning: [
+      `Narrow focus on ${brief.country} / ${brief.targetCustomer}`,
+      "Faster time-to-value than enterprise suites",
+      plan.valueProposition.slice(0, 120),
     ],
     customerPainPoints: [
       "Too much manual work",
@@ -36,16 +58,17 @@ function heuristicMarket(
       "Local language / compliance friction",
     ],
     pricingOpportunities: [
-      `Entry tier near €${plan.pricing.tiers[0]?.priceMonthlyEur ?? 19}/mo`,
-      "Annual discount for SMBs",
+      `Entry tier near €${plan.pricing.tiers[0]?.priceMonthlyEur ?? 19}/mo (estimate)`,
+      "Annual discount for SMBs (hypothesis)",
     ],
     differentiation: [
       `Focused on ${brief.country} / ${brief.targetCustomer}`,
       "Narrow MVP scope for speed",
       plan.solution.slice(0, 80),
     ],
+    opportunities: plan.growthOpportunities,
     marketRisks: [
-      "Crowded category (hypothesis)",
+      "Crowded category (AI_HYPOTHESIS)",
       "Willingness to pay unvalidated",
       "Channel access unknown",
     ],
@@ -63,6 +86,20 @@ function heuristicMarket(
       `Target revenue: ${brief.targetRevenue}`,
       `Country: ${brief.country}`,
       `Customer: ${brief.targetCustomer}`,
+    ],
+    claims: [
+      {
+        statement: `Target market described as ${brief.targetCustomer} in ${brief.country}`,
+        claimClass: "USER_PROVIDED",
+      },
+      {
+        statement: "No live market data provider was queried for this analysis",
+        claimClass: "VERIFIED",
+      },
+      {
+        statement: "Local niche positioning can outperform generalist tools",
+        claimClass: "AI_HYPOTHESIS",
+      },
     ],
   };
 }

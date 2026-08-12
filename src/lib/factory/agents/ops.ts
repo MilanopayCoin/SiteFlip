@@ -23,7 +23,7 @@ export async function runDeploymentAgent(projectId: string, testsPassed: boolean
       "Deployment credentials are never exposed",
     ],
     labeledAssumptions: [
-      "Preview is rendered inside SITEFLIP — not a separate Vercel project until connected",
+      "[VERIFIED] Preview is rendered inside SITEFLIP — not a separate production host until approved",
     ],
   });
   return { data, source: "heuristic" as const, assumptions: data.labeledAssumptions };
@@ -56,9 +56,24 @@ export async function runGrowthAgent(plan: BusinessPlan) {
 
   const data: GrowthPlan = growthPlanSchema.parse({
     weeks,
+    seoSuggestions: [
+      "Publish one problem-focused landing section per week",
+      "Target long-tail local keywords (hypothesis until validated)",
+      "Add FAQ structured data after legal review",
+    ],
+    conversionSuggestions: [
+      "Single primary CTA above the fold",
+      "Reduce form fields on waitlist",
+      "Show pricing clarity without fake social proof",
+    ],
+    productImprovements: [
+      "Ship the narrowest core workflow first",
+      "Instrument activation events before paid acquisition",
+      "Collect qualitative interviews from first 10 users",
+    ],
     labeledAssumptions: [
-      "90-day plan is a template — adapt to real traction data",
-      "Paid advertising requires approval",
+      "[AI_HYPOTHESIS] 90-day plan is a template — adapt to real traction data",
+      "[VERIFIED] Paid advertising and production changes require approval",
     ],
   });
   return { data, source: "heuristic" as const, assumptions: data.labeledAssumptions };
@@ -66,16 +81,21 @@ export async function runGrowthAgent(plan: BusinessPlan) {
 
 export async function runFinanceAgent(plan: BusinessPlan, aiCostEur: number) {
   const starterPrice = plan.pricing.tiers[0]?.priceMonthlyEur ?? 19;
+  const infra = 1.5;
+  const thirdParty = 0;
   const data: FinanceEstimate = financeEstimateSchema.parse({
     estimatedAiCostEur: Math.round(aiCostEur * 100) / 100,
-    estimatedInfraMonthlyEur: 1.5,
-    estimatedThirdPartyMonthlyEur: 0,
+    estimatedInfraMonthlyEur: infra,
+    estimatedThirdPartyMonthlyEur: thirdParty,
+    developmentComplexity: "medium",
+    monthlyOperatingEstimateEur: Math.round((infra + thirdParty) * 100) / 100,
     businessValueEstimateEur: null,
     valueEstimateNote:
       "No revenue yet — business value estimate unavailable. AI valuation requires operating metrics and is informational only.",
     labeledAssumptions: [
-      `Starter list price €${starterPrice}/mo is planned, not earned`,
-      "Infrastructure estimate assumes hobby-tier hosting",
+      `[AI_HYPOTHESIS] Starter list price €${starterPrice}/mo is planned, not earned`,
+      "[AI_HYPOTHESIS] Infrastructure estimate assumes hobby-tier hosting — not a verified quote",
+      "[VERIFIED] Cost figures are estimates unless tied to live provider invoices",
     ],
   });
   return { data, source: "heuristic" as const, assumptions: data.labeledAssumptions };

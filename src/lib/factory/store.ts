@@ -112,13 +112,16 @@ export function createFactoryProject(
       costThresholdEur: 10,
     },
     quality: null,
+    passport: null,
     growthPlan: null,
+    persistenceMode: "LOCAL",
     activityLog: [
       {
         id: nanoid(8),
         at: now,
         agent: "Orchestrator",
-        message: "Factory project created. Waiting to run pipeline.",
+        message:
+          "Factory project created (LOCAL / DEMO / NOT PERSISTED). Waiting to run pipeline.",
         level: "info",
       },
     ],
@@ -222,9 +225,18 @@ export function factoryPortfolioStats(ownerId = "demo-user") {
   const items = listFactoryProjects(ownerId);
   return {
     activeBuilds: items.filter((p) =>
-      ["IDEA", "PLANNING", "RESEARCHING", "DESIGNING", "BUILDING", "TESTING", "PREVIEW", "APPROVAL_REQUIRED", "DEPLOYING"].includes(
-        p.state
-      )
+      [
+        "IDEA",
+        "PLANNING",
+        "RESEARCHING",
+        "DESIGNING",
+        "BUILDING",
+        "TESTING",
+        "PREVIEW",
+        "APPROVAL_REQUIRED",
+        "READY",
+        "DEPLOYING",
+      ].includes(p.state)
     ).length,
     completed: items.filter((p) => p.state === "LIVE").length,
     growing: items.filter((p) => p.state === "LIVE").length,

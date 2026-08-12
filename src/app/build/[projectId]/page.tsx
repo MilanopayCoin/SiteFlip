@@ -19,8 +19,8 @@ import type { FactoryProject } from "@/lib/factory/types";
 import { PIPELINE_STEPS } from "@/lib/factory/types";
 
 export default function FactoryProjectPage() {
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+  const params = useParams<{ projectId: string }>();
+  const id = params.projectId;
   const [project, setProject] = useState<FactoryProject | null>(null);
   const [pipeline, setPipeline] = useState(PIPELINE_STEPS);
   const [error, setError] = useState<string | null>(null);
@@ -115,9 +115,14 @@ export default function FactoryProjectPage() {
             <Badge variant="info">Step {project.currentStep ?? "—"}</Badge>
             {project.quality && (
               <Badge variant="success">
-                Factory Score {project.quality.overall}/100
+                AI Score {project.quality.overall}/100
               </Badge>
             )}
+            <Badge variant="warning">
+              {project.persistenceMode === "SUPABASE"
+                ? "PERSISTED"
+                : "LOCAL / DEMO / NOT PERSISTED"}
+            </Badge>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -125,7 +130,16 @@ export default function FactoryProjectPage() {
             <Link href={`/build/${id}/preview`}>Open Preview</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
+            <Link href={`/build/${id}/passport`}>Business Passport</Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
             <Link href={`/build/${id}/command`}>AI Command Center</Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/build/${id}/sell`}>BUILD → SELL</Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={`/build/${id}/rent`}>BUILD → RENT</Link>
           </Button>
           <Button variant="ghost" size="sm" disabled={busy} onClick={runAgain}>
             Re-run pipeline
@@ -380,17 +394,68 @@ export default function FactoryProjectPage() {
       {project.quality && (
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Business Factory Score</CardTitle>
+            <CardTitle>AI Score — {project.quality.overall}/100</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5 text-sm">
-            {Object.entries(project.quality).map(([k, v]) => (
-              <div key={k} className="rounded-lg bg-white/[0.03] p-3">
-                <p className="text-xs capitalize text-zinc-500">
-                  {k.replace(/([A-Z])/g, " $1")}
-                </p>
-                <p className="text-white">{v}/100</p>
-              </div>
-            ))}
+          <CardContent className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+              {(
+                [
+                  ["marketClarity", project.quality.marketClarity],
+                  ["problemStrength", project.quality.problemStrength],
+                  ["businessModel", project.quality.businessModel],
+                  ["competition", project.quality.competition],
+                  ["executionComplexity", project.quality.executionComplexity],
+                  ["growthPotential", project.quality.growthPotential],
+                  ["risk", project.quality.risk],
+                  ["completeness", project.quality.completeness],
+                ] as const
+              ).map(([k, v]) => (
+                <div key={k} className="rounded-lg bg-white/[0.03] p-3">
+                  <p className="text-xs capitalize text-zinc-500">
+                    {k.replace(/([A-Z])/g, " $1")}
+                  </p>
+                  <p className="text-white">{v}/100</p>
+                </div>
+              ))}
+            </div>
+            {project.quality.explanations?.length > 0 && (
+              <ul className="list-disc space-y-1 pl-4 text-xs text-zinc-400">
+                {project.quality.explanations.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {project.passport && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Business Passport</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
+            <p className="text-zinc-500">
+              ID: <span className="font-mono text-zinc-300">{project.passport.businessId}</span>
+            </p>
+            <p className="text-zinc-500">
+              Lifecycle:{" "}
+              <span className="text-zinc-300">{project.passport.lifecycle}</span>
+            </p>
+            <p className="text-zinc-500">
+              Model:{" "}
+              <span className="text-zinc-300">{project.passport.businessModel}</span>
+            </p>
+            <p className="text-zinc-500">
+              Customer:{" "}
+              <span className="text-zinc-300">{project.passport.targetCustomer}</span>
+            </p>
+            <p className="sm:col-span-2 text-xs text-amber-200/80">
+              {project.passport.persistenceNote}
+            </p>
+            <Button size="sm" variant="secondary" asChild>
+              <Link href={`/build/${id}/passport`}>Open full passport</Link>
+            </Button>
           </CardContent>
         </Card>
       )}

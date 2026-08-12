@@ -19,6 +19,21 @@ export default function FactorySellPage() {
       confidence: number;
     };
     listingDescription: string;
+    listingDraft?: {
+      title: string;
+      summary: string;
+      description: string;
+      suggestedAskingPriceRange: {
+        minEur: number;
+        maxEur: number;
+        estimateEur: number;
+        note: string;
+      };
+      aiScore: number | null;
+      businessPassportPath: string;
+    };
+    businessPassportPath?: string;
+    aiScore?: number | null;
     risks: string[];
     recommendedImprovements: string[];
     listOnSiteflipPath: string;
@@ -82,8 +97,34 @@ export default function FactorySellPage() {
             <CardHeader>
               <CardTitle>Listing draft</CardTitle>
             </CardHeader>
-            <CardContent className="text-sm text-zinc-300">
-              {data.listingDescription}
+            <CardContent className="space-y-2 text-sm text-zinc-300">
+              <p className="font-medium text-white">
+                {data.listingDraft?.title || "Draft"}
+              </p>
+              <p>{data.listingDraft?.summary || data.listingDescription}</p>
+              {data.listingDraft?.suggestedAskingPriceRange && (
+                <p className="text-xs text-zinc-500">
+                  Suggested asking range (estimate):{" "}
+                  {formatCurrency(data.listingDraft.suggestedAskingPriceRange.minEur)}{" "}
+                  –{" "}
+                  {formatCurrency(data.listingDraft.suggestedAskingPriceRange.maxEur)}
+                  . {data.listingDraft.suggestedAskingPriceRange.note}
+                </p>
+              )}
+              <p className="text-xs text-zinc-500">
+                AI Score: {data.aiScore ?? data.listingDraft?.aiScore ?? "—"}/100
+              </p>
+              <Button size="sm" variant="secondary" asChild>
+                <Link
+                  href={
+                    data.businessPassportPath ||
+                    data.listingDraft?.businessPassportPath ||
+                    `/build/${params.projectId}/passport`
+                  }
+                >
+                  Open Business Passport
+                </Link>
+              </Button>
             </CardContent>
           </Card>
           <Card>

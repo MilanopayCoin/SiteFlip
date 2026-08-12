@@ -197,10 +197,38 @@ export async function aiJson<T>(
     return { data: heuristic(), provider: "heuristic", model: "none" };
   }
   try {
-    const result = await aiChat(system, JSON.stringify(user), { json: true });
-    const parsed = schema.safeParse(JSON.parse(result.content || "{}"));
+    const result = await aiChat(
+      `${system}\n\nReturn a single JSON object only. Include every required key. Do not wrap in markdown.`,
+      JSON.stringify(user),
+      { json: true }
+    );
+    let parsed = schema.safeParse(JSON.parse(result.content || "{}"));
     if (!parsed.success) {
-      return { data: heuristic(), provider: "heuristic", model: "none", raw: result.content };
+      // One repair attempt with validation issues (no secrets)
+      const issues = parsed.error.issues
+        .slice(0, 8)
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join("; ");
+      const repair = await aiChat(
+        `${system}\n\nYour previous JSON failed validation: ${issues}. Return corrected JSON only.`,
+        JSON.stringify(user),
+        { json: true }
+      );
+      parsed = schema.safeParse(JSON.parse(repair.content || "{}"));
+      if (parsed.success) {
+        return {
+          data: parsed.data,
+          provider: repair.provider,
+          model: repair.model,
+          raw: repair.content,
+        };
+      }
+      return {
+        data: heuristic(),
+        provider: "heuristic",
+        model: "none",
+        raw: result.content,
+      };
     }
     return {
       data: parsed.data,

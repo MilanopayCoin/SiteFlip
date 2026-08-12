@@ -1,77 +1,60 @@
-import { getOpenAI } from "@/lib/ai";
+import { aiJson } from "@/lib/ai/providers";
 import type { z } from "zod";
+import type { FactoryOutputSource } from "../types";
 
 export async function runStructuredAgent<T>(opts: {
   system: string;
   user: unknown;
   schema: z.ZodType<T>;
   heuristic: () => T;
-}): Promise<{ data: T; source: "openai" | "heuristic"; assumptions: string[] }> {
-  const openai = getOpenAI();
-  if (!openai) {
-    const data = opts.heuristic();
-    return {
-      data,
-      source: "heuristic",
-      assumptions: extractAssumptions(data),
-    };
+}): Promise<{
+  data: T;
+  source: FactoryOutputSource;
+  assumptions: string[];
+  model?: string;
+}> {
+  const result = await aiJson(opts.system, opts.user, opts.schema, opts.heuristic);
+  const source = (result.provider || "heuristic") as FactoryOutputSource;
+  const assumptions = extractAssumptions(result.data);
+  if (source === "heuristic") {
+    assumptions.unshift(
+      "AI provider unavailable or validation failed — heuristic fallback used (AI_HYPOTHESIS)"
+    );
   }
-
-  try {
-    const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: opts.system },
-        { role: "user", content: JSON.stringify(opts.user) },
-      ],
-    });
-    const raw = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
-    const parsed = opts.schema.safeParse(raw);
-    if (!parsed.success) {
-      const data = opts.heuristic();
-      return {
-        data,
-        source: "heuristic",
-        assumptions: [
-          "OpenAI response failed Zod validation — used heuristic fallback",
-          ...extractAssumptions(data),
-        ],
-      };
-    }
-    return {
-      data: parsed.data,
-      source: "openai",
-      assumptions: extractAssumptions(parsed.data),
-    };
-  } catch {
-    const data = opts.heuristic();
-    return {
-      data,
-      source: "heuristic",
-      assumptions: [
-        "OpenAI call failed — used heuristic fallback",
-        ...extractAssumptions(data),
-      ],
-    };
-  }
+  return {
+    data: result.data,
+    source,
+    assumptions: [...new Set(assumptions)],
+    model: result.model,
+  };
 }
 
 function extractAssumptions(data: unknown): string[] {
-  if (data && typeof data === "object" && "labeledAssumptions" in data) {
-    const a = (data as { labeledAssumptions?: unknown }).labeledAssumptions;
-    if (Array.isArray(a)) return a.map(String);
+  const out: string[] = [];
+  if (!data || typeof data !== "object") return out;
+  const obj = data as Record<string, unknown>;
+  if (Array.isArray(obj.labeledAssumptions)) {
+    out.push(...obj.labeledAssumptions.map(String));
   }
-  if (data && typeof data === "object" && "aiHypotheses" in data) {
-    const a = (data as { aiHypotheses?: unknown }).aiHypotheses;
-    if (Array.isArray(a)) return a.map(String);
+  if (Array.isArray(obj.aiHypotheses)) {
+    out.push(...obj.aiHypotheses.map((h) => `[AI_HYPOTHESIS] ${h}`));
   }
-  return [];
+  if (Array.isArray(obj.claims)) {
+    for (const c of obj.claims) {
+      if (c && typeof c === "object" && "statement" in c && "claimClass" in c) {
+        const claim = c as { statement: string; claimClass: string };
+        out.push(`[${claim.claimClass}] ${claim.statement}`);
+      }
+    }
+  }
+  return out;
 }
 
 export function slugifyName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 24) || "venture";
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .slice(0, 24) || "venture"
+  );
 }

@@ -3,6 +3,7 @@ export { runMarketAgent } from "./market";
 export { runBrandAgent } from "./brand";
 export { runProductAgent } from "./product";
 export { runArchitectureAgent } from "./architecture";
+export { runSecurityAgent } from "./security";
 export { runContentAgent } from "./content";
 export { runSeoAgent } from "./seo";
 export { runDatabaseAgent } from "./database";

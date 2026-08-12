@@ -1,7 +1,7 @@
 /**
- * BusinessFactoryOrchestrator
- * Controls modular agents with typed Zod-validated outputs.
- * Does not fake progress — statuses update only when agents finish.
+ * BusinessFactoryOrchestrator — AI Business Factory V1
+ * Modular agents with typed Zod-validated outputs.
+ * Statuses update only when agents finish. No automatic deploy/payments.
  */
 
 import type {
@@ -24,6 +24,7 @@ import {
 } from "./store";
 import { assertSandboxBoundary, previewPathFor } from "./sandbox";
 import { computeFactoryQuality, estimateAgentCost } from "./quality";
+import { buildBusinessPassport } from "./passport";
 import {
   runArchitectureAgent,
   runBrandAgent,
@@ -37,10 +38,12 @@ import {
   runMarketAgent,
   runPaymentAgent,
   runProductAgent,
+  runSecurityAgent,
   runSeoAgent,
   runTestingAgent,
 } from "./agents";
 import type {
+  ArchitectureSpec,
   BrandPlan,
   BusinessPlan,
   CodeArtifact,
@@ -55,13 +58,16 @@ const STATE_FOR_AGENT: Partial<Record<FactoryAgentName, FactoryProjectState>> = 
   BrandAgent: "DESIGNING",
   ProductAgent: "DESIGNING",
   ArchitectureAgent: "DESIGNING",
-  ContentAgent: "DESIGNING",
+  SecurityAgent: "DESIGNING",
+  ContentAgent: "BUILDING",
   SEOAgent: "BUILDING",
   DatabaseAgent: "BUILDING",
   PaymentAgent: "BUILDING",
   DeveloperAgent: "BUILDING",
   TestingAgent: "TESTING",
   DeploymentAgent: "PREVIEW",
+  PassportAgent: "PREVIEW",
+  ScoreAgent: "PREVIEW",
   GrowthAgent: "PREVIEW",
   FinanceAgent: "PREVIEW",
 };
@@ -75,7 +81,6 @@ export class BusinessFactoryOrchestrator {
     return p;
   }
 
-  /** Run the full MVP pipeline sequentially with real agent execution */
   async runPipeline(): Promise<FactoryProject> {
     let project = this.project;
     assertSandboxBoundary(project);
@@ -85,17 +90,17 @@ export class BusinessFactoryOrchestrator {
       return saveFactoryProject(project);
     }
 
-    appendActivity(project, "Orchestrator", "Pipeline started", "info");
+    appendActivity(project, "Orchestrator", "Factory V1 pipeline started", "info");
     project.state = "PLANNING";
     saveFactoryProject(project);
 
-    // Cost estimate approval if over threshold
     const projectedAi =
       estimateAgentCost("BusinessAgent").costEur +
       estimateAgentCost("MarketAgent").costEur +
       estimateAgentCost("BrandAgent").costEur +
       estimateAgentCost("ProductAgent").costEur +
       estimateAgentCost("ArchitectureAgent").costEur +
+      estimateAgentCost("SecurityAgent").costEur +
       estimateAgentCost("ContentAgent").costEur +
       estimateAgentCost("SEOAgent").costEur +
       estimateAgentCost("DatabaseAgent").costEur +
@@ -115,8 +120,8 @@ export class BusinessFactoryOrchestrator {
           projectId: project.id,
           action: "cost_threshold",
           title: "Estimated AI cost exceeds threshold",
-          explanation: `Estimated AI cost ≈ €${projectedAi.toFixed(2)} exceeds threshold €${project.usage.costThresholdEur}. Approve to continue the factory run.`,
-          services: ["OpenAI (or heuristic fallback)"],
+          explanation: `Estimated AI cost ≈ €${projectedAi.toFixed(2)} exceeds threshold €${project.usage.costThresholdEur}. Approve to continue. Estimates only — not a verified invoice.`,
+          services: ["Configured AI provider (Groq/OpenAI/…)"],
           estimatedCostEur: projectedAi,
           risks: ["Token spend", "Incomplete outputs if cancelled mid-run"],
         });
@@ -138,12 +143,12 @@ export class BusinessFactoryOrchestrator {
     try {
       await this.runBusiness();
       await this.runMarket();
-      // Mark BUSINESS step complete after market (business plan refined)
-      this.completeStep("BUSINESS", "BusinessAgent");
+      this.completeStep("BLUEPRINT", "BusinessAgent");
 
       await this.runBrand();
       await this.runProduct();
       await this.runArchitecture();
+      await this.runSecurity();
       await this.runContent();
       await this.runSeo();
       await this.runDatabase();
@@ -151,44 +156,90 @@ export class BusinessFactoryOrchestrator {
       await this.runDeveloper();
       const testsOk = await this.runTesting();
       await this.runDeployment(testsOk);
+      await this.buildPassport();
+      await this.computeScore();
       await this.runGrowth();
       await this.runFinance();
 
       project = this.project;
-      setQuality(project, computeFactoryQuality(project));
       project.sandbox.previewUrl = previewPathFor(project.id);
       project.sandbox.deploymentStatus = testsOk ? "READY" : "FAILED";
-      project.state = testsOk ? "PREVIEW" : "FAILED";
-      project.currentStep = testsOk ? "DEPLOY" : "TEST";
 
-      // Production deploy always needs approval
       if (testsOk) {
+        addApproval(project, {
+          projectId: project.id,
+          action: "landing_page_finalize",
+          title: "Approve final landing page",
+          explanation:
+            "Starter landing preview is ready. Approving finalizes the generated landing for this factory project. This does not deploy to production.",
+          services: ["DeveloperAgent sandbox"],
+          estimatedCostEur: 0,
+          risks: ["Public-facing copy may need edits"],
+        });
         addApproval(project, {
           projectId: project.id,
           action: "production_deploy",
           title: "Approve production deployment",
           explanation:
-            "Preview is ready. Production deploy will publish the sandbox business. Domain connection and payment activation remain separate approvals.",
-          services: ["Vercel-compatible host", "Sandbox preview"],
+            "Production deploy will publish the sandbox business. Domain connection and payment activation remain separate approvals. Nothing auto-deploys.",
+          services: ["Sandbox preview host"],
           estimatedCostEur: project.usage.infrastructureMonthlyEur,
-          risks: [
-            "Public URL exposure",
-            "Hosting cost",
-            "Incomplete MVP (landing-only)",
-          ],
+          risks: ["Public URL exposure", "Hosting cost", "Landing-only MVP"],
         });
         addApproval(project, {
           projectId: project.id,
           action: "payment_activation",
-          title: "Activate Stripe payments",
+          title: "Activate payments",
           explanation:
-            "Payment architecture exists but is not activated. Approving will allow connecting Stripe keys (never stored in AI memory).",
-          services: ["Stripe"],
+            "Payment architecture exists but is not activated. Approving allows connecting provider keys (never stored in AI memory). Mollie/Stripe are payment processors, not escrow.",
+          services: ["Payment provider"],
           estimatedCostEur: 0,
           risks: ["Live charges", "Webhook misconfiguration"],
         });
+        addApproval(project, {
+          projectId: project.id,
+          action: "domain_connect",
+          title: "Connect custom domain",
+          explanation:
+            "Domain suggestions are not availability-checked. Connecting a domain requires your approval and DNS configuration.",
+          services: ["DNS / domain registrar"],
+          estimatedCostEur: null,
+          risks: ["Domain cost", "Misconfigured DNS"],
+        });
+        addApproval(project, {
+          projectId: project.id,
+          action: "marketplace_listing",
+          title: "Prepare SITEFLIP marketplace listing",
+          explanation:
+            "Creates a listing draft from the Business Passport. Publishing requires a separate approval. AI valuation is an estimate only.",
+          services: ["SITEFLIP marketplace"],
+          estimatedCostEur: 0,
+          risks: ["Premature listing without traction"],
+        });
+
+        updateTask(project, "APPROVAL", {
+          status: "REQUIRES_APPROVAL",
+          progress: 100,
+          activity: "Awaiting user approvals",
+          completedAt: new Date().toISOString(),
+        });
+        updateTask(project, "READY", {
+          status: "WAITING",
+          progress: 0,
+          activity: "Ready after approvals",
+        });
+        updateTask(project, "PREVIEW", {
+          status: "COMPLETED",
+          progress: 100,
+          activity: "Preview ready",
+          completedAt: new Date().toISOString(),
+        });
+
         project.state = "APPROVAL_REQUIRED";
-        project.currentStep = "DEPLOY";
+        project.currentStep = "APPROVAL";
+      } else {
+        project.state = "FAILED";
+        project.currentStep = "LANDING";
       }
 
       appendActivity(
@@ -244,7 +295,7 @@ export class BusinessFactoryOrchestrator {
     const project = this.project;
     updateTask(project, stepId, {
       status: ok ? "COMPLETED" : "FAILED",
-      progress: ok ? 100 : 100,
+      progress: 100,
       activity: ok ? `${agent} completed` : `${agent} failed`,
       completedAt: new Date().toISOString(),
       outputId,
@@ -281,12 +332,11 @@ export class BusinessFactoryOrchestrator {
 
   private async runBusiness() {
     this.begin("BusinessAgent", "IDEA");
-    // Also mark BUSINESS as running conceptually — IDEA produces the plan
     const project = this.project;
-    updateTask(project, "BUSINESS", {
+    updateTask(project, "BLUEPRINT", {
       status: "RUNNING",
       progress: 20,
-      activity: "BusinessAgent drafting plan…",
+      activity: "BusinessAgent drafting blueprint…",
       startedAt: new Date().toISOString(),
     });
     saveFactoryProject(project);
@@ -312,7 +362,7 @@ export class BusinessFactoryOrchestrator {
   }
 
   private async runMarket() {
-    this.begin("MarketAgent", "MARKET");
+    this.begin("MarketAgent", "ANALYSIS");
     const project = this.project;
     const plan = getOutputByAgent(project, "BusinessAgent")?.data as unknown as BusinessPlan;
     const result = await runMarketAgent(project.brief, plan);
@@ -331,7 +381,7 @@ export class BusinessFactoryOrchestrator {
       key: "market_analysis",
       value: result.data as unknown as Record<string, unknown>,
     });
-    this.finish("MarketAgent", "MARKET", out.id, true);
+    this.finish("MarketAgent", "ANALYSIS", out.id, true);
   }
 
   private async runBrand() {
@@ -381,12 +431,11 @@ export class BusinessFactoryOrchestrator {
   }
 
   private async runArchitecture() {
-    // Architecture shares PRODUCT step visually but logs separately
+    this.begin("ArchitectureAgent", "TECH");
     const project = this.project;
-    appendActivity(project, "ArchitectureAgent", "Running", "info");
     const product = getOutputByAgent(project, "ProductAgent")?.data as unknown as ProductSpec;
     const result = await runArchitectureAgent(project.brief, product);
-    addOutput(project, {
+    const out = addOutput(project, {
       projectId: project.id,
       agent: "ArchitectureAgent",
       schemaName: "ArchitectureSchema",
@@ -401,11 +450,34 @@ export class BusinessFactoryOrchestrator {
       key: "architecture",
       value: result.data as unknown as Record<string, unknown>,
     });
-    appendActivity(project, "ArchitectureAgent", "Completed", "success");
-    const cost = estimateAgentCost("ArchitectureAgent");
+    this.finish("ArchitectureAgent", "TECH", out.id, true);
+  }
+
+  private async runSecurity() {
+    const project = this.project;
+    appendActivity(project, "SecurityAgent", "Running", "info");
+    const arch = getOutputByAgent(project, "ArchitectureAgent")?.data as unknown as ArchitectureSpec;
+    const result = await runSecurityAgent(arch);
+    addOutput(project, {
+      projectId: project.id,
+      agent: "SecurityAgent",
+      schemaName: "SecurityReviewSchema",
+      data: result.data as unknown as Record<string, unknown>,
+      labeledAssumptions: result.assumptions,
+      source: result.source,
+      implementationStatus: "ai_generated",
+    });
+    addMemory(project, {
+      projectId: project.id,
+      kind: "security_review",
+      key: "security",
+      value: result.data as unknown as Record<string, unknown>,
+    });
+    const cost = estimateAgentCost("SecurityAgent");
     project.usage.aiTokensEstimated += cost.tokens;
     project.usage.aiCostEurEstimated =
       Math.round((project.usage.aiCostEurEstimated + cost.costEur) * 100) / 100;
+    appendActivity(project, "SecurityAgent", "Completed", "success");
     saveFactoryProject(project);
   }
 
@@ -434,12 +506,12 @@ export class BusinessFactoryOrchestrator {
   }
 
   private async runSeo() {
-    this.begin("SEOAgent", "SEO");
     const project = this.project;
+    appendActivity(project, "SEOAgent", "Running", "info");
     const brand = getOutputByAgent(project, "BrandAgent")?.data as unknown as BrandPlan;
     const content = getOutputByAgent(project, "ContentAgent")?.data as unknown as ContentPack;
     const result = await runSeoAgent(brand, content);
-    const out = addOutput(project, {
+    addOutput(project, {
       projectId: project.id,
       agent: "SEOAgent",
       schemaName: "SEOSchema",
@@ -448,15 +520,20 @@ export class BusinessFactoryOrchestrator {
       source: result.source,
       implementationStatus: "ai_generated",
     });
-    this.finish("SEOAgent", "SEO", out.id, true);
+    const cost = estimateAgentCost("SEOAgent");
+    project.usage.aiTokensEstimated += cost.tokens;
+    project.usage.aiCostEurEstimated =
+      Math.round((project.usage.aiCostEurEstimated + cost.costEur) * 100) / 100;
+    appendActivity(project, "SEOAgent", "Completed", "success");
+    saveFactoryProject(project);
   }
 
   private async runDatabase() {
-    this.begin("DatabaseAgent", "DATABASE");
     const project = this.project;
+    appendActivity(project, "DatabaseAgent", "Running", "info");
     const product = getOutputByAgent(project, "ProductAgent")?.data as unknown as ProductSpec;
     const result = await runDatabaseAgent(product);
-    const out = addOutput(project, {
+    addOutput(project, {
       projectId: project.id,
       agent: "DatabaseAgent",
       schemaName: "DatabaseSpecSchema",
@@ -465,15 +542,20 @@ export class BusinessFactoryOrchestrator {
       source: result.source,
       implementationStatus: "requires_human_action",
     });
-    this.finish("DatabaseAgent", "DATABASE", out.id, true);
+    const cost = estimateAgentCost("DatabaseAgent");
+    project.usage.aiTokensEstimated += cost.tokens;
+    project.usage.aiCostEurEstimated =
+      Math.round((project.usage.aiCostEurEstimated + cost.costEur) * 100) / 100;
+    appendActivity(project, "DatabaseAgent", "Completed (not applied)", "success");
+    saveFactoryProject(project);
   }
 
   private async runPayment() {
-    this.begin("PaymentAgent", "PAYMENTS");
     const project = this.project;
+    appendActivity(project, "PaymentAgent", "Running", "info");
     const plan = getOutputByAgent(project, "BusinessAgent")?.data as unknown as BusinessPlan;
     const result = await runPaymentAgent(plan);
-    const out = addOutput(project, {
+    addOutput(project, {
       projectId: project.id,
       agent: "PaymentAgent",
       schemaName: "PaymentSpecSchema",
@@ -482,29 +564,40 @@ export class BusinessFactoryOrchestrator {
       source: result.source,
       implementationStatus: "requires_external_integration",
     });
-    this.finish("PaymentAgent", "PAYMENTS", out.id, true);
+    const cost = estimateAgentCost("PaymentAgent");
+    project.usage.aiTokensEstimated += cost.tokens;
+    project.usage.aiCostEurEstimated =
+      Math.round((project.usage.aiCostEurEstimated + cost.costEur) * 100) / 100;
+    appendActivity(project, "PaymentAgent", "Completed (not activated)", "success");
+    saveFactoryProject(project);
   }
 
   private async runDeveloper() {
-    this.begin("DeveloperAgent", "CODE");
+    this.begin("DeveloperAgent", "LANDING");
     const project = this.project;
     const plan = getOutputByAgent(project, "BusinessAgent")?.data as unknown as BusinessPlan;
     const brand = getOutputByAgent(project, "BrandAgent")?.data as unknown as BrandPlan;
     const content = getOutputByAgent(project, "ContentAgent")?.data as unknown as ContentPack;
     const seo = getOutputByAgent(project, "SEOAgent")?.data as unknown as SeoPack;
     const result = await runDeveloperAgent({ plan, brand, content, seo });
+    // Force landing-only claim
+    result.data.completeness = "landing_page_only";
+    result.data.sandboxOnly = true;
     const out = addOutput(project, {
       projectId: project.id,
       agent: "DeveloperAgent",
       schemaName: "CodeArtifactSchema",
       data: result.data as unknown as Record<string, unknown>,
-      labeledAssumptions: result.assumptions,
+      labeledAssumptions: [
+        ...result.assumptions,
+        "[VERIFIED] Factory V1 generates a starter landing page only — not a complete SaaS",
+      ],
       source: result.source,
       implementationStatus: "automatically_implemented",
     });
     project.sandbox.buildLogs.push(
       `Generated ${result.data.files.length} sandbox file(s)`,
-      `Completeness: ${result.data.completeness}`
+      `Completeness: landing_page_only`
     );
     addChange(project, {
       projectId: project.id,
@@ -512,15 +605,15 @@ export class BusinessFactoryOrchestrator {
       reason: "Generate sandbox landing artifacts",
       filesChanged: result.data.files.map((f) => f.path),
       approvalStatus: "N/A",
-      result: "sandbox artifacts created",
+      result: "sandbox landing artifacts created",
       rollbackOf: null,
     });
-    this.finish("DeveloperAgent", "CODE", out.id, true);
+    this.finish("DeveloperAgent", "LANDING", out.id, true);
   }
 
   private async runTesting(): Promise<boolean> {
-    this.begin("TestingAgent", "TEST");
     const project = this.project;
+    appendActivity(project, "TestingAgent", "Running", "info");
     const code = getOutputByAgent(project, "DeveloperAgent")?.data as unknown as CodeArtifact;
     let attempt = 0;
     let result = await runTestingAgent(code);
@@ -532,7 +625,6 @@ export class BusinessFactoryOrchestrator {
         `Tests failed — retry ${attempt}/3 via DeveloperAgent`,
         "warning"
       );
-      // Re-run developer once then retest
       await this.runDeveloper();
       const code2 = getOutputByAgent(this.project, "DeveloperAgent")
         ?.data as unknown as CodeArtifact;
@@ -540,7 +632,7 @@ export class BusinessFactoryOrchestrator {
       result.data.attempts = attempt + 1;
     }
 
-    const out = addOutput(this.project, {
+    addOutput(this.project, {
       projectId: this.project.id,
       agent: "TestingAgent",
       schemaName: "TestReportSchema",
@@ -551,20 +643,12 @@ export class BusinessFactoryOrchestrator {
     });
 
     if (!result.data.passed) {
-      this.finish(
-        "TestingAgent",
-        "TEST",
-        out.id,
-        false,
-        "Tests failed after max retries — human approval required"
-      );
-      updateTask(this.project, "TEST", { status: "REQUIRES_APPROVAL" });
       addApproval(this.project, {
         projectId: this.project.id,
         action: "change_request",
         title: "Testing failed — human approval required",
         explanation:
-          "Automatic fix loop exhausted (max 3). Review test report and approve retry or edit specs.",
+          "Automatic fix loop exhausted. Review test report and approve retry or edit specs.",
         services: ["TestingAgent", "DeveloperAgent"],
         estimatedCostEur: estimateAgentCost("DeveloperAgent").costEur,
         risks: ["Broken preview"],
@@ -573,12 +657,13 @@ export class BusinessFactoryOrchestrator {
       return false;
     }
 
-    this.finish("TestingAgent", "TEST", out.id, true);
+    appendActivity(this.project, "TestingAgent", "Completed", "success");
+    saveFactoryProject(this.project);
     return true;
   }
 
   private async runDeployment(testsPassed: boolean) {
-    this.begin("DeploymentAgent", "DEPLOY");
+    this.begin("DeploymentAgent", "PREVIEW");
     const project = this.project;
     const result = await runDeploymentAgent(project.id, testsPassed);
     const out = addOutput(project, {
@@ -593,23 +678,52 @@ export class BusinessFactoryOrchestrator {
         : "ai_generated",
     });
     if (testsPassed) {
-      updateTask(project, "DEPLOY", {
-        status: "REQUIRES_APPROVAL",
-        progress: 100,
-        activity: "Preview ready — production requires approval",
-        outputId: out.id,
-        completedAt: new Date().toISOString(),
-      });
-      appendActivity(
-        project,
-        "DeploymentAgent",
-        "Preview ready — awaiting production approval",
-        "warning"
-      );
+      this.finish("DeploymentAgent", "PREVIEW", out.id, true);
     } else {
-      this.finish("DeploymentAgent", "DEPLOY", out.id, false, "Blocked by failed tests");
+      this.finish("DeploymentAgent", "PREVIEW", out.id, false, "Blocked by failed tests");
     }
-    saveFactoryProject(project);
+  }
+
+  private async buildPassport() {
+    this.begin("PassportAgent", "PASSPORT");
+    const project = this.project;
+    const passport = buildBusinessPassport(project);
+    project.passport = passport;
+    const out = addOutput(project, {
+      projectId: project.id,
+      agent: "PassportAgent",
+      schemaName: "BusinessPassport",
+      data: passport as unknown as Record<string, unknown>,
+      labeledAssumptions: [passport.persistenceNote],
+      source: "heuristic",
+      implementationStatus: "ai_generated",
+    });
+    addMemory(project, {
+      projectId: project.id,
+      kind: "business_passport",
+      key: "passport",
+      value: passport as unknown as Record<string, unknown>,
+    });
+    this.finish("PassportAgent", "PASSPORT", out.id, true);
+  }
+
+  private async computeScore() {
+    this.begin("ScoreAgent", "AI_SCORE");
+    const project = this.project;
+    const quality = computeFactoryQuality(project);
+    setQuality(project, quality);
+    // Refresh passport with score
+    project.passport = buildBusinessPassport(project);
+    const out = addOutput(project, {
+      projectId: project.id,
+      agent: "ScoreAgent",
+      schemaName: "FactoryQualityScore",
+      data: quality as unknown as Record<string, unknown>,
+      labeledAssumptions: quality.explanations,
+      source: "heuristic",
+      implementationStatus: "ai_generated",
+    });
+    this.finish("ScoreAgent", "AI_SCORE", out.id, true);
   }
 
   private async runGrowth() {
@@ -627,9 +741,12 @@ export class BusinessFactoryOrchestrator {
       source: result.source,
       implementationStatus: "ai_generated",
     });
-    project.growthPlan = result.data.weeks.map(
-      (w) => `Week ${w.week}: ${w.title}`
-    );
+    project.growthPlan = [
+      ...result.data.weeks.map((w) => `Week ${w.week}: ${w.title}`),
+      ...result.data.seoSuggestions.map((s) => `SEO: ${s}`),
+      ...result.data.conversionSuggestions.map((s) => `Conversion: ${s}`),
+      ...result.data.productImprovements.map((s) => `Product: ${s}`),
+    ];
     addMemory(project, {
       projectId: project.id,
       kind: "growth_plan",
@@ -661,7 +778,7 @@ export class BusinessFactoryOrchestrator {
     });
     project.usage.infrastructureMonthlyEur = result.data.estimatedInfraMonthlyEur;
     project.usage.thirdPartyMonthlyEur = result.data.estimatedThirdPartyMonthlyEur;
-    appendActivity(project, "FinanceAgent", "Completed", "success");
+    appendActivity(project, "FinanceAgent", "Completed (estimates only)", "success");
     saveFactoryProject(project);
   }
 
@@ -675,20 +792,21 @@ export class BusinessFactoryOrchestrator {
     approval.status = "APPROVED";
     approval.resolvedAt = new Date().toISOString();
     project.state = "LIVE";
-    project.currentStep = "LIVE";
+    project.currentStep = "READY";
     project.liveAt = new Date().toISOString();
     project.sandbox.deploymentStatus = "LIVE";
     project.sandbox.productionUrl = `/build/${project.id}/preview?env=production`;
-    updateTask(project, "LIVE", {
+    updateTask(project, "READY", {
       status: "COMPLETED",
       progress: 100,
-      activity: "Business marked LIVE (sandbox production flag)",
+      activity: "Ready to launch — sandbox production flag",
       completedAt: new Date().toISOString(),
     });
-    updateTask(project, "DEPLOY", {
+    updateTask(project, "APPROVAL", {
       status: "COMPLETED",
       activity: "Production approved",
     });
+    project.passport = buildBusinessPassport(project);
     addMemory(project, {
       projectId: project.id,
       kind: "user_approval",
