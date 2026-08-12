@@ -221,7 +221,10 @@ function resolveConnection(dbUrl) {
 }
 
 async function main() {
-  const dbUrl = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+  const dbUrl =
+    process.env.SUPABASE_DB_URL ||
+    process.env.SUPABASE_DB ||
+    process.env.DATABASE_URL;
   if (!dbUrl) {
     console.error(
       "SUPABASE_DB_URL not set — apply migrations via Supabase SQL Editor."

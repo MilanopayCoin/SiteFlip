@@ -27,10 +27,14 @@ export async function GET(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const dbUrl = process.env.SUPABASE_DB_URL?.trim();
+  const dbUrl =
+    process.env.SUPABASE_DB_URL?.trim() || process.env.SUPABASE_DB?.trim();
   if (!dbUrl) {
     return NextResponse.json(
-      { error: "SUPABASE_DB_URL not configured on Worker" },
+      {
+        error: "SUPABASE_DB_URL not configured on Worker",
+        hint: "Set SUPABASE_DB_URL (or SUPABASE_DB) as an encrypted Worker secret",
+      },
       { status: 503 }
     );
   }
@@ -42,6 +46,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     action: "inspect",
     migrationFiles: MIGRATION_FILES,
+    connected: result.connected,
     ...result,
   });
 }
@@ -51,10 +56,14 @@ export async function POST(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const dbUrl = process.env.SUPABASE_DB_URL?.trim();
+  const dbUrl =
+    process.env.SUPABASE_DB_URL?.trim() || process.env.SUPABASE_DB?.trim();
   if (!dbUrl) {
     return NextResponse.json(
-      { error: "SUPABASE_DB_URL not configured on Worker" },
+      {
+        error: "SUPABASE_DB_URL not configured on Worker",
+        hint: "Set SUPABASE_DB_URL (or SUPABASE_DB) as an encrypted Worker secret",
+      },
       { status: 503 }
     );
   }

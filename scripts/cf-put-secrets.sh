@@ -40,6 +40,12 @@ put_secret NEXT_PUBLIC_SUPABASE_URL
 put_secret NEXT_PUBLIC_SUPABASE_ANON_KEY
 put_secret SUPABASE_SERVICE_ROLE_KEY
 put_secret SUPABASE_DB_URL
+# Alternate name used on some Worker dashboards
+if [[ -z "${SUPABASE_DB_URL:-}" && -n "${SUPABASE_DB:-}" ]]; then
+  printf '%s' "$SUPABASE_DB" | npx wrangler secret put "SUPABASE_DB_URL" >/dev/null
+  echo "restored SUPABASE_DB_URL (from SUPABASE_DB)"
+fi
+put_secret SUPABASE_DB
 put_secret MIGRATE_TOKEN
 put_secret SITEFLIP_ALLOW_MIGRATE
 put_secret GROQ_API_KEY

@@ -58,6 +58,7 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_SERVICE_ROLE_KEY",
       "SUPABASE_DB_URL",
+      "SUPABASE_DB", // alternate Worker secret name
       "MIGRATE_TOKEN",
       "SITEFLIP_ALLOW_MIGRATE",
       "MOLLIE_API_KEY",
@@ -74,6 +75,13 @@ export async function ensureCloudflareEnv(): Promise<void> {
       if (typeof val === "string" && val && !process.env[key]) {
         process.env[key] = val;
       }
+    }
+    // Normalize alternate DB URL binding → SUPABASE_DB_URL (never log value)
+    if (!process.env.SUPABASE_DB_URL?.trim()) {
+      const alt =
+        (typeof env.SUPABASE_DB === "string" && env.SUPABASE_DB.trim()) ||
+        process.env.SUPABASE_DB?.trim();
+      if (alt) process.env.SUPABASE_DB_URL = alt;
     }
     // Normalize legacy Mollie secret binding → MOLLIE_API_KEY
     if (!process.env.MOLLIE_API_KEY?.trim()) {
