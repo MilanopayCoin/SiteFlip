@@ -46,7 +46,6 @@ export async function GET(request: Request) {
   return NextResponse.json({
     action: "inspect",
     migrationFiles: MIGRATION_FILES,
-    connected: result.connected,
     ...result,
   });
 }
