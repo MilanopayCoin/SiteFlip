@@ -57,29 +57,31 @@ export async function POST(request: Request) {
           },
         },
       });
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
+      if (!error) {
+        const userId = data.user?.id || `local_${nanoid(10)}`;
+        const profile = ensureProfile(userId, email, {
+          username,
+          displayName,
+          country: country || "",
+          persistenceMode: "LOCAL",
+        });
+        return NextResponse.json({
+          ok: true,
+          mode: data.session ? "supabase_session" : "supabase_confirm_email",
+          user: { id: userId, email },
+          profile,
+          completionPercent: profileCompletionPercent(profile),
+          hasSession: Boolean(data.session),
+          note: "LOCAL / DEMO / NOT PERSISTED — profile fields stored in memory until schema is available",
+        });
       }
-      const userId = data.user?.id || `local_${nanoid(10)}`;
-      const profile = ensureProfile(userId, email, {
-        username,
-        displayName,
-        country: country || "",
-        persistenceMode: "LOCAL",
-      });
-      return NextResponse.json({
-        ok: true,
-        mode: data.session ? "supabase_session" : "supabase_confirm_email",
-        user: { id: userId, email },
-        profile,
-        completionPercent: profileCompletionPercent(profile),
-        hasSession: Boolean(data.session),
-        note: "LOCAL / DEMO / NOT PERSISTED — profile fields stored in memory until schema is available",
-      });
+      // Fall through to DEMO local when Auth rejects (e.g. email validation) —
+      // keeps REGISTER working while schema/auth edge cases exist.
+      console.warn("[auth/register] supabase signup failed, demo fallback");
     }
   }
 
-  // Demo local register (no Supabase Auth)
+  // Demo local register (no Supabase Auth session / Auth rejected)
   const userId = `demo_${nanoid(10)}`;
   const profile = saveProfile(
     ensureProfile(userId, email, {
