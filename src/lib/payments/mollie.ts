@@ -28,7 +28,10 @@ export type MolliePayment = {
 };
 
 function mollieKey(): string | null {
-  const key = process.env.MOLLIE_API_KEY?.trim();
+  const key =
+    process.env.MOLLIE_API_KEY?.trim() ||
+    process.env.Mollie_api?.trim() || // legacy Worker secret name
+    null;
   return key || null;
 }
 

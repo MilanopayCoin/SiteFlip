@@ -51,11 +51,16 @@ export async function GET() {
     "businesses",
     "listings",
     "offers",
+    "offer_events",
     "messages",
     "conversations",
     "watchlists",
     "rental_requests",
     "transactions",
+    "payments",
+    "factory_projects",
+    "factory_runs",
+    "factory_outputs",
   ];
 
   try {

@@ -58,6 +58,7 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_SERVICE_ROLE_KEY",
       "MOLLIE_API_KEY",
+      "Mollie_api", // legacy Worker secret name
       "MOLLIE_WEBHOOK_URL",
       "GROQ_API_KEY",
       "AI_PROVIDER",
@@ -71,6 +72,13 @@ export async function ensureCloudflareEnv(): Promise<void> {
       if (typeof val === "string" && val && !process.env[key]) {
         process.env[key] = val;
       }
+    }
+    // Normalize legacy Mollie secret binding → MOLLIE_API_KEY
+    if (!process.env.MOLLIE_API_KEY?.trim()) {
+      const legacy =
+        (typeof env.Mollie_api === "string" && env.Mollie_api.trim()) ||
+        process.env.Mollie_api?.trim();
+      if (legacy) process.env.MOLLIE_API_KEY = legacy;
     }
   } catch {
     // Not running on Cloudflare / context unavailable — ignore

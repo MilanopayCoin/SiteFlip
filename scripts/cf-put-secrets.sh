@@ -44,5 +44,11 @@ put_secret AI_PROVIDER
 put_secret MOLLIE_API_KEY
 put_secret MOLLIE_WEBHOOK_URL
 
+# If only legacy name is present in env, also restore canonical binding
+if [[ -z "${MOLLIE_API_KEY:-}" && -n "${Mollie_api:-}" ]]; then
+  printf '%s' "$Mollie_api" | npx wrangler secret put "MOLLIE_API_KEY" >/dev/null
+  echo "restored MOLLIE_API_KEY (from Mollie_api)"
+fi
+
 echo "Current Worker secrets:"
 npx wrangler secret list
