@@ -84,10 +84,38 @@ export async function PUT(request: Request) {
       if (user && incoming.id !== user.id) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-      const saved = saveProfile({
+      const data = parsed.data;
+      const merged: UserProfile = {
         ...incoming,
+        username: data.username || incoming.username,
+        displayName:
+          data.displayName !== undefined ? data.displayName : incoming.displayName,
+        country: data.country !== undefined ? data.country : incoming.country,
+        bio: data.bio !== undefined ? data.bio : incoming.bio,
+        website: data.website !== undefined ? data.website : incoming.website,
+        skills: data.skills !== undefined ? data.skills : incoming.skills,
+        businessInterests:
+          data.businessInterests !== undefined
+            ? data.businessInterests
+            : incoming.businessInterests,
+        preferredBusinessType:
+          data.preferredBusinessType !== undefined
+            ? data.preferredBusinessType
+            : incoming.preferredBusinessType,
+        budget: data.budget !== undefined ? data.budget : incoming.budget,
+        risk: data.risk !== undefined ? data.risk : incoming.risk,
+        workload: data.workload !== undefined ? data.workload : incoming.workload,
         persistenceMode: incoming.persistenceMode || "LOCAL",
-      });
+      };
+      if (
+        merged.username.toLowerCase() !== incoming.username.toLowerCase()
+      ) {
+        const taken = getProfileByUsername(merged.username);
+        if (taken && taken.id !== merged.id) {
+          return NextResponse.json({ error: "Username already taken" }, { status: 409 });
+        }
+      }
+      const saved = saveProfile(merged);
       return NextResponse.json({
         profile: saved,
         completionPercent: profileCompletionPercent(saved),
