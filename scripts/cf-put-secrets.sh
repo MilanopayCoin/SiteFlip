@@ -13,27 +13,36 @@ if [[ -f .dev.vars ]]; then
   set +a
 fi
 
-need=(NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY)
-for k in "${need[@]}"; do
-  if [[ -z "${!k:-}" ]]; then
-    echo "Missing $k in environment or .dev.vars" >&2
-    exit 1
+put_secret() {
+  local name="$1"
+  local value="${!1:-}"
+  if [[ -z "$value" ]]; then
+    echo "skip $name (not in env)"
+    return 0
   fi
-done
+  printf '%s' "$value" | npx wrangler secret put "$name" >/dev/null
+  echo "restored $name"
+}
 
 # Normalize project-ref-only URLs
-if [[ "$NEXT_PUBLIC_SUPABASE_URL" =~ ^[a-z0-9]{15,32}$ ]]; then
+if [[ -n "${NEXT_PUBLIC_SUPABASE_URL:-}" && "$NEXT_PUBLIC_SUPABASE_URL" =~ ^[a-z0-9]{15,32}$ ]]; then
   NEXT_PUBLIC_SUPABASE_URL="https://${NEXT_PUBLIC_SUPABASE_URL}.supabase.co"
+  export NEXT_PUBLIC_SUPABASE_URL
 fi
 
-printf '%s' "$NEXT_PUBLIC_SUPABASE_URL" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL >/dev/null
-printf '%s' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_ANON_KEY >/dev/null
-
-if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-  printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY >/dev/null
-  echo "Restored URL, anon, and service role secrets."
-else
-  echo "Restored URL and anon secrets. Service role left unchanged (already on Worker)."
+# Default AI provider when Groq key is present
+if [[ -z "${AI_PROVIDER:-}" && -n "${GROQ_API_KEY:-}" ]]; then
+  AI_PROVIDER=groq
+  export AI_PROVIDER
 fi
 
+put_secret NEXT_PUBLIC_SUPABASE_URL
+put_secret NEXT_PUBLIC_SUPABASE_ANON_KEY
+put_secret SUPABASE_SERVICE_ROLE_KEY
+put_secret GROQ_API_KEY
+put_secret AI_PROVIDER
+put_secret MOLLIE_API_KEY
+put_secret MOLLIE_WEBHOOK_URL
+
+echo "Current Worker secrets:"
 npx wrangler secret list

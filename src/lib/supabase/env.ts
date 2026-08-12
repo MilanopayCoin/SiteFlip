@@ -57,6 +57,15 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "NEXT_PUBLIC_SUPABASE_URL",
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_SERVICE_ROLE_KEY",
+      "MOLLIE_API_KEY",
+      "MOLLIE_WEBHOOK_URL",
+      "GROQ_API_KEY",
+      "AI_PROVIDER",
+      "AI_FALLBACK_PROVIDER",
+      "OPENAI_API_KEY",
+      "GEMINI_API_KEY",
+      "STRIPE_SECRET_KEY",
+      "STRIPE_WEBHOOK_SECRET",
     ]) {
       const val = env[key];
       if (typeof val === "string" && val && !process.env[key]) {

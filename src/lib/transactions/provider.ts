@@ -141,3 +141,16 @@ export function getTransactionLabel(type: TransactionType): string {
   };
   return labels[type];
 }
+
+export async function getActivePaymentProvider(): Promise<TransactionProvider> {
+  const { isMollieConfigured, MolliePaymentProvider } = await import(
+    "@/lib/payments/mollie"
+  );
+  if (isMollieConfigured()) {
+    return new MolliePaymentProvider();
+  }
+  if (process.env.STRIPE_SECRET_KEY) {
+    return new StripePaymentProvider();
+  }
+  return new MolliePaymentProvider(); // demo stub when neither configured
+}

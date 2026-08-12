@@ -29,6 +29,7 @@ async function main() {
     "001_initial_schema.sql",
     "002_business_factory.sql",
     "003_mvp_production.sql",
+    "004_mollie_payments.sql",
   ];
   const client = new pg.Client({
     connectionString: dbUrl,

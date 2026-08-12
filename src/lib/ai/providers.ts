@@ -26,9 +26,10 @@ function primaryProvider(): AiProviderName {
   if (p === "gemini" || p === "groq" || p === "ollama" || p === "openai" || p === "heuristic") {
     return p;
   }
+  // Prefer Groq when configured (fast marketplace AI tasks)
+  if (process.env.GROQ_API_KEY) return "groq";
   if (process.env.OPENAI_API_KEY) return "openai";
   if (process.env.GEMINI_API_KEY) return "gemini";
-  if (process.env.GROQ_API_KEY) return "groq";
   if (process.env.OLLAMA_BASE_URL) return "ollama";
   return "heuristic";
 }
