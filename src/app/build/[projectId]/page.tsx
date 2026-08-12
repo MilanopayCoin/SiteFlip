@@ -1355,6 +1355,8 @@ export default function FactoryProjectPage() {
           <div>
             <p className="text-zinc-500">Threshold</p>
             <p className="text-white">€{project.usage.costThresholdEur}</p>
+          </div>
+          <div>
             <p className="text-zinc-500">Budget remaining</p>
             <p className="text-white">
               {project.usage.budgetLimitEur == null
