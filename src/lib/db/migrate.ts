@@ -136,7 +136,8 @@ function safeDbError(err: unknown): string {
 
 /**
  * Build candidate connection strings. Direct db.* hosts are often IPv6-only
- * and blocked from some runtimes; Supabase pooler (IPv4) is preferred for Workers.
+ * and blocked from some runtimes; Supabase Session pooler is preferred.
+ * Order: session pooler :5432 → transaction :6543 → original URL.
  * Never logs credentials.
  */
 export function buildDbUrlCandidates(databaseUrl: string): string[] {
@@ -148,33 +149,50 @@ export function buildDbUrlCandidates(databaseUrl: string): string[] {
       out.push(u);
     }
   };
-  add(databaseUrl);
 
   try {
     const parsed = new URL(databaseUrl);
     const host = parsed.hostname;
     const password = decodeURIComponent(parsed.password);
     const database = (parsed.pathname || "/postgres").replace(/^\//, "") || "postgres";
-    const m = host.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
-    if (m) {
-      const ref = m[1];
-      const region = "eu-central-1"; // project resolved here previously
+    const region = "eu-central-1";
+    const poolHost = `aws-0-${region}.pooler.supabase.com`;
+
+    const direct = host.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+    const pooler = /pooler\.supabase\.com$/i.test(host);
+    const ref = direct?.[1] || null;
+
+    const makePool = (port: number, user: string) => {
+      const u = new URL(`postgresql://${host}`);
+      u.protocol = "postgresql:";
+      u.hostname = poolHost;
+      u.port = String(port);
+      u.username = user;
+      u.password = password;
+      u.pathname = `/${database}`;
+      if (port === 6543) u.searchParams.set("sslmode", "require");
+      return u.toString();
+    };
+
+    if (direct && ref) {
       const poolUser = `postgres.${ref}`;
-      for (const port of [6543, 5432]) {
-        const u = new URL(`postgresql://${host}`);
-        u.protocol = "postgresql:";
-        u.hostname = `aws-0-${region}.pooler.supabase.com`;
-        u.port = String(port);
-        u.username = poolUser;
-        u.password = password;
-        u.pathname = `/${database}`;
-        if (port === 6543) u.searchParams.set("sslmode", "require");
+      // Session mode first (required architecture), then transaction pooler.
+      add(makePool(5432, poolUser));
+      add(makePool(6543, poolUser));
+    } else if (pooler) {
+      // Prefer session port when a non-5432 pooler URL was stored.
+      if (parsed.port && parsed.port !== "5432") {
+        const u = new URL(databaseUrl);
+        u.port = "5432";
+        u.searchParams.delete("sslmode");
         add(u.toString());
       }
     }
   } catch {
-    // keep original only
+    // keep original only below
   }
+
+  add(databaseUrl);
   return out;
 }
 
