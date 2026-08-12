@@ -16,6 +16,8 @@ import {
   listCachedFactoryProjects,
 } from "@/lib/factory/client-cache";
 import type { FactoryProject } from "@/lib/factory/types";
+import { readCachedProfile } from "@/lib/profile/client-cache";
+import type { UserProfile } from "@/lib/profile/types";
 
 interface Portfolio {
   activeBuilds: number;
@@ -59,6 +61,9 @@ export default function BuildFactoryPage() {
   const [cachedProjects] = useState<FactoryProject[]>(() =>
     typeof window === "undefined" ? [] : listCachedFactoryProjects()
   );
+  const [profile, setProfile] = useState<UserProfile | null>(() =>
+    typeof window === "undefined" ? null : readCachedProfile()
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [costNote, setCostNote] = useState<string | null>(null);
@@ -68,6 +73,12 @@ export default function BuildFactoryPage() {
       .then((r) => r.json())
       .then(setPortfolio)
       .catch(() => setPortfolio(null));
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.profile) setProfile(d.profile);
+      })
+      .catch(() => null);
   }, []);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -76,23 +87,50 @@ export default function BuildFactoryPage() {
     setError(null);
     const fd = new FormData(e.currentTarget);
     try {
+      // Explicit form values win; profile only fills blanks
+      const idea = String(fd.get("idea") || "");
+      const budget =
+        String(fd.get("budget") || "").trim() || profile?.budget || undefined;
+      const country =
+        String(fd.get("country") || "").trim() || profile?.country || undefined;
+      const businessType =
+        String(fd.get("businessType") || "").trim() ||
+        profile?.preferredBusinessType ||
+        undefined;
+      const riskLevel =
+        String(fd.get("riskLevel") || "").trim() || profile?.risk || undefined;
+      const workloadPreference =
+        String(fd.get("workloadPreference") || "").trim() ||
+        profile?.workload ||
+        undefined;
+
       const create = await fetch("/api/factory/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          idea: fd.get("idea"),
-          budget: fd.get("budget"),
+          idea,
+          budget,
           targetRevenue: fd.get("targetRevenue"),
-          country: fd.get("country"),
+          country,
           targetCustomer: fd.get("targetCustomer"),
-          businessType: fd.get("businessType"),
+          businessType,
           preferredTechnology: fd.get("preferredTechnology") || undefined,
           experienceLevel: fd.get("experienceLevel") || undefined,
           availableTime: fd.get("availableTime") || undefined,
-          riskLevel: fd.get("riskLevel") || undefined,
+          riskLevel,
           businessModel: fd.get("businessModel") || undefined,
-          workloadPreference: fd.get("workloadPreference") || undefined,
-          // Pipeline starts on the project page after hydrate (Worker isolate-safe)
+          workloadPreference,
+          profileContext: profile
+            ? {
+                country: profile.country,
+                budget: profile.budget,
+                risk: profile.risk,
+                workload: profile.workload,
+                preferredBusinessType: profile.preferredBusinessType,
+                interests: profile.businessInterests,
+                note: "Profile preferences are AI context only — explicit idea overrides them",
+              }
+            : undefined,
           run: false,
         }),
       });
@@ -187,7 +225,24 @@ export default function BuildFactoryPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={onSubmit} className="space-y-4">
+            {profile && (
+              <div className="mb-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 text-xs text-zinc-400">
+                Using profile preferences as AI context (explicit fields override):{" "}
+                {[
+                  profile.country && `Country ${profile.country}`,
+                  profile.budget && `Budget ${profile.budget}`,
+                  profile.risk && `Risk ${profile.risk}`,
+                  profile.workload && `Workload ${profile.workload}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "complete your profile for better defaults"}
+                .{" "}
+                <Link href="/profile" className="text-violet-300 hover:underline">
+                  Edit profile
+                </Link>
+              </div>
+            )}
+            <form onSubmit={onSubmit} className="space-y-4" key={profile?.id || "anon"}>
               <div>
                 <Label htmlFor="idea">Idea</Label>
                 <Textarea
@@ -202,11 +257,20 @@ export default function BuildFactoryPage() {
               </div>
               <p className="text-xs text-zinc-500">
                 Optional details improve the blueprint. Idea alone is enough to start.
+                Profile preferences never override your explicit idea.
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Budget (optional)" name="budget" defaultValue="€2,000" />
+                <Field
+                  label="Budget (optional)"
+                  name="budget"
+                  defaultValue={profile?.budget || "€2,000"}
+                />
                 <Field label="Desired revenue (optional)" name="targetRevenue" defaultValue="€1,000 MRR" />
-                <Field label="Country (optional)" name="country" defaultValue="Netherlands" />
+                <Field
+                  label="Country (optional)"
+                  name="country"
+                  defaultValue={profile?.country || "Netherlands"}
+                />
                 <Field
                   label="Target customer (optional)"
                   name="targetCustomer"
@@ -218,7 +282,7 @@ export default function BuildFactoryPage() {
                     id="businessType"
                     name="businessType"
                     className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
-                    defaultValue="SaaS"
+                    defaultValue={profile?.preferredBusinessType || "SaaS"}
                   >
                     {["SaaS", "AI Tool", "Ecommerce", "Newsletter", "Digital Product", "Marketplace"].map(
                       (o) => (
@@ -245,7 +309,7 @@ export default function BuildFactoryPage() {
                     id="workloadPreference"
                     name="workloadPreference"
                     className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
-                    defaultValue="Part-time"
+                    defaultValue={profile?.workload || "Part-time"}
                   >
                     {["Side project", "Part-time", "Full-time"].map((o) => (
                       <option key={o} value={o} className="bg-zinc-900">
@@ -292,7 +356,7 @@ export default function BuildFactoryPage() {
                     id="riskLevel"
                     name="riskLevel"
                     className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
-                    defaultValue="Medium"
+                    defaultValue={profile?.risk || "Medium"}
                   >
                     {["Low", "Medium", "High"].map((o) => (
                       <option key={o} value={o} className="bg-zinc-900">

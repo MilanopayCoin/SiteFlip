@@ -232,6 +232,7 @@ export default function FactoryProjectPage() {
 
   const pending = project.approvals.filter((a) => a.status === "PENDING");
   const isLive = project.state === "LIVE";
+  const failedTasks = project.tasks.filter((t) => t.status === "FAILED");
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -320,6 +321,35 @@ export default function FactoryProjectPage() {
         </CardContent>
       </Card>
 
+      {failedTasks.length > 0 && (
+        <Card className="mt-6 border-rose-500/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-rose-300">
+              <XCircle className="h-5 w-5" />
+              Failed stages
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {failedTasks.map((t) => (
+              <div
+                key={t.id}
+                className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-sm"
+              >
+                <p className="font-medium text-white">
+                  {t.stepId} · {t.agent}
+                </p>
+                <p className="mt-1 text-zinc-400">
+                  {t.error || t.activity || "Stage failed"}
+                </p>
+              </div>
+            ))}
+            <Button size="sm" disabled={busy} onClick={runAgain}>
+              Retry pipeline
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         {/* Activity */}
         <Card className="lg:col-span-1">
@@ -366,6 +396,7 @@ export default function FactoryProjectPage() {
               >
                 <summary className="cursor-pointer text-sm font-medium text-white">
                   {o.agent} · {o.schemaName} · {o.implementationStatus}
+                  {o.source === "heuristic" ? " · HEURISTIC / AI FALLBACK" : ` · ${o.source}`}
                 </summary>
                 <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-black/40 p-3 text-[11px] text-zinc-400">
                   {JSON.stringify(o.data, null, 2)}

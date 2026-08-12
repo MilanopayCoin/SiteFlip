@@ -211,10 +211,15 @@ export async function aiJson<T>(
   user: unknown,
   schema: z.ZodType<T>,
   heuristic: () => T
-): Promise<AiJsonResult<T>> {
+): Promise<AiJsonResult<T> & { fallbackReason?: string }> {
   const primary = primaryProvider();
   if (primary === "heuristic") {
-    return { data: heuristic(), provider: "heuristic", model: "none" };
+    return {
+      data: heuristic(),
+      provider: "heuristic",
+      model: "none",
+      fallbackReason: "No AI provider configured",
+    };
   }
 
   const tryParse = (content: string) => {
@@ -230,15 +235,8 @@ export async function aiJson<T>(
     }
   };
 
-  const mergeWithHeuristic = (partial: unknown): T | null => {
-    if (!partial || typeof partial !== "object") return null;
-    const base = heuristic() as Record<string, unknown>;
-    const merged = deepMerge(base, partial as Record<string, unknown>);
-    const parsed = schema.safeParse(merged);
-    return parsed.success ? parsed.data : null;
-  };
-
   try {
+    // Attempt 1: Groq (or primary) structured JSON
     const result = await aiChat(
       `${system}\n\nReturn a single JSON object only. Include every required key. Arrays must be arrays. Do not wrap in markdown.`,
       JSON.stringify(user),
@@ -251,95 +249,58 @@ export async function aiJson<T>(
       rawObj = null;
     }
     let parsed = schema.safeParse(rawObj ?? {});
-    if (!parsed.success) {
-      const merged = mergeWithHeuristic(rawObj);
-      if (merged) {
-        return {
-          data: merged,
-          provider: result.provider,
-          model: result.model,
-          raw: result.content,
-        };
-      }
-      // One repair attempt with validation issues (no secrets)
-      const issues = parsed.error.issues
-        .slice(0, 8)
-        .map((i) => `${i.path.join(".")}: ${i.message}`)
-        .join("; ");
-      const repair = await aiChat(
-        `${system}\n\nYour previous JSON failed validation: ${issues}. Return corrected JSON only with all required keys.`,
-        JSON.stringify({ user, previous: rawObj }),
-        { json: true }
-      );
-      let repairObj: unknown;
-      try {
-        repairObj = tryParse(repair.content || "{}");
-      } catch {
-        repairObj = null;
-      }
-      parsed = schema.safeParse(repairObj ?? {});
-      if (parsed.success) {
-        return {
-          data: parsed.data,
-          provider: repair.provider,
-          model: repair.model,
-          raw: repair.content,
-        };
-      }
-      const repairedMerge = mergeWithHeuristic(repairObj);
-      if (repairedMerge) {
-        return {
-          data: repairedMerge,
-          provider: repair.provider,
-          model: repair.model,
-          raw: repair.content,
-        };
-      }
+    if (parsed.success) {
       return {
-        data: heuristic(),
-        provider: "heuristic",
-        model: "none",
+        data: parsed.data,
+        provider: result.provider,
+        model: result.model,
         raw: result.content,
       };
     }
-    return {
-      data: parsed.data,
-      provider: result.provider,
-      model: result.model,
-      raw: result.content,
-    };
-  } catch {
-    return { data: heuristic(), provider: "heuristic", model: "none" };
-  }
-}
 
-function deepMerge(
-  base: Record<string, unknown>,
-  overlay: Record<string, unknown>
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...base };
-  for (const [k, v] of Object.entries(overlay)) {
-    if (v === undefined || v === null) continue;
-    if (
-      v &&
-      typeof v === "object" &&
-      !Array.isArray(v) &&
-      base[k] &&
-      typeof base[k] === "object" &&
-      !Array.isArray(base[k])
-    ) {
-      out[k] = deepMerge(
-        base[k] as Record<string, unknown>,
-        v as Record<string, unknown>
-      );
-    } else if (Array.isArray(v) && v.length === 0) {
-      // keep base array when model returns empty
-      continue;
-    } else {
-      out[k] = v;
+    // Attempt 2 (required): one validation repair retry
+    const issues = parsed.error.issues
+      .slice(0, 8)
+      .map((i) => `${i.path.join(".")}: ${i.message}`)
+      .join("; ");
+    const repair = await aiChat(
+      `${system}\n\nYour previous JSON failed Zod validation: ${issues}. Return corrected JSON only with all required keys. Do not invent verified market statistics.`,
+      JSON.stringify({ user, previous: rawObj }),
+      { json: true }
+    );
+    let repairObj: unknown;
+    try {
+      repairObj = tryParse(repair.content || "{}");
+    } catch {
+      repairObj = null;
     }
+    parsed = schema.safeParse(repairObj ?? {});
+    if (parsed.success) {
+      return {
+        data: parsed.data,
+        provider: repair.provider,
+        model: repair.model,
+        raw: repair.content,
+      };
+    }
+
+    // Only after retry: heuristic fallback
+    return {
+      data: heuristic(),
+      provider: "heuristic",
+      model: "none",
+      raw: repair.content || result.content,
+      fallbackReason: `Zod validation failed after retry: ${issues}`,
+    };
+  } catch (err) {
+    return {
+      data: heuristic(),
+      provider: "heuristic",
+      model: "none",
+      fallbackReason:
+        err instanceof Error ? err.message : "AI provider request failed",
+    };
   }
-  return out;
 }
 
 export function getAiConfigStatus() {

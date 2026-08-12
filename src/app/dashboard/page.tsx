@@ -28,7 +28,7 @@ export default async function DashboardPage() {
   let offers = memoryStore.listOffersForUser("demo-user");
   let watch = memoryStore.listWatch("demo-user");
   let rentals = memoryStore.listRentalRequests("demo-user");
-  let unread = memoryStore.unreadCount("demo-user");
+  const unread = memoryStore.unreadCount("demo-user");
   let modeLabel = "DEMO";
 
   if (supabaseMode) {
@@ -91,8 +91,11 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant={modeLabel === "LIVE" ? "success" : "warning"}>
-            {modeLabel}
+            {modeLabel === "LIVE" ? "LIVE" : "LOCAL / DEMO / NOT PERSISTED"}
           </Badge>
+          <Button variant="outline" asChild>
+            <Link href="/profile">Profile</Link>
+          </Button>
           <Button asChild>
             <Link href="/dashboard/ai">AI Command Center</Link>
           </Button>
@@ -120,48 +123,43 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             <Button size="sm" asChild>
-              <Link href="/dashboard/businesses/new">Create business</Link>
+              <Link href="/dashboard/businesses">My Businesses</Link>
             </Button>
             <Button size="sm" variant="secondary" asChild>
-              <Link href="/dashboard/listings/new">Create listing</Link>
+              <Link href="/dashboard/listings">My Listings</Link>
             </Button>
             <Button size="sm" variant="outline" asChild>
-              <Link href="/dashboard/messages">
-                Messages{unread > 0 ? ` (${unread})` : ""}
-              </Link>
+              <Link href="/dashboard/offers">My Offers</Link>
             </Button>
             <Button size="sm" variant="outline" asChild>
-              <Link href="/dashboard/offers">Offers</Link>
+              <Link href="/dashboard/rentals">My Rentals</Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/dashboard/watchlist">My Watchlist</Link>
             </Button>
             <Button size="sm" variant="ghost" asChild>
-              <Link href="/build">Business Factory</Link>
+              <Link href="/build">Factory Projects</Link>
+            </Button>
+            <Button size="sm" variant="ghost" asChild>
+              <Link href="/profile">Edit profile</Link>
             </Button>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>AI recommendations</CardTitle>
+            <CardTitle>Recent activity</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {owned.length === 0 ? (
-              <p className="text-zinc-400">
-                Create a business to get AI recommendations based on your data.
-              </p>
-            ) : (
-              <>
-                <p className="text-zinc-300">
-                  Review asking prices vs monthly profit for your portfolio.
-                </p>
-                <p className="text-zinc-300">
-                  Consider listing growing assets or renting declining ones.
-                </p>
-              </>
-            )}
+          <CardContent className="space-y-3 text-sm text-zinc-400">
+            <p>
+              Offers: {offers.length} · Watchlist: {watch.length} · Rentals:{" "}
+              {rentals.length} · Unread messages: {unread}
+            </p>
             <p className="text-xs text-zinc-600">
-              Recommendations use stored metrics only — no fabricated numbers.
+              Factory projects are LOCAL / DEMO / NOT PERSISTED until Supabase
+              factory schema is available. Open /build to continue.
             </p>
             <Button size="sm" variant="secondary" asChild>
-              <Link href="/dashboard/ai">Ask AI</Link>
+              <Link href="/build">Open Factory</Link>
             </Button>
           </CardContent>
         </Card>

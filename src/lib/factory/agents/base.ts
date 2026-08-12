@@ -17,9 +17,29 @@ export async function runStructuredAgent<T>(opts: {
   const source = (result.provider || "heuristic") as FactoryOutputSource;
   const assumptions = extractAssumptions(result.data);
   if (source === "heuristic") {
+    assumptions.unshift("HEURISTIC / AI FALLBACK — not verified research");
     assumptions.unshift(
-      "AI provider unavailable or validation failed — heuristic fallback used (AI_HYPOTHESIS)"
+      `[AI_HYPOTHESIS] ${
+        (result as { fallbackReason?: string }).fallbackReason ||
+        "Structured AI output unavailable after Zod retry"
+      }`
     );
+    // Tag labeledAssumptions on data when possible
+    if (result.data && typeof result.data === "object") {
+      const obj = result.data as Record<string, unknown>;
+      if (Array.isArray(obj.labeledAssumptions)) {
+        obj.labeledAssumptions = [
+          "HEURISTIC / AI FALLBACK",
+          ...obj.labeledAssumptions.map(String),
+        ];
+      }
+      if (Array.isArray(obj.verifiedResearch)) {
+        // Never present heuristic as verified
+        obj.verifiedResearch = [
+          "No verified research — HEURISTIC / AI FALLBACK used for this agent",
+        ];
+      }
+    }
   }
   return {
     data: result.data,

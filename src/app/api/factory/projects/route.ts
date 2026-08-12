@@ -35,7 +35,23 @@ export async function POST(request: Request) {
     }
 
     const cost = estimateFullPipelineCost();
-    const project = createFactoryProject(parsed.data, "demo-user");
+    const { resolveRequestUser } = await import("@/lib/api/request-user");
+    const user = await resolveRequestUser(request);
+    const ownerId = user?.id || "demo-user";
+    const project = createFactoryProject(parsed.data, ownerId);
+
+    if (body?.profileContext && typeof body.profileContext === "object") {
+      const { appendActivity, saveFactoryProject } = await import(
+        "@/lib/factory/store"
+      );
+      appendActivity(
+        project,
+        "Orchestrator",
+        `Profile preferences applied as AI context (explicit idea wins): ${JSON.stringify(body.profileContext).slice(0, 280)}`,
+        "info"
+      );
+      saveFactoryProject(project);
+    }
 
     let result = project;
     if (body?.run === true || body?.startPipeline === true) {

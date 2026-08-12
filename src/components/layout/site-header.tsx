@@ -1,11 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Menu, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  clearDemoSession,
+  readCachedProfile,
+  readDemoSession,
+} from "@/lib/profile/client-cache";
+import { createBrowserClient } from "@/lib/supabase/browser";
 
 const NAV = [
   { href: "/explore", label: "Explore" },
@@ -18,7 +24,38 @@ const NAV = [
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [signedIn, setSignedIn] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return Boolean(readCachedProfile() || readDemoSession());
+  });
+  const [username, setUsername] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return readCachedProfile()?.username ?? null;
+  });
+
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.authenticated) {
+          setSignedIn(true);
+          setUsername(d.profile?.username ?? null);
+        }
+      })
+      .catch(() => null);
+  }, [pathname]);
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    const supabase = await createBrowserClient();
+    if (supabase) await supabase.auth.signOut();
+    clearDemoSession();
+    setSignedIn(false);
+    setUsername(null);
+    router.push("/login");
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-[#07070c]/80 backdrop-blur-xl">
@@ -50,12 +87,28 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/login">Sign in</Link>
-          </Button>
-          <Button size="sm" asChild>
-            <Link href="/dashboard">Dashboard</Link>
-          </Button>
+          {signedIn ? (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/profile">{username ? `@${username}` : "Profile"}</Link>
+              </Button>
+              <Button size="sm" asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </Button>
+              <Button variant="outline" size="sm" onClick={logout}>
+                Log out
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/login">Sign in</Link>
+              </Button>
+              <Button size="sm" asChild>
+                <Link href="/signup">Register</Link>
+              </Button>
+            </>
+          )}
         </div>
 
         <button
@@ -81,11 +134,11 @@ export function SiteHeader() {
               </Link>
             ))}
             <Link
-              href="/dashboard"
+              href={signedIn ? "/profile" : "/signup"}
               onClick={() => setOpen(false)}
               className="mt-2 rounded-lg bg-violet-600 px-3 py-2.5 text-center text-sm font-medium text-white"
             >
-              Dashboard
+              {signedIn ? "Profile" : "Register"}
             </Link>
           </nav>
         </div>
@@ -121,7 +174,7 @@ export function SiteFooter() {
           <h4 className="text-sm font-semibold text-zinc-300">Platform</h4>
           <ul className="mt-3 space-y-2 text-sm text-zinc-500">
             <li><Link href="/build" className="hover:text-zinc-300">Build with AI</Link></li>
-            <li><Link href="/find" className="hover:text-zinc-300">Find My Business</Link></li>
+            <li><Link href="/profile" className="hover:text-zinc-300">Profile</Link></li>
             <li><Link href="/dashboard" className="hover:text-zinc-300">Dashboard</Link></li>
             <li><Link href="/admin" className="hover:text-zinc-300">Admin</Link></li>
           </ul>

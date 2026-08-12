@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
-import { getFactoryProject, getOutputByAgent } from "@/lib/factory/store";
+import {
+  getFactoryProject,
+  getOutputByAgent,
+  saveFactoryProject,
+} from "@/lib/factory/store";
 import { commandCenterReply } from "@/lib/ai";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { z } from "zod";
+import type { FactoryProject } from "@/lib/factory/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const schema = z.object({ prompt: z.string().min(3).max(2000) });
+const schema = z.object({
+  prompt: z.string().min(3).max(2000),
+  project: z.any().optional(),
+});
 
 export async function POST(request: Request, ctx: Ctx) {
   await ensureCloudflareEnv();
@@ -18,12 +26,17 @@ export async function POST(request: Request, ctx: Ctx) {
   }
 
   const { id } = await ctx.params;
-  const project = getFactoryProject(id);
+  const body = await request.json().catch(() => ({}));
+  let project = getFactoryProject(id);
+  const incoming = body?.project as FactoryProject | undefined;
+  if (!project && incoming && incoming.id === id) {
+    project = saveFactoryProject(incoming);
+  }
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const parsed = schema.safeParse(await request.json());
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Validation failed" }, { status: 400 });
   }

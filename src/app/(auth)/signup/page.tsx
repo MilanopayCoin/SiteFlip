@@ -7,13 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  cacheProfile,
+  saveDemoSession,
+} from "@/lib/profile/client-cache";
 import { createBrowserClient } from "@/lib/supabase/browser";
 
 export default function SignupPage() {
   const router = useRouter();
-  const [fullName, setFullName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [country, setCountry] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -22,40 +28,48 @@ export default function SignupPage() {
     setLoading(true);
     setMessage(null);
 
-    const supabase = await createBrowserClient();
-    if (!supabase) {
-      setMessage(
-        "Supabase Auth is not configured. Demo dashboard is available without auth."
-      );
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        username,
+        displayName,
+        country: country || undefined,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setMessage(data.error || "Registration failed");
       setLoading(false);
       return;
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          display_name: fullName,
-        },
-      },
+    if (data.profile) cacheProfile(data.profile);
+    saveDemoSession({
+      userId: data.user.id,
+      email: data.user.email,
+      mode: data.mode === "demo_local" ? "demo" : "supabase",
     });
 
-    if (error) {
-      setMessage(error.message);
-      setLoading(false);
-      return;
+    // Also establish browser Supabase session when Auth is configured
+    if (data.mode !== "demo_local") {
+      const supabase = await createBrowserClient();
+      if (supabase && data.hasSession === false) {
+        // may need email confirm — try password login
+        await supabase.auth.signInWithPassword({ email, password }).catch(() => null);
+      } else if (supabase) {
+        await supabase.auth.signInWithPassword({ email, password }).catch(() => null);
+      }
     }
 
-    if (data.session) {
-      setMessage("Account created. Redirecting…");
-      router.push("/dashboard");
-    } else {
-      setMessage(
-        "Account created. Check your email to confirm if confirmations are enabled, then sign in."
-      );
-    }
+    setMessage(
+      data.mode === "supabase_confirm_email"
+        ? "Account created. Confirm email if required, then open your profile."
+        : "Account created. Redirecting to profile…"
+    );
+    router.push("/profile");
     setLoading(false);
   }
 
@@ -68,13 +82,35 @@ export default function SignupPage() {
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="fullName">Full name</Label>
+              <Label htmlFor="displayName">Display name</Label>
               <Input
-                id="fullName"
+                id="displayName"
                 required
                 className="mt-1.5"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                required
+                minLength={3}
+                pattern="[a-zA-Z0-9_]+"
+                className="mt-1.5"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="country">Country (optional)</Label>
+              <Input
+                id="country"
+                className="mt-1.5"
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                placeholder="Netherlands"
               />
             </div>
             <div>
@@ -101,10 +137,14 @@ export default function SignupPage() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Creating…" : "Sign up"}
+              {loading ? "Creating…" : "Register"}
             </Button>
           </form>
           {message && <p className="mt-4 text-sm text-zinc-400">{message}</p>}
+          <p className="mt-3 text-xs text-zinc-600">
+            Profile data is LOCAL / DEMO / NOT PERSISTED until Supabase schema is
+            available.
+          </p>
           <p className="mt-4 text-center text-sm text-zinc-500">
             Already have an account?{" "}
             <Link href="/login" className="text-violet-400 hover:underline">

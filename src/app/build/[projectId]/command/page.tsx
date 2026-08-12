@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  cacheFactoryProject,
+  readCachedFactoryProject,
+} from "@/lib/factory/client-cache";
 
 const SUGGESTIONS = [
   "Analyze my business.",
@@ -24,22 +28,90 @@ export default function FactoryCommandPage() {
   const [prompt, setPrompt] = useState("");
   const [reply, setReply] = useState<string | null>(null);
   const [assumptions, setAssumptions] = useState<string[]>([]);
-  const [inspected, setInspected] = useState<Record<string, unknown> | null>(null);
+  const [inspected, setInspected] = useState<Record<string, unknown> | null>(
+    null
+  );
   const [loading, setLoading] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const id = params.projectId;
+      const cached = readCachedFactoryProject(id);
+      let res = await fetch(`/api/factory/projects/${id}`);
+      if (!res.ok && cached) {
+        res = await fetch(`/api/factory/projects/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: cached }),
+        });
+      }
+      if (cancelled) return;
+      if (!res.ok) {
+        setProjectError("Project not found");
+        setReady(true);
+        return;
+      }
+      const data = await res.json();
+      if (data.project) cacheFactoryProject(data.project);
+      setReady(true);
+    }
+    void load();
+    const t = window.setTimeout(() => {
+      if (cancelled) return;
+      setReady((r) => {
+        if (r) return r;
+        setProjectError("Project not found");
+        return true;
+      });
+    }, 8000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [params.projectId]);
 
   async function ask(text: string) {
     setLoading(true);
     setPrompt(text);
-    const res = await fetch(`/api/factory/projects/${params.projectId}/command`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: text }),
-    });
+    const cached = readCachedFactoryProject(params.projectId);
+    const res = await fetch(
+      `/api/factory/projects/${params.projectId}/command`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: text, project: cached }),
+      }
+    );
     const data = await res.json();
     setReply(data.reply ?? data.error);
     setAssumptions(data.assumptions ?? []);
     setInspected(data.inspectedState ?? null);
     setLoading(false);
+  }
+
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center text-zinc-500">
+        Loading command center…
+      </div>
+    );
+  }
+
+  if (projectError) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+        <p className="text-rose-400">{projectError}</p>
+        <p className="mt-2 text-sm text-zinc-500">
+          LOCAL / DEMO / NOT PERSISTED
+        </p>
+        <Button className="mt-4" asChild>
+          <Link href="/build">Back to Factory</Link>
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -51,8 +123,8 @@ export default function FactoryCommandPage() {
         AI Command Center
       </h1>
       <p className="mt-1 text-sm text-zinc-400">
-        Inspects current factory state first. Never pretends a feature exists unless
-        it is in outputs.
+        Inspects current factory state first. Never pretends a feature exists
+        unless it is in outputs.
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">

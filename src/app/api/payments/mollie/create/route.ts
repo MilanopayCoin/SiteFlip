@@ -244,9 +244,19 @@ export async function GET() {
     configured: isMollieConfigured(),
     testMode: isMollieConfigured() ? isMollieTestMode() : null,
     isEscrow: false,
+    capabilities: {
+      createPayment: true,
+      paymentStatus: true,
+      webhook: true,
+      idempotency: true,
+      transactionLinkage: true,
+      realPaymentExecuted: false,
+    },
     endpoints: {
       create: "/api/payments/mollie/create",
       webhook: "/api/payments/mollie/webhook",
     },
+    notice:
+      "SITEFLIP uses Mollie as payment processor only — not escrow. No real payment is created by this health check.",
   });
 }

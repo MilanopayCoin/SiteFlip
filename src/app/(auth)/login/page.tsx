@@ -11,6 +11,10 @@ import {
   createBrowserClient,
   getPublicSupabaseConfig,
 } from "@/lib/supabase/browser";
+import {
+  cacheProfile,
+  saveDemoSession,
+} from "@/lib/profile/client-cache";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,16 +37,59 @@ export default function LoginPage() {
 
     const supabase = await createBrowserClient();
     if (!supabase) {
-      setMessage(
-        "Supabase is not configured. Demo mode: use Dashboard without auth."
-      );
+      // Demo local login — create/restore LOCAL session from email
+      const userId = `demo_${btoa(email).replace(/[^a-z0-9]/gi, "").slice(0, 12)}`;
+      saveDemoSession({ userId, email, mode: "demo" });
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          displayName: email.split("@")[0],
+          username: email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.profile) cacheProfile(data.profile);
+      setMessage("Signed in (DEMO local). Profile is NOT PERSISTED.");
+      router.push("/profile");
       setLoading(false);
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setMessage(error ? error.message : "Signed in. Redirecting…");
-    if (!error) router.push("/dashboard");
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) {
+      setMessage(error.message);
+      setLoading(false);
+      return;
+    }
+    if (data.user) {
+      saveDemoSession({
+        userId: data.user.id,
+        email: data.user.email || email,
+        mode: "supabase",
+      });
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: data.user.id,
+          displayName:
+            (data.user.user_metadata?.display_name as string) ||
+            email.split("@")[0],
+          username:
+            (data.user.user_metadata?.username as string) ||
+            email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (body.profile) cacheProfile(body.profile);
+    }
+    setMessage("Signed in. Redirecting…");
+    router.push("/dashboard");
     setLoading(false);
   }
 
@@ -89,12 +136,12 @@ export default function LoginPage() {
           <p className="mt-4 text-center text-sm text-zinc-500">
             No account?{" "}
             <Link href="/signup" className="text-violet-400 hover:underline">
-              Sign up
+              Register
             </Link>
           </p>
           <p className="mt-2 text-center text-sm">
-            <Link href="/dashboard" className="text-zinc-400 hover:text-white">
-              Continue in demo mode →
+            <Link href="/profile" className="text-zinc-400 hover:text-white">
+              Open profile →
             </Link>
           </p>
         </CardContent>
