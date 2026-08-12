@@ -4,7 +4,7 @@
  * Never stores secrets. Never claims persistence without DB writes.
  */
 
-import { createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient, createClient } from "@/lib/supabase/server";
 import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 import type { FactoryProject, FactoryOutput, FactoryPersistenceMode } from "./types";
 import {
@@ -13,6 +13,10 @@ import {
   listFactoryProjects as listMemoryProjects,
 } from "./store";
 
+/** Prefer authenticated session (RLS). Service role only if session client missing. */
+async function factoryClient() {
+  return (await createClient()) || (await createServiceClient());
+}
 /** DB enum factory_project_state has no READY — map + keep app state in sandbox */
 const DB_STATES = new Set([
   "IDEA",
@@ -155,9 +159,9 @@ export async function persistFactoryProject(
     };
   }
 
-  const supabase = await createServiceClient();
+  const supabase = await factoryClient();
   if (!supabase) {
-    return { ok: false, mode: "demo", error: "Service role unavailable" };
+    return { ok: false, mode: "demo", error: "Supabase client unavailable" };
   }
 
   // factory_projects.id is UUID — require UUID-shaped ids
@@ -221,7 +225,7 @@ export async function loadFactoryProject(
     return { project: mem ?? null, mode: "demo" };
   }
 
-  const supabase = await createServiceClient();
+  const supabase = await factoryClient();
   if (!supabase) return { project: mem ?? null, mode: "demo" };
 
   const { data, error } = await supabase
@@ -265,7 +269,7 @@ export async function listPersistedFactoryProjects(ownerId?: string): Promise<{
   if (!status.productionPersistence) {
     return { projects: listMemoryProjects(ownerId), mode: "demo" };
   }
-  const supabase = await createServiceClient();
+  const supabase = await factoryClient();
   if (!supabase) {
     return { projects: listMemoryProjects(ownerId), mode: "demo" };
   }

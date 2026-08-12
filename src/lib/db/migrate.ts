@@ -1,5 +1,7 @@
 /**
- * Server-only SQL migration helpers for Cloudflare Workers.
+ * Server-only SQL migration helpers for Node/CI (NOT Cloudflare Worker runtime).
+ * Production Worker uses Supabase HTTP/PostgREST — never import this module
+ * from Worker request handlers.
  * Never logs connection strings or statement parameters with secrets.
  */
 

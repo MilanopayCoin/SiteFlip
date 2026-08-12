@@ -97,9 +97,10 @@ export async function getSchemaStatus(force = false): Promise<SchemaStatus> {
   const anon = service ? null : await createClient();
   const client = service ?? anon;
 
-  for (const t of REQUIRED_PERSISTENCE_TABLES) {
-    tables[t] = await tableExists(client, t);
-  }
+  const checks = await Promise.all(
+    REQUIRED_PERSISTENCE_TABLES.map(async (t) => [t, await tableExists(client, t)] as const)
+  );
+  for (const [t, ok] of checks) tables[t] = ok;
   const schemaReady = REQUIRED_PERSISTENCE_TABLES.every((t) => tables[t]);
   const productionPersistence = configured && authReachable && schemaReady;
 

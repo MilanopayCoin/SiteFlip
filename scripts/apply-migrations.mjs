@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 /**
- * Apply SITEFLIP SQL migrations when SUPABASE_DB_URL is available.
+ * Apply SITEFLIP SQL migrations OUTSIDE the Cloudflare Worker.
+ *
+ * Cloudflare Free Workers must NOT open PostgreSQL TCP/TLS (postgres.js).
+ * Production runtime uses Supabase HTTP / PostgREST only.
+ *
+ * Usage (CI / agent / local):
+ *   SUPABASE_DB_URL='postgresql://postgres.<ref>:...@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' \
+ *     npm run db:migrate
+ *
  * Never logs connection secrets.
  * Safe for partial applies: ignores duplicate_object / already-exists errors.
- *
- * Usage: node scripts/apply-migrations.mjs
  */
 const fs = require("fs");
 const path = require("path");

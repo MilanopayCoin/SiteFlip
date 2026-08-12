@@ -1,5 +1,8 @@
 /**
- * Profile persistence — Supabase when schema ready, otherwise explicit DEMO.
+ * Profile persistence — Supabase HTTP when schema ready, otherwise explicit DEMO.
+ * User-facing reads/writes prefer the authenticated session (RLS).
+ * Service role is only used as a last-resort server bootstrap when no user session
+ * is available (e.g. some webhook/admin paths) — never for browser code.
  * Never falls back silently when production Supabase + schema are healthy.
  */
 
@@ -14,6 +17,13 @@ import {
   saveProfile as saveMemoryProfile,
 } from "./store";
 
+async function persistenceClient(preferService = false) {
+  if (preferService) {
+    return (await createServiceClient()) || (await createClient());
+  }
+  // Prefer user session so RLS applies
+  return (await createClient()) || (await createServiceClient());
+}
 function rowToProfile(row: Record<string, unknown>): UserProfile {
   const base = emptyProfile(String(row.id), String(row.email || ""), {
     username: String(row.username || `user_${String(row.id).slice(0, 8)}`),
@@ -45,7 +55,7 @@ export async function loadProfileById(id: string): Promise<{
 }> {
   const status = await getSchemaStatus();
   if (status.productionPersistence) {
-    const supabase = (await createServiceClient()) || (await createClient());
+    const supabase = await persistenceClient(false);
     if (!supabase) return { profile: null, mode: "supabase" };
     const { data, error } = await supabase
       .from("profiles")
@@ -64,7 +74,8 @@ export async function loadProfileByUsername(username: string): Promise<{
 }> {
   const status = await getSchemaStatus();
   if (status.productionPersistence) {
-    const supabase = (await createServiceClient()) || (await createClient());
+    // Public usernames are readable via RLS (profiles SELECT true)
+    const supabase = await persistenceClient(false);
     if (!supabase) return { profile: null, mode: "supabase" };
     const { data, error } = await supabase
       .from("profiles")
@@ -94,7 +105,9 @@ export async function upsertProfile(input: {
 }): Promise<{ profile: UserProfile; mode: "supabase" | "demo"; error?: string }> {
   const status = await getSchemaStatus();
   if (status.productionPersistence) {
-    const supabase = await createServiceClient();
+    // Prefer authenticated session (RLS: insert/update own profile).
+    // Fall back to service role only if session client is unavailable.
+    const supabase = await persistenceClient(false);
     if (!supabase) {
       return {
         profile: ensureMemoryProfile(input.id, input.email, {
@@ -102,7 +115,7 @@ export async function upsertProfile(input: {
           persistenceMode: "LOCAL",
         }),
         mode: "demo",
-        error: "Service role unavailable — cannot persist profile",
+        error: "Supabase client unavailable — cannot persist profile",
       };
     }
 

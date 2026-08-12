@@ -3,10 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // JIY.APP runs on Cloudflare Workers via OpenNext.
   // Worker service name remains "siteflip" for compatibility.
-  // Keep postgres external so OpenNext can apply the package "workerd"
-  // export (postgres/cf → cloudflare:sockets). Bundling the Node build
-  // causes write CONNECT_TIMEOUT from Workers to Supabase pooler/direct.
-  serverExternalPackages: ["postgres"],
+  // Production DB access is Supabase HTTP/PostgREST only — do not bundle
+  // postgres.js into the Worker (Free plan cannot complete Postgres TLS).
   async redirects() {
     return [
       {
