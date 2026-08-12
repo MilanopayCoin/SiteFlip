@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   clearDemoSession,
-  readCachedProfile,
-  readDemoSession,
 } from "@/lib/profile/client-cache";
-import { createBrowserClient } from "@/lib/supabase/browser";
+import {
+  createBrowserClient,
+  resetBrowserClient,
+} from "@/lib/supabase/browser";
 
 const NAV = [
   { href: "/explore", label: "Explore" },
@@ -24,37 +25,42 @@ const NAV = [
 
 export function SiteHeader() {
   const pathname = usePathname();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [signedIn, setSignedIn] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return Boolean(readCachedProfile() || readDemoSession());
-  });
-  const [username, setUsername] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return readCachedProfile()?.username ?? null;
-  });
+  // Do not trust local DEMO cache alone — production auth is cookie/session based
+  const [signedIn, setSignedIn] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/auth/session")
+    let cancelled = false;
+    fetch("/api/auth/session", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
+        if (cancelled) return;
         if (d.authenticated) {
           setSignedIn(true);
           setUsername(d.profile?.username ?? null);
+        } else {
+          setSignedIn(false);
+          setUsername(null);
         }
       })
-      .catch(() => null);
+      .catch(() => {
+        if (!cancelled) setSignedIn(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     const supabase = await createBrowserClient();
     if (supabase) await supabase.auth.signOut();
+    resetBrowserClient();
     clearDemoSession();
     setSignedIn(false);
     setUsername(null);
-    router.push("/login");
+    window.location.href = "/login";
   }
 
   return (

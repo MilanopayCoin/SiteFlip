@@ -86,6 +86,8 @@ function LoginForm() {
         email: data.user.email || email,
         mode: "supabase",
       });
+      // Ensure cookie session is readable by API routes before leaving the page
+      await supabase.auth.getSession();
       const res = await fetch("/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -103,8 +105,9 @@ function LoginForm() {
       if (body.profile) cacheProfile(body.profile);
     }
     setMessage("Signed in. Redirecting…");
-    router.push(nextPath);
-    setLoading(false);
+    // Full navigation so subsequent /api/* requests include auth cookies
+    window.location.href = nextPath;
+    return;
   }
 
   return (

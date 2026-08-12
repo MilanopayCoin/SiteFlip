@@ -1,6 +1,7 @@
 "use client";
 
-import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient as createSsrBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type PublicConfig = {
   configured: boolean;
@@ -62,17 +63,21 @@ export async function isSupabaseConfigured(): Promise<boolean> {
   return Boolean(cfg.configured && cfg.supabaseUrl && cfg.supabaseAnonKey);
 }
 
+/**
+ * Browser Auth client — MUST use @supabase/ssr so the session is written to
+ * cookies that /api/* routes (createServerClient) can read.
+ * Plain @supabase/supabase-js defaults to localStorage only → API stays logged out.
+ */
 export async function createBrowserClient(): Promise<SupabaseClient | null> {
   if (cachedClient) return cachedClient;
   const cfg = await loadPublicConfig();
   if (!cfg.configured || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
     return null;
   }
-  cachedClient = createSupabaseClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
+  cachedClient = createSsrBrowserClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+    cookieOptions: {
+      path: "/",
+      sameSite: "lax",
     },
   });
   return cachedClient;
@@ -80,4 +85,9 @@ export async function createBrowserClient(): Promise<SupabaseClient | null> {
 
 export async function getPublicSupabaseConfig() {
   return loadPublicConfig();
+}
+
+/** Drop cached client (e.g. after logout) so the next login gets a fresh cookie jar. */
+export function resetBrowserClient() {
+  cachedClient = null;
 }

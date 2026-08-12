@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,6 @@ function safeNextPath(raw: string | null): string {
 }
 
 function SignupForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = safeNextPath(searchParams.get("next"));
   const [displayName, setDisplayName] = useState("");
@@ -60,13 +59,14 @@ function SignupForm() {
       mode: data.mode === "demo_local" ? "demo" : "supabase",
     });
 
-    // Also establish browser Supabase session when Auth is configured
+    // Establish browser cookie session (SSR client) for API routes
     if (data.mode !== "demo_local") {
       const supabase = await createBrowserClient();
-      if (supabase && data.hasSession === false) {
-        await supabase.auth.signInWithPassword({ email, password }).catch(() => null);
-      } else if (supabase) {
-        await supabase.auth.signInWithPassword({ email, password }).catch(() => null);
+      if (supabase) {
+        await supabase.auth
+          .signInWithPassword({ email, password })
+          .catch(() => null);
+        await supabase.auth.getSession().catch(() => null);
       }
     }
 
@@ -75,8 +75,9 @@ function SignupForm() {
         ? "Account created. Confirm email if required, then open your profile."
         : "Account created. Redirecting…"
     );
-    router.push(data.hasSession ? nextPath : "/profile");
-    setLoading(false);
+    const dest = data.hasSession || data.emailAutoConfirmed ? nextPath : "/profile";
+    window.location.href = dest;
+    return;
   }
 
   return (
