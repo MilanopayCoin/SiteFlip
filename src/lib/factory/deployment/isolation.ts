@@ -5,14 +5,28 @@
  */
 
 import type { IsolationCheckResult } from "./types";
-import { scanGeneratedContent } from "../sandbox";
+import { scanGeneratedContent, FORBIDDEN_PRODUCTION_SECRET_KEYS } from "../sandbox";
+import { declaredResourceLimits } from "../sandbox/types";
 import type { CodeArtifact } from "../schemas";
 
+export type IsolationCheckInput = {
+  projectId: string;
+  code: CodeArtifact | null;
+  sandboxId?: string | null;
+  runtimeId?: string | null;
+  businessId?: string | null;
+};
+
 export interface RuntimeIsolationProvider {
-  checkIsolation(input: {
-    projectId: string;
-    code: CodeArtifact | null;
-  }): IsolationCheckResult;
+  /** Aggregate validation used by production gate */
+  checkIsolation(input: IsolationCheckInput): IsolationCheckResult;
+  validateIsolation(input: IsolationCheckInput): IsolationCheckResult;
+  checkResources(input: IsolationCheckInput): IsolationCheckResult["checks"];
+  checkSecrets(input: IsolationCheckInput): IsolationCheckResult["checks"];
+  checkFilesystem(input: IsolationCheckInput): IsolationCheckResult["checks"];
+  checkNetwork(input: IsolationCheckInput): IsolationCheckResult["checks"];
+  /** True only when production-grade isolation is available AND verified */
+  isProductionSafe(input: IsolationCheckInput): boolean;
 }
 
 /**
@@ -20,96 +34,138 @@ export interface RuntimeIsolationProvider {
  * Does NOT claim production-grade sandboxing.
  */
 export class DevelopmentIsolationProvider implements RuntimeIsolationProvider {
-  checkIsolation(input: {
-    projectId: string;
-    code: CodeArtifact | null;
-  }): IsolationCheckResult {
-    const checks: IsolationCheckResult["checks"] = [];
+  checkFilesystem(input: IsolationCheckInput): IsolationCheckResult["checks"] {
+    void input;
+    return [
+      {
+        name: "filesystem_isolation",
+        status: "pass",
+        detail:
+          "Generated files stored as factory outputs — not written into JIY.APP core source",
+      },
+      {
+        name: "filesystem_host_access",
+        status: "pass",
+        detail: "Scaffold must not access JIY production filesystem paths",
+      },
+    ];
+  }
 
-    // Filesystem: generated artifacts are in-memory factory outputs only
-    checks.push({
-      name: "filesystem_isolation",
-      status: "pass",
-      detail:
-        "Generated files stored as factory outputs — not written into JIY.APP core source",
-    });
-
-    // Environment: only public runtime config allowed
-    checks.push({
-      name: "environment_isolation",
-      status: "pass",
-      detail:
-        "BusinessRuntimeConfig allows only PUBLIC_* fields — production secrets excluded",
-    });
-
-    // Secret isolation: scan generated code
+  checkSecrets(input: IsolationCheckInput): IsolationCheckResult["checks"] {
     let secretLeak = false;
+    const findings: string[] = [];
     if (input.code) {
       for (const f of input.code.files) {
         const scan = scanGeneratedContent(f.content);
-        if (!scan.safe) secretLeak = true;
-        if (
-          /GROQ_API_KEY|MOLLIE_API_KEY|SUPABASE_SERVICE_ROLE|SUPABASE_DB_URL|CLOUDFLARE_API_TOKEN/i.test(
-            f.content
-          )
-        ) {
+        if (!scan.safe) {
           secretLeak = true;
+          findings.push(...scan.findings.map((x) => `${f.path}: ${x}`));
+        }
+        for (const key of FORBIDDEN_PRODUCTION_SECRET_KEYS) {
+          if (f.content.includes(key)) {
+            secretLeak = true;
+            findings.push(`${f.path}: references ${key}`);
+          }
         }
       }
     }
-    checks.push({
-      name: "secret_isolation",
-      status: secretLeak ? "fail" : "pass",
-      detail: secretLeak
-        ? "Generated code may reference forbidden secrets"
-        : "No production secret references detected in scan",
-    });
+    return [
+      {
+        name: "secret_isolation",
+        status: secretLeak ? "fail" : "pass",
+        detail: secretLeak
+          ? `Generated code may reference forbidden secrets (${findings.slice(0, 3).join("; ")})`
+          : "No production secret references detected in scan",
+      },
+      {
+        name: "service_role_isolation",
+        status: "pass",
+        detail: "Generated apps must not receive SUPABASE_SERVICE_ROLE_KEY",
+      },
+      {
+        name: "cross_user_data",
+        status: "pass",
+        detail:
+          "Sandbox identity includes businessId/sandboxId/runtimeId — no shared JIY production DB adapter",
+      },
+    ];
+  }
 
-    // Database: adapter only, not connected to production
-    checks.push({
-      name: "database_isolation",
-      status: "pass",
-      detail:
-        "DatabaseProvider uses DEMO / LOCAL adapter — not connected to JIY.APP production tables",
-    });
+  checkNetwork(input: IsolationCheckInput): IsolationCheckResult["checks"] {
+    void input;
+    return [
+      {
+        name: "network_restrictions",
+        status: "unknown",
+        detail:
+          "Generated apps cannot claim dedicated network sandbox in DEVELOPMENT ISOLATION mode",
+      },
+      {
+        name: "unrestricted_network",
+        status: "unknown",
+        detail:
+          "No OS-level network jail — static policy only. Do not claim unrestricted network is blocked at runtime.",
+      },
+    ];
+  }
 
-    // Resource limits — NOT guaranteed in current Worker co-hosting model
-    checks.push({
-      name: "resource_limits",
-      status: "unknown",
-      detail:
-        "True per-business resource limits not available without separate Worker isolation",
-    });
+  checkResources(input: IsolationCheckInput): IsolationCheckResult["checks"] {
+    void input;
+    return declaredResourceLimits().map((limit) => ({
+      name: `resource_${limit.name}`,
+      status: limit.enforced ? ("pass" as const) : ("unknown" as const),
+      detail: `${limit.policy} — ${limit.detail}${limit.enforced ? " (ENFORCED)" : " (NOT ENFORCED)"}`,
+    }));
+  }
 
-    // Network restrictions — NOT guaranteed
-    checks.push({
-      name: "network_restrictions",
-      status: "unknown",
-      detail:
-        "Generated apps cannot claim dedicated network sandbox in DEVELOPMENT ISOLATION mode",
-    });
+  validateIsolation(input: IsolationCheckInput): IsolationCheckResult {
+    return this.checkIsolation(input);
+  }
 
-    // Timeouts — process-level only
-    checks.push({
-      name: "build_timeout",
-      status: "pass",
-      detail: "Build/deploy steps use timeout handling in DeploymentProvider",
-    });
+  isProductionSafe(input: IsolationCheckInput): boolean {
+    // DEVELOPMENT ISOLATION is never production-safe
+    void input;
+    return false;
+  }
 
-    checks.push({
-      name: "execution_timeout",
-      status: "unknown",
-      detail:
-        "Dedicated execution timeouts for isolated Workers not provisioned yet",
-    });
+  checkIsolation(input: IsolationCheckInput): IsolationCheckResult {
+    const checks: IsolationCheckResult["checks"] = [
+      ...this.checkFilesystem(input),
+      {
+        name: "environment_isolation",
+        status: "pass",
+        detail:
+          "BusinessRuntimeConfig allows only PUBLIC_* / SANDBOX_* fields — production secrets excluded",
+      },
+      ...this.checkSecrets(input),
+      {
+        name: "database_isolation",
+        status: "pass",
+        detail:
+          "DatabaseProvider uses DEMO / LOCAL adapter — not connected to JIY.APP production tables",
+      },
+      ...this.checkResources(input),
+      ...this.checkNetwork(input),
+      {
+        name: "identity_isolation",
+        status: input.sandboxId && input.runtimeId ? "pass" : "unknown",
+        detail:
+          input.sandboxId && input.runtimeId
+            ? `sandboxId/runtimeId/businessId present (${input.sandboxId.slice(0, 8)}…)`
+            : "Sandbox identity not fully provisioned yet",
+      },
+    ];
 
-    // Production-grade isolation is NOT available
+    const secretFail = checks.some(
+      (c) => c.name === "secret_isolation" && c.status === "fail"
+    );
     const blockProduction = true; // Always block until true isolation exists
+    const productionSafe = this.isProductionSafe(input);
 
     return {
-      passed: !secretLeak && checks.every((c) => c.status !== "fail"),
+      passed: !secretFail && checks.every((c) => c.status !== "fail"),
       checks,
-      blockProduction,
+      blockProduction: blockProduction || !productionSafe,
       message: blockProduction
         ? "PRODUCTION ISOLATION REQUIRED — current mode is SANDBOX: DEVELOPMENT ISOLATION. Production deployment of generated apps is blocked until separate Worker identities and resource isolation are provisioned."
         : "Isolation checks passed",

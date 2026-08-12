@@ -223,6 +223,10 @@ export interface FactoryMemoryEntry {
 export interface FactorySandbox {
   projectId: string;
   ownerId: string;
+  /** Marketplace / business identity (defaults to projectId until linked) */
+  businessId?: string | null;
+  sandboxId?: string | null;
+  runtimeId?: string | null;
   schemaStrategy: "isolated_schema" | "isolated_project";
   storagePrefix: string;
   envConfigKeys: string[];
@@ -230,6 +234,10 @@ export interface FactorySandbox {
   deploymentStatus: DeploymentStatus;
   previewUrl: string | null;
   productionUrl: string | null;
+  /** V4.3 lifecycle */
+  lifecycle?: string | null;
+  isolationLabel?: string | null;
+  isProductionGrade?: boolean;
 }
 
 export interface FactoryQualityScore {

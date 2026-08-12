@@ -75,19 +75,18 @@ function buildPreviewFromProject(project: FactoryProject): PreviewPayload {
     buildStatus: project.sandbox.deploymentStatus,
     quality: project.quality,
     securityStatus:
-      "Sandbox isolated · secrets not in memory · generated code scanned",
+      "SANDBOX PREVIEW · DEVELOPMENT ISOLATION · static secret scan only",
     landing: buildLandingFromProject(project),
     limitations: [
-      "Preview is AI-generated starter content",
-      "Not a complete production SaaS unless further builds are approved",
-      "Payments not activated (Mollie requires approval)",
-      project.persistenceMode === "SUPABASE"
-        ? "Persisted"
-        : "LOCAL / DEMO / NOT PERSISTED",
+      "SANDBOX PREVIEW — not production",
+      project.sandbox.isolationLabel || "SANDBOX: DEVELOPMENT ISOLATION",
+      "PRODUCTION ISOLATION REQUIRED for LIVE deploy",
+      "Generated app DB uses DEMO adapter — not JIY production database",
+      "Not production persistence",
     ],
     tests:
-      (project.outputs.find((o) => o.agent === "TestingAgent")?.data as PreviewPayload["tests"]) ??
-      null,
+      (project.outputs.find((o) => o.agent === "TestingAgent")
+        ?.data as PreviewPayload["tests"]) ?? null,
     persistenceMode: project.persistenceMode,
   };
 }
@@ -178,15 +177,20 @@ export default function FactoryPreviewPage() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={data.previewReady ? "success" : "warning"}>
-              {data.previewReady ? "Preview Ready" : "Preview incomplete"}
+              {data.previewReady ? "SANDBOX PREVIEW" : "Preview incomplete"}
             </Badge>
-            <Badge variant="outline">{data.buildStatus}</Badge>
+            <Badge variant="outline">BUILD {data.buildStatus}</Badge>
+            {(data as PreviewPayload & { testStatus?: string }).testStatus && (
+              <Badge variant="outline">
+                TEST {(data as PreviewPayload & { testStatus?: string }).testStatus}
+              </Badge>
+            )}
+            <Badge variant="outline">SECURITY {data.securityStatus.slice(0, 24)}</Badge>
             <Badge variant="warning">
               {data.persistenceMode === "SUPABASE"
-                ? "PERSISTED"
+                ? "FACTORY MAY PERSIST · APP DB DEMO"
                 : "LOCAL / DEMO / NOT PERSISTED"}
             </Badge>
-            <span className="text-xs text-zinc-500">{data.securityStatus}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" asChild>

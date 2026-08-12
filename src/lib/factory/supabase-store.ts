@@ -93,9 +93,16 @@ function fromDbProject(
     sandbox: {
       projectId: String(row.id),
       ownerId: String(row.owner_id),
+      businessId:
+        (sandbox.businessId as string | undefined) || String(row.id),
+      sandboxId: (sandbox.sandboxId as string | null | undefined) ?? null,
+      runtimeId: (sandbox.runtimeId as string | null | undefined) ?? null,
       schemaStrategy: "isolated_schema",
-      storagePrefix: `sandboxes/${row.id}/`,
-      envConfigKeys: [],
+      storagePrefix:
+        (sandbox.storagePrefix as string | undefined) ||
+        `sandboxes/${row.id}/`,
+      envConfigKeys:
+        (sandbox.envConfigKeys as string[] | undefined) || [],
       buildLogs: ((sandbox as { buildLogs?: string[] }).buildLogs) || [],
       deploymentStatus:
         ((sandbox as { deploymentStatus?: FactoryProject["sandbox"]["deploymentStatus"] })
@@ -103,8 +110,12 @@ function fromDbProject(
       previewUrl: (sandbox as { previewUrl?: string | null }).previewUrl ?? null,
       productionUrl:
         (sandbox as { productionUrl?: string | null }).productionUrl ?? null,
-      ...(sandbox as object),
-    } as FactoryProject["sandbox"],
+      lifecycle: (sandbox.lifecycle as string | null | undefined) ?? null,
+      isolationLabel:
+        (sandbox.isolationLabel as string | undefined) ||
+        "SANDBOX: DEVELOPMENT ISOLATION",
+      isProductionGrade: Boolean(sandbox.isProductionGrade),
+    },
     usage: (row.usage || {
       projectId: String(row.id),
       aiTokensEstimated: 0,

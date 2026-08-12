@@ -19,6 +19,7 @@ import type {
   PipelineVersion,
 } from "./types";
 import { getPipelineSteps } from "./types";
+import { initialFactorySandbox } from "./sandbox";
 
 const globalStore = globalThis as unknown as {
   __siteflipFactoryProjects?: Map<string, FactoryProject>;
@@ -106,21 +107,7 @@ export function createFactoryProject(
     approvals: [],
     changes: [],
     memory: [],
-    sandbox: {
-      projectId: id,
-      ownerId,
-      schemaStrategy: "isolated_schema",
-      storagePrefix: `sandboxes/${id}/`,
-      envConfigKeys: [
-        "NEXT_PUBLIC_APP_URL",
-        "MOLLIE_API_KEY",
-        "SUPABASE_URL",
-      ],
-      buildLogs: [],
-      deploymentStatus: "NOT_STARTED",
-      previewUrl: null,
-      productionUrl: null,
-    },
+    sandbox: initialFactorySandbox(id, ownerId),
     usage: {
       projectId: id,
       aiTokensEstimated: 0,
@@ -145,7 +132,7 @@ export function createFactoryProject(
         message:
           pipelineVersion === "v2"
             ? "Factory project created. Persistence mode set after Supabase schema check."
-            : "JIY.APP Factory project created. Persistence mode set after Supabase schema check.",
+            : "JIY.APP Factory project created. Sandbox architecture: DEVELOPMENT ISOLATION (not production-grade).",
         level: "info",
       },
     ],

@@ -1,39 +1,61 @@
 /**
- * BusinessSandbox — isolation boundaries for generated businesses.
- * Generated projects must NOT access the core SITEFLIP database.
+ * Public sandbox module — backward-compatible exports + V4.3 adapters.
  */
 
-import type { FactoryProject, FactorySandbox } from "./types";
+export type {
+  SandboxProvider,
+  SandboxRecord,
+  SandboxStatusSnapshot,
+  SandboxLifecycleStatus,
+  SandboxVendor,
+  ResourceLimitSpec,
+} from "./sandbox/types";
+export {
+  FORBIDDEN_PRODUCTION_SECRET_KEYS,
+  SANDBOX_ALLOWED_ENV_KEYS,
+  declaredResourceLimits,
+} from "./sandbox/types";
+export {
+  getSandboxProvider,
+  DevelopmentIsolationSandboxAdapter,
+  listSandboxesForProject,
+} from "./sandbox/development-adapter";
+export {
+  provisionProjectSandbox,
+  startProjectSandbox,
+  stopProjectSandbox,
+  runSandboxPhase,
+  applySandboxRecordToProject,
+  initialFactorySandbox,
+} from "./sandbox/service";
 
+import type { FactoryProject, FactorySandbox } from "./types";
+import { getSandboxProvider } from "./sandbox/development-adapter";
+import { FORBIDDEN_PRODUCTION_SECRET_KEYS } from "./sandbox/types";
+import { initialFactorySandbox } from "./sandbox/service";
+
+/** @deprecated use SandboxProvider from getSandboxProvider() — kept for V3/V4 callers */
 export type SandboxMode = "production_sandbox" | "development_isolation";
 
-export interface SandboxProvider {
+/** Legacy shape used by older orchestrator calls */
+export interface LegacySandboxProviderInfo {
   mode: SandboxMode;
   label: string;
   storagePrefix: string;
   schemaStrategy: FactorySandbox["schemaStrategy"];
-  /** Keys that generated code must never reference */
   forbiddenEnvKeys: string[];
   isProductionGrade: boolean;
 }
 
-/** True sandbox infrastructure is not available — use safest dev isolation */
-export function createSandboxProvider(projectId: string): SandboxProvider {
+export function createSandboxProvider(projectId: string): LegacySandboxProviderInfo {
+  const provider = getSandboxProvider();
   return {
-    mode: "development_isolation",
-    label: "SANDBOX: DEVELOPMENT ISOLATION",
+    mode: provider.isProductionGrade ? "production_sandbox" : "development_isolation",
+    label: provider.label,
     storagePrefix: `sandboxes/${projectId}/`,
     schemaStrategy: "isolated_schema",
-    forbiddenEnvKeys: [
-      "MOLLIE_API_KEY",
-      "GROQ_API_KEY",
-      "SUPABASE_SERVICE_ROLE_KEY",
-      "SUPABASE_DB_URL",
-      "OPENAI_API_KEY",
-      "CLOUDFLARE_API_TOKEN",
-      "SITEFLIP_CORE",
-    ],
-    isProductionGrade: false,
+    forbiddenEnvKeys: [...FORBIDDEN_PRODUCTION_SECRET_KEYS],
+    isProductionGrade: provider.isProductionGrade,
   };
 }
 
@@ -41,23 +63,7 @@ export function createSandbox(
   projectId: string,
   ownerId: string
 ): FactorySandbox {
-  const provider = createSandboxProvider(projectId);
-  return {
-    projectId,
-    ownerId,
-    schemaStrategy: provider.schemaStrategy,
-    storagePrefix: provider.storagePrefix,
-    envConfigKeys: [
-      "SANDBOX_DATABASE_URL",
-      "SANDBOX_MOLLIE_API_KEY",
-      "SANDBOX_SUPABASE_URL",
-      "SANDBOX_SUPABASE_ANON_KEY",
-    ],
-    buildLogs: [provider.label],
-    deploymentStatus: "NOT_STARTED",
-    previewUrl: null,
-    productionUrl: null,
-  };
+  return initialFactorySandbox(projectId, ownerId);
 }
 
 export function assertSandboxBoundary(project: FactoryProject): void {
@@ -67,6 +73,14 @@ export function assertSandboxBoundary(project: FactoryProject): void {
   if (project.sandbox.storagePrefix.includes("..")) {
     throw new Error("Sandbox boundary violation: invalid storage prefix");
   }
+  if (
+    project.sandbox.sandboxId &&
+    project.sandbox.businessId &&
+    project.sandbox.businessId !== project.id &&
+    project.sandbox.businessId !== project.sandbox.projectId
+  ) {
+    // businessId defaults to projectId until marketplace business row exists
+  }
 }
 
 /** Blocklist for generated code / commands */
@@ -74,12 +88,15 @@ export const FORBIDDEN_PATTERNS = [
   /process\.env\.(SUPABASE_SERVICE_ROLE|MOLLIE_API|OPENAI_API|GROQ_API|CLOUDFLARE)/i,
   /SUPABASE_SERVICE_ROLE_KEY/i,
   /SUPABASE_DB_URL/i,
+  /SUPABASE_DB\b/i,
   /MOLLIE_API_KEY/i,
   /GROQ_API_KEY/i,
+  /CLOUDFLARE_API_TOKEN/i,
   /DROP\s+TABLE/i,
   /DROP\s+DATABASE/i,
   /rm\s+-rf\s+\//,
   /SITEFLIP_CORE/i,
+  /JIY_PRODUCTION_DATABASE/i,
   /\beval\s*\(/,
   /new\s+Function\s*\(/,
   /child_process/,

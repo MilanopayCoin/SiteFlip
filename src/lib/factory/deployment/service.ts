@@ -37,8 +37,17 @@ export async function canDeployProduction(projectId: string): Promise<{
   const isolation = getRuntimeIsolationProvider().checkIsolation({
     projectId,
     code: code ?? null,
+    sandboxId: project.sandbox.sandboxId,
+    runtimeId: project.sandbox.runtimeId,
+    businessId: project.sandbox.businessId || project.id,
   });
-  if (isolation.blockProduction) {
+  if (isolation.blockProduction || !getRuntimeIsolationProvider().isProductionSafe({
+    projectId,
+    code: code ?? null,
+    sandboxId: project.sandbox.sandboxId,
+    runtimeId: project.sandbox.runtimeId,
+    businessId: project.sandbox.businessId || project.id,
+  })) {
     blockers.push("ISOLATION: PRODUCTION ISOLATION REQUIRED");
   }
   if (!isolation.passed) {

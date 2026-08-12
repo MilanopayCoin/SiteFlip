@@ -23,6 +23,12 @@ import {
   updateTask,
 } from "./store";
 import { assertSandboxBoundary, createSandboxProvider, previewPathFor } from "./sandbox";
+import {
+  provisionProjectSandbox,
+  startProjectSandbox,
+  stopProjectSandbox,
+  runSandboxPhase,
+} from "./sandbox";
 import { computeFactoryQuality, estimateAgentCost } from "./quality";
 import { buildBusinessPassport } from "./passport";
 import {
@@ -130,16 +136,37 @@ export class BusinessFactoryOrchestratorV3 {
     }
 
     try {
+      // V4.3 — provision + start sandbox before GENERATE/BUILD
+      await provisionProjectSandbox(project);
+      await startProjectSandbox(project);
+      appendActivity(
+        project,
+        "Orchestrator",
+        `Sandbox provisioned (${project.sandbox.isolationLabel || "SANDBOX: DEVELOPMENT ISOLATION"}) sandboxId=${project.sandbox.sandboxId || "pending"}`,
+        "info"
+      );
+      saveFactoryProject(project);
+
       await this.runPlanner();
       await this.runProductSpec();
       await this.runDatabaseSpec();
       await this.runTechArchitecture();
       await this.runGenerate();
+      await runSandboxPhase(project, "BUILDING", "SANDBOX BUILD phase");
+      saveFactoryProject(project);
       await this.runBuild();
+      await runSandboxPhase(project, "TESTING", "SANDBOX TEST phase");
+      saveFactoryProject(project);
       const { testsOk, requiresHumanReview } = await this.runTests();
+      await runSandboxPhase(project, "SECURITY_SCAN", "SANDBOX SECURITY_SCAN phase");
+      saveFactoryProject(project);
       const { securityOk, requiresSecurityApproval } = await this.runSecurityScan();
 
       const canPreview = testsOk && securityOk;
+      if (canPreview) {
+        await runSandboxPhase(project, "PREVIEW", "SANDBOX PREVIEW — not production");
+        saveFactoryProject(project);
+      }
       await this.runDeployment(canPreview);
 
       await this.buildPassport();
@@ -150,6 +177,15 @@ export class BusinessFactoryOrchestratorV3 {
       project = this.project;
       project.sandbox.previewUrl = previewPathFor(project.id);
       project.sandbox.deploymentStatus = canPreview ? "READY" : "FAILED";
+
+      // Lifecycle: never leave sandbox indefinitely RUNNING
+      await stopProjectSandbox(project);
+      appendActivity(
+        project,
+        "Orchestrator",
+        "Sandbox STOPPED after pipeline — DEVELOPMENT ISOLATION (not production-grade)",
+        "info"
+      );
 
       if (canPreview) {
         this.addStandardApprovals(project);
@@ -216,6 +252,16 @@ export class BusinessFactoryOrchestratorV3 {
       project = this.project;
       this.failAllRunningTasks(project, error);
       project.state = "FAILED";
+      try {
+        await runSandboxPhase(
+          project,
+          "FAILED",
+          error instanceof Error ? error.message : "Pipeline failed"
+        );
+        await stopProjectSandbox(project);
+      } catch {
+        // sandbox stop must not mask original error
+      }
       appendActivity(
         project,
         "Orchestrator",
@@ -409,6 +455,7 @@ export class BusinessFactoryOrchestratorV3 {
   private async runBuild() {
     this.begin("DeveloperAgent", "BUILD");
     const project = this.project;
+    assertSandboxBoundary(project);
     const plan = getOutputByAgent(project, "PlannerAgent")
       ?.data as unknown as PlanSpec;
     const product = getOutputByAgent(project, "ProductAgent")
@@ -435,6 +482,7 @@ export class BusinessFactoryOrchestratorV3 {
         ...result.assumptions,
         provider.label,
         "[VERIFIED] AI GENERATED STARTER — not production-ready SaaS",
+        `sandboxId=${project.sandbox.sandboxId || "n/a"} runtimeId=${project.sandbox.runtimeId || "n/a"}`,
       ],
       source: result.source,
       implementationStatus: "automatically_implemented",
@@ -443,7 +491,8 @@ export class BusinessFactoryOrchestratorV3 {
     project.sandbox.buildLogs.push(
       provider.label,
       `Generated ${result.data.files.length} sandbox file(s)`,
-      `Completeness: starter_mvp_scaffold`
+      `Completeness: starter_mvp_scaffold`,
+      "SANDBOX BUILD — isolated from JIY production secrets/DB"
     );
     addChange(project, {
       projectId: project.id,
