@@ -21,6 +21,10 @@ export {
   listSandboxesForProject,
 } from "./sandbox/development-adapter";
 export {
+  ProductionSandboxProvider,
+  tryGetProductionSandboxProvider,
+} from "./sandbox/production-provider";
+export {
   provisionProjectSandbox,
   startProjectSandbox,
   stopProjectSandbox,
