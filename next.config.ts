@@ -1,7 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // SITEFLIP runs on Cloudflare Workers via OpenNext.
+  // JIY.APP runs on Cloudflare Workers via OpenNext.
+  // Worker service name remains "siteflip" for compatibility.
+  async redirects() {
+    return [
+      {
+        source: "/marketplace",
+        destination: "/explore",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
