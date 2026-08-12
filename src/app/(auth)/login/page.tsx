@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,8 +16,15 @@ import {
   saveDemoSession,
 } from "@/lib/profile/client-cache";
 
-export default function LoginPage() {
+function safeNextPath(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  return raw;
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = safeNextPath(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -59,7 +66,7 @@ export default function LoginPage() {
       const data = await res.json().catch(() => ({}));
       if (data.profile) cacheProfile(data.profile);
       setMessage("Signed in (DEMO local). Profile is NOT PERSISTED.");
-      router.push("/profile");
+      router.push(nextPath === "/dashboard" ? "/profile" : nextPath);
       setLoading(false);
       return;
     }
@@ -96,63 +103,86 @@ export default function LoginPage() {
       if (body.profile) cacheProfile(body.profile);
     }
     setMessage("Signed in. Redirecting…");
-    router.push("/dashboard");
+    router.push(nextPath);
     setLoading(false);
   }
 
   return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sign in to JIY.APP</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {configured === false && (
+          <p className="mb-4 text-sm text-amber-300/90">
+            Live Supabase Auth is unavailable — demo dashboard still works.
+          </p>
+        )}
+        {nextPath !== "/dashboard" && (
+          <p className="mb-4 text-sm text-zinc-400">
+            After sign in you will return to{" "}
+            <span className="text-zinc-200">{nextPath}</span>.
+          </p>
+        )}
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              required
+              className="mt-1.5"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              required
+              className="mt-1.5"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Signing in…" : "Sign in"}
+          </Button>
+        </form>
+        {message && <p className="mt-4 text-sm text-zinc-400">{message}</p>}
+        <p className="mt-4 text-center text-sm text-zinc-500">
+          No account?{" "}
+          <Link
+            href={`/signup?next=${encodeURIComponent(nextPath)}`}
+            className="text-violet-400 hover:underline"
+          >
+            Register
+          </Link>
+        </p>
+        <p className="mt-2 text-center text-sm">
+          <Link href="/profile" className="text-zinc-400 hover:text-white">
+            Open profile →
+          </Link>
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function LoginPage() {
+  return (
     <div className="mx-auto flex max-w-md flex-col px-4 py-16">
-      <Card>
-        <CardHeader>
-          <CardTitle>Sign in to JIY.APP</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {configured === false && (
-            <p className="mb-4 text-sm text-amber-300/90">
-              Live Supabase Auth is unavailable — demo dashboard still works.
-            </p>
-          )}
-          <form onSubmit={onSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                required
-                className="mt-1.5"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                required
-                className="mt-1.5"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-          {message && <p className="mt-4 text-sm text-zinc-400">{message}</p>}
-          <p className="mt-4 text-center text-sm text-zinc-500">
-            No account?{" "}
-            <Link href="/signup" className="text-violet-400 hover:underline">
-              Register
-            </Link>
-          </p>
-          <p className="mt-2 text-center text-sm">
-            <Link href="/profile" className="text-zinc-400 hover:text-white">
-              Open profile →
-            </Link>
-          </p>
-        </CardContent>
-      </Card>
+      <Suspense
+        fallback={
+          <Card>
+            <CardContent className="p-6 text-sm text-zinc-400">Loading…</CardContent>
+          </Card>
+        }
+      >
+        <LoginForm />
+      </Suspense>
     </div>
   );
 }

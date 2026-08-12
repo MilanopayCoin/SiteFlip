@@ -38,6 +38,11 @@ interface Portfolio {
     updatedAt: string;
     quality: { overall: number } | null;
   }>;
+  productionPersistence?: boolean;
+  persistenceMode?: string;
+  authRequired?: boolean;
+  authenticated?: boolean;
+  note?: string;
 }
 
 const PIPELINE_PREVIEW_V5 = [
@@ -94,28 +99,48 @@ export default function BuildFactoryPage() {
   const [profile, setProfile] = useState<UserProfile | null>(() =>
     typeof window === "undefined" ? null : readCachedProfile()
   );
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pipelineMode, setPipelineMode] = useState<"v5" | "v3" | "v2">("v5");
   const [costNote, setCostNote] = useState<string | null>(null);
 
+  const persistenceReady = Boolean(portfolio?.productionPersistence);
+  const needsAuth = persistenceReady && authenticated === false;
+
   useEffect(() => {
     fetch("/api/factory/projects")
-      .then((r) => r.json())
-      .then(setPortfolio)
+      .then(async (r) => {
+        const d = await r.json();
+        setPortfolio(d);
+        if (typeof d.authenticated === "boolean") {
+          setAuthenticated(d.authenticated);
+        }
+      })
       .catch(() => setPortfolio(null));
     fetch("/api/auth/session")
       .then((r) => r.json())
       .then((d) => {
+        setAuthenticated(Boolean(d.authenticated));
         if (d.profile) setProfile(d.profile);
       })
-      .catch(() => null);
+      .catch(() => setAuthenticated(false));
   }, []);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+
+    if (needsAuth) {
+      setError(
+        "Sign in required to create permanent factory projects. DEMO mode is disabled while production persistence is healthy."
+      );
+      setLoading(false);
+      router.push("/login?next=/build");
+      return;
+    }
+
     const fd = new FormData(e.currentTarget);
     try {
       // Explicit form values win; profile only fills blanks
@@ -167,7 +192,17 @@ export default function BuildFactoryPage() {
         }),
       });
       const data = await create.json();
-      if (!create.ok) throw new Error(data.error || "Failed to create project");
+      if (!create.ok) {
+        if (create.status === 401 || data.code === "AUTH_REQUIRED") {
+          setError(
+            data.error ||
+              "Sign in required to create permanent factory projects."
+          );
+          router.push(data.loginUrl || "/login?next=/build");
+          return;
+        }
+        throw new Error(data.error || "Failed to create project");
+      }
 
       if (data.fullProject) {
         cacheFactoryProject(data.fullProject);
@@ -180,6 +215,7 @@ export default function BuildFactoryPage() {
       router.push(`/build/${data.project.id}?autostart=1`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
+    } finally {
       setLoading(false);
     }
   }
@@ -433,11 +469,47 @@ export default function BuildFactoryPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100/80">
-                Factory V1 generates blueprints and a starter landing preview — not a full
-                autonomous SaaS. Projects are LOCAL / DEMO / NOT PERSISTED until Supabase
-                factory tables are available. Deploy, domain, payments, and marketplace
-                publish always require your approval.
+              <div
+                className={`rounded-xl border p-3 text-xs ${
+                  needsAuth
+                    ? "border-rose-500/30 bg-rose-500/5 text-rose-100/90"
+                    : persistenceReady
+                      ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-100/80"
+                      : "border-amber-500/20 bg-amber-500/5 text-amber-100/80"
+                }`}
+              >
+                {needsAuth ? (
+                  <>
+                    <p className="font-medium">
+                      Sign in required for permanent V5 factory projects
+                    </p>
+                    <p className="mt-1">
+                      Production Supabase persistence is healthy — DEMO / LOCAL
+                      create is disabled. Sign in to save projects permanently.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button asChild size="sm">
+                        <Link href="/login?next=/build">Sign in</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/signup?next=/build">Create account</Link>
+                      </Button>
+                    </div>
+                  </>
+                ) : persistenceReady ? (
+                  <>
+                    Factory V5 persists projects to Supabase when you are signed
+                    in. Flow: Idea → AI Generate → Sandbox → Build → Test →
+                    Security → Preview → Approval → Generated App Live. Production
+                    isolation, custom domain, and Mollie stay approval-gated.
+                  </>
+                ) : (
+                  <>
+                    Factory runs in LOCAL / DEMO until production persistence is
+                    healthy. Deploy, domain, payments, and marketplace publish
+                    always require your approval.
+                  </>
+                )}
               </div>
 
               {costNote && (
@@ -445,10 +517,21 @@ export default function BuildFactoryPage() {
               )}
               {error && <p className="text-sm text-rose-400">{error}</p>}
 
-              <Button type="submit" size="lg" disabled={loading}>
-                {loading ? "Running factory pipeline…" : "Start Business Factory"}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
+              {needsAuth ? (
+                <Button asChild size="lg">
+                  <Link href="/login?next=/build">
+                    Sign in to start Business Factory
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button type="submit" size="lg" disabled={loading}>
+                  {loading
+                    ? "Running factory pipeline…"
+                    : "Start Business Factory"}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              )}
             </form>
           </CardContent>
         </Card>
@@ -485,8 +568,11 @@ export default function BuildFactoryPage() {
                     <Badge variant="outline">{p.state}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-zinc-500">
-                    AI Score {p.quality?.overall ?? "—"} · LOCAL/DEMO ·{" "}
-                    {new Date(p.updatedAt).toLocaleString()}
+                    AI Score {p.quality?.overall ?? "—"} ·{" "}
+                    {portfolio?.persistenceMode === "SUPABASE"
+                      ? "PERSISTED"
+                      : "LOCAL/DEMO"}{" "}
+                    · {new Date(p.updatedAt).toLocaleString()}
                   </p>
                 </Link>
               ))}

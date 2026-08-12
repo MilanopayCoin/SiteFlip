@@ -23,11 +23,26 @@ export async function GET(request: Request) {
   const user = await resolveRequestUser(request);
   const ownerId = user?.id;
 
+  // Unauthenticated visitors can load the /build page — show empty portfolio + auth CTA
+  // instead of a hard 401 that looks like a broken factory.
   if (status.productionPersistence && !ownerId) {
-    return NextResponse.json(
-      { error: "Authentication required", mode: "supabase" },
-      { status: 401 }
-    );
+    return NextResponse.json({
+      activeBuilds: 0,
+      completed: 0,
+      growing: 0,
+      forSale: 0,
+      rented: 0,
+      revived: 0,
+      portfolioValueEur: 0,
+      estimatedPipelineCost: estimateFullPipelineCost(),
+      projects: [],
+      persistenceMode: "SUPABASE",
+      schemaReady: status.schemaReady,
+      productionPersistence: true,
+      authRequired: true,
+      authenticated: false,
+      note: "Sign in to create and load persisted factory projects",
+    });
   }
 
   const listed = await listPersistedFactoryProjects(ownerId || "demo-user");
@@ -41,6 +56,8 @@ export async function GET(request: Request) {
     persistenceMode: listed.mode === "supabase" ? "SUPABASE" : "LOCAL",
     schemaReady: status.schemaReady,
     productionPersistence: status.productionPersistence,
+    authRequired: false,
+    authenticated: Boolean(ownerId),
     note:
       listed.mode === "supabase"
         ? "Factory projects loaded from Supabase"
@@ -85,7 +102,10 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "Authentication required to create persisted factory projects",
-          note: "DEMO fallback disabled — production Supabase is healthy",
+          code: "AUTH_REQUIRED",
+          loginUrl: "/login?next=/build",
+          signupUrl: "/signup?next=/build",
+          note: "DEMO fallback disabled — production Supabase is healthy. Sign in to create permanent V5 factory projects.",
         },
         { status: 401 }
       );
