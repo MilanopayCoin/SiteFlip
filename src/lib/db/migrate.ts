@@ -126,96 +126,175 @@ const REQUIRED_TABLES = [
   "factory_outputs",
 ] as const;
 
+function safeDbError(err: unknown): string {
+  const message = err instanceof Error ? err.message : "migration_failed";
+  return message
+    .replace(/postgres(ql)?:\/\/[^\s]+/gi, "[redacted-db-url]")
+    .replace(/password=[^\s]+/gi, "password=[redacted]")
+    .slice(0, 300);
+}
+
+/**
+ * Build candidate connection strings. Direct db.* hosts are often IPv6-only
+ * and blocked from some runtimes; Supabase pooler (IPv4) is preferred for Workers.
+ * Never logs credentials.
+ */
+export function buildDbUrlCandidates(databaseUrl: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (u: string) => {
+    if (!seen.has(u)) {
+      seen.add(u);
+      out.push(u);
+    }
+  };
+  add(databaseUrl);
+
+  try {
+    const parsed = new URL(databaseUrl);
+    const host = parsed.hostname;
+    const password = decodeURIComponent(parsed.password);
+    const database = (parsed.pathname || "/postgres").replace(/^\//, "") || "postgres";
+    const m = host.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+    if (m) {
+      const ref = m[1];
+      const region = "eu-central-1"; // project resolved here previously
+      const poolUser = `postgres.${ref}`;
+      for (const port of [6543, 5432]) {
+        const u = new URL(`postgresql://${host}`);
+        u.protocol = "postgresql:";
+        u.hostname = `aws-0-${region}.pooler.supabase.com`;
+        u.port = String(port);
+        u.username = poolUser;
+        u.password = password;
+        u.pathname = `/${database}`;
+        if (port === 6543) u.searchParams.set("sslmode", "require");
+        add(u.toString());
+      }
+    }
+  } catch {
+    // keep original only
+  }
+  return out;
+}
+
+async function withSql<T>(
+  databaseUrl: string,
+  fn: (sql: postgres.Sql) => Promise<T>
+): Promise<{ result: T; viaHost: string }> {
+  const candidates = buildDbUrlCandidates(databaseUrl);
+  const errors: string[] = [];
+  for (const url of candidates) {
+    let host = "unknown";
+    try {
+      host = new URL(url).hostname + ":" + (new URL(url).port || "5432");
+    } catch {
+      /* ignore */
+    }
+    const sql = postgres(url, {
+      ssl: "require",
+      max: 1,
+      idle_timeout: 5,
+      connect_timeout: 15,
+      prepare: false, // required for transaction pooler / pgbouncer
+      onnotice: () => {},
+    });
+    try {
+      await sql`select 1 as ok`;
+      const result = await fn(sql);
+      await sql.end({ timeout: 5 });
+      return { result, viaHost: host };
+    } catch (err) {
+      errors.push(`${host}: ${safeDbError(err)}`);
+      try {
+        await sql.end({ timeout: 2 });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  throw new Error(errors.slice(0, 4).join(" | ") || "db_connect_failed");
+}
+
 export async function inspectAndMigrate(opts: {
   databaseUrl: string;
   migrations: Record<string, string>;
   apply: boolean;
-}): Promise<MigrateResult> {
-  const sql = postgres(opts.databaseUrl, {
-    ssl: "require",
-    max: 1,
-    idle_timeout: 5,
-    connect_timeout: 20,
-    onnotice: () => {},
-  });
-
+}): Promise<MigrateResult & { viaHost?: string }> {
   const files: MigrateFileResult[] = [];
 
   try {
-    await sql`select 1 as ok`;
-
-    if (opts.apply) {
-      for (const file of MIGRATION_FILES) {
-        const body = opts.migrations[file];
-        if (!body) {
-          throw new Error(`Missing migration content: ${file}`);
-        }
-        const stmts = splitStatements(body);
-        let applied = 0;
-        let skipped = 0;
-        for (const stmt of stmts) {
-          try {
-            await sql.unsafe(stmt);
-            applied++;
-          } catch (err) {
-            if (isIgnorable(err)) {
-              skipped++;
-              continue;
-            }
-            throw err;
+    const { result, viaHost } = await withSql(opts.databaseUrl, async (sql) => {
+      if (opts.apply) {
+        for (const file of MIGRATION_FILES) {
+          const body = opts.migrations[file];
+          if (!body) {
+            throw new Error(`Missing migration content: ${file}`);
           }
+          const stmts = splitStatements(body);
+          let applied = 0;
+          let skipped = 0;
+          for (const stmt of stmts) {
+            try {
+              await sql.unsafe(stmt);
+              applied++;
+            } catch (err) {
+              if (isIgnorable(err)) {
+                skipped++;
+                continue;
+              }
+              throw err;
+            }
+          }
+          files.push({
+            file,
+            statements: stmts.length,
+            applied,
+            skippedExisting: skipped,
+          });
         }
-        files.push({
-          file,
-          statements: stmts.length,
-          applied,
-          skippedExisting: skipped,
-        });
       }
-    }
 
-    const tableRows = await sql<{ tablename: string }[]>`
-      SELECT tablename FROM pg_tables
-      WHERE schemaname = 'public'
-        AND tablename = ANY(${REQUIRED_TABLES as unknown as string[]})
-    `;
-    const present = new Set(tableRows.map((r) => r.tablename));
-    const tables: Record<string, boolean> = {};
-    for (const t of REQUIRED_TABLES) tables[t] = present.has(t);
+      const tableRows = await sql<{ tablename: string }[]>`
+        SELECT tablename FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename IN ${sql(REQUIRED_TABLES as unknown as string[])}
+      `;
+      const present = new Set(tableRows.map((r) => r.tablename));
+      const tables: Record<string, boolean> = {};
+      for (const t of REQUIRED_TABLES) tables[t] = present.has(t);
 
-    const fk = await sql<{ n: number }[]>`
-      SELECT COUNT(*)::int AS n FROM information_schema.table_constraints
-      WHERE constraint_type = 'FOREIGN KEY' AND table_schema = 'public'
-    `;
-    const idx = await sql<{ n: number }[]>`
-      SELECT COUNT(*)::int AS n FROM pg_indexes WHERE schemaname = 'public'
-    `;
-    const pol = await sql<{ n: number }[]>`
-      SELECT COUNT(*)::int AS n FROM pg_policies WHERE schemaname = 'public'
-    `;
-    const rlsOff = await sql<{ relname: string }[]>`
-      SELECT c.relname FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = false
-        AND c.relname = ANY(${REQUIRED_TABLES as unknown as string[]})
-    `;
+      const fk = await sql<{ n: number }[]>`
+        SELECT COUNT(*)::int AS n FROM information_schema.table_constraints
+        WHERE constraint_type = 'FOREIGN KEY' AND table_schema = 'public'
+      `;
+      const idx = await sql<{ n: number }[]>`
+        SELECT COUNT(*)::int AS n FROM pg_indexes WHERE schemaname = 'public'
+      `;
+      const pol = await sql<{ n: number }[]>`
+        SELECT COUNT(*)::int AS n FROM pg_policies WHERE schemaname = 'public'
+      `;
+      const rlsOff = await sql<{ relname: string }[]>`
+        SELECT c.relname FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = false
+          AND c.relname IN ${sql(REQUIRED_TABLES as unknown as string[])}
+      `;
 
-    return {
-      ok: REQUIRED_TABLES.every((t) => tables[t]),
-      connected: true,
-      files,
-      tables,
-      foreignKeys: fk[0]?.n ?? 0,
-      indexes: idx[0]?.n ?? 0,
-      policies: pol[0]?.n ?? 0,
-      rlsDisabled: rlsOff.map((r) => r.relname),
-    };
+      return {
+        ok: REQUIRED_TABLES.every((t) => tables[t]),
+        connected: true,
+        files,
+        tables,
+        foreignKeys: fk[0]?.n ?? 0,
+        indexes: idx[0]?.n ?? 0,
+        policies: pol[0]?.n ?? 0,
+        rlsDisabled: rlsOff.map((r) => r.relname),
+      } satisfies MigrateResult;
+    });
+
+    return { ...result, viaHost };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "migration_failed";
-    // Never include connection string in error output
-    const safe = message
-      .replace(/postgres(ql)?:\/\/[^\s]+/gi, "[redacted-db-url]")
-      .replace(/password=[^\s]+/gi, "password=[redacted]");
     return {
       ok: false,
       connected: false,
@@ -225,9 +304,7 @@ export async function inspectAndMigrate(opts: {
       indexes: 0,
       policies: 0,
       rlsDisabled: [],
-      error: safe.slice(0, 300),
+      error: safeDbError(err),
     };
-  } finally {
-    await sql.end({ timeout: 5 });
   }
 }
