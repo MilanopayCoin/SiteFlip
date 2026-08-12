@@ -1,10 +1,13 @@
 /**
- * V5 factory smoke — IDEA → … → APPROVAL → DEPLOY → GENERATED APP LIVE
- * LIVE = platform preview under DEVELOPMENT ISOLATION (honest).
+ * V5 smoke — IDEA → … → LIVE, then post-live roadmap snapshot.
  */
 import { createFactoryProject, getOutputByAgent } from "../src/lib/factory/store";
 import { runFactoryPipeline } from "../src/lib/factory/orchestrator-v3";
 import { goGeneratedAppLive } from "../src/lib/factory/orchestrator-v5";
+import {
+  attemptV5PostLiveGate,
+  getV5PostLiveSnapshot,
+} from "../src/lib/factory/v5-post-live";
 import { getPipelineSteps } from "../src/lib/factory/types";
 import type { CodeArtifact } from "../src/lib/factory/schemas";
 import { BRAND } from "../src/lib/brand";
@@ -21,10 +24,13 @@ if (fs.existsSync(envPath)) {
 
 async function main() {
   console.log("BRAND", BRAND.fullName, BRAND.url);
-  console.log("V5 pipeline smoke");
-
-  const steps = getPipelineSteps("v5").map((s) => s.label);
-  console.log("steps", steps.join(" → "));
+  console.log("V5 pipeline + post-live smoke");
+  console.log(
+    "steps",
+    getPipelineSteps("v5")
+      .map((s) => s.label)
+      .join(" → ")
+  );
 
   const project = createFactoryProject(
     {
@@ -41,51 +47,75 @@ async function main() {
   );
 
   const result = await runFactoryPipeline(project.id);
-  console.log("state", result.state);
-  console.log("currentStep", result.currentStep);
+  console.log("state", result.state, "step", result.currentStep);
   console.log(
-    "task_status",
-    result.tasks.map((t) => `${t.stepId}:${t.status}`).join(" | ")
+    "pre_live",
+    result.tasks
+      .filter((t) =>
+        [
+          "IDEA",
+          "GENERATE",
+          "SANDBOX",
+          "BUILD",
+          "TEST",
+          "SECURITY",
+          "PREVIEW",
+          "APPROVAL",
+          "LIVE",
+        ].includes(t.stepId)
+      )
+      .map((t) => `${t.stepId}:${t.status}`)
+      .join(" | ")
   );
 
   const code = getOutputByAgent(result, "DeveloperAgent")?.data as
     | CodeArtifact
     | undefined;
-  console.log("files", code?.files?.length ?? 0, code?.completeness);
-  console.log("sandboxId", result.sandbox.sandboxId ? "set" : "missing");
-  console.log("isolation", result.sandbox.isolationLabel);
-  console.log("previewUrl", result.sandbox.previewUrl);
+  console.log("files", code?.files?.length ?? 0);
 
   const liveApproval = result.approvals.find(
     (a) => a.action === "generated_app_live" && a.status === "PENDING"
   );
-  if (!liveApproval) {
-    throw new Error("Missing generated_app_live approval");
-  }
+  if (!liveApproval) throw new Error("Missing generated_app_live approval");
   liveApproval.status = "APPROVED";
   liveApproval.resolvedAt = new Date().toISOString();
 
   const live = await goGeneratedAppLive(result.id);
   console.log("live_state", live.state);
-  console.log("live_step", live.currentStep);
-  console.log("deploymentStatus", live.sandbox.deploymentStatus);
-  console.log("productionUrl", live.sandbox.productionUrl);
+  if (live.state !== "LIVE") throw new Error(`Expected LIVE, got ${live.state}`);
+  if (live.sandbox.productionUrl) {
+    throw new Error("Must not set productionUrl without isolation");
+  }
+
+  const snap = getV5PostLiveSnapshot(live);
+  console.log("YOU_ARE_HERE", snap.youAreHereLabel);
+  console.log("marker", snap.currentMarker);
   console.log(
-    "live_task",
-    live.tasks.find((t) => t.stepId === "LIVE")?.activity
+    "gates",
+    snap.gates.map((g) => `${g.id}:${g.status}`).join(" | ")
   );
 
-  if (live.state !== "LIVE") {
-    throw new Error(`Expected LIVE, got ${live.state}`);
+  if (snap.youAreHereLabel !== "GENERATED APP LIVE") {
+    throw new Error(`Expected YOU ARE HERE at GENERATED APP LIVE, got ${snap.youAreHereLabel}`);
   }
-  if (live.sandbox.productionUrl) {
-    throw new Error("Must not set productionUrl without PRODUCTION ISOLATION");
-  }
-  if (live.sandbox.isolationLabel !== "SANDBOX: DEVELOPMENT ISOLATION") {
-    throw new Error("Isolation label must stay DEVELOPMENT ISOLATION");
+  if (snap.nextActionable !== "PRODUCTION_ISOLATION") {
+    throw new Error(`Expected next PRODUCTION_ISOLATION, got ${snap.nextActionable}`);
   }
 
-  console.log("V5_SMOKE_OK");
+  const isolation = await attemptV5PostLiveGate(
+    live.id,
+    "PRODUCTION_ISOLATION"
+  );
+  console.log("isolation_ok", isolation.ok, isolation.message.slice(0, 80));
+  if (isolation.ok) {
+    throw new Error("Isolation must stay blocked on Free");
+  }
+
+  const growth = await attemptV5PostLiveGate(live.id, "GROWTH");
+  console.log("growth_ok", growth.ok);
+  if (!growth.ok) throw new Error("Growth draft should succeed");
+
+  console.log("V5_POST_LIVE_SMOKE_OK");
 }
 
 main().catch((err) => {

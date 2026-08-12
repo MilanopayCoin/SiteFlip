@@ -41,17 +41,20 @@ interface Portfolio {
 }
 
 const PIPELINE_PREVIEW_V5 = [
-  "USER IDEA",
-  "AI PLAN",
-  "GENERATE",
+  "IDEA",
+  "AI GENERATE",
   "SANDBOX",
   "BUILD",
   "TEST",
   "SECURITY",
   "PREVIEW",
   "APPROVAL",
-  "DEPLOY",
   "GENERATED APP LIVE",
+  "REAL PRODUCTION ISOLATION",
+  "SEPARATE RUNTIME",
+  "CUSTOM DOMAIN",
+  "MOLLIE",
+  "V5 GROWTH",
 ];
 
 const PIPELINE_PREVIEW_V3 = [
@@ -192,10 +195,10 @@ export default function BuildFactoryPage() {
             Turn ideas into businesses.
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-400">
-            Describe an idea in natural language. JIY.APP runs the V5 factory:
-            Idea → Plan → Generate → Sandbox → Build → Test → Security → Preview →
-            Approval → Deploy → Generated App Live. Production Worker isolation and
-            Mollie payments always require separate approval.
+            Describe an idea in natural language. V5 runs:
+            Idea → AI Generate → Sandbox → Build → Test → Security → Preview →
+            Approval → Generated App Live, then the production roadmap
+            (isolation → separate runtime → domain → Mollie → growth).
           </p>
         </div>
         <Badge variant="outline" className="gap-1">

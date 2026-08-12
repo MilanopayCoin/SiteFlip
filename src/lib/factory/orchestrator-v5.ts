@@ -51,6 +51,7 @@ import { runDeveloperAgentV3 } from "./agents/developer-v3";
 import { runTestingAgentV3 } from "./agents/testing-v3";
 import { runSecurityScanAgent } from "./agents/security-scan";
 import { deployPreview } from "./deployment";
+import { unlockV5PostLiveRoadmap } from "./v5-post-live";
 import type {
   ArchitectureSpec,
   CodeArtifact,
@@ -61,16 +62,19 @@ import type {
 
 const STATE_FOR_STEP: Partial<Record<V5PipelineStepId, FactoryProjectState>> = {
   IDEA: "IDEA",
-  PLAN: "PLANNING",
-  GENERATE: "BUILDING",
+  GENERATE: "PLANNING",
   SANDBOX: "BUILDING",
   BUILD: "BUILDING",
   TEST: "TESTING",
   SECURITY: "TESTING",
   PREVIEW: "PREVIEW",
   APPROVAL: "APPROVAL_REQUIRED",
-  DEPLOY: "DEPLOYING",
   LIVE: "LIVE",
+  PRODUCTION_ISOLATION: "LIVE",
+  SEPARATE_RUNTIME: "LIVE",
+  CUSTOM_DOMAIN: "LIVE",
+  MOLLIE: "LIVE",
+  GROWTH: "LIVE",
 };
 
 const V5_AGENTS_COST: FactoryAgentName[] = [
@@ -146,8 +150,7 @@ export class BusinessFactoryOrchestratorV5 {
 
     try {
       await this.runIdea();
-      await this.runPlan();
-      await this.runGenerate();
+      await this.runGenerate(); // AI GENERATE = plan + specs + generate prep
       await this.runSandbox();
       await this.runBuild();
       const { testsOk, requiresHumanReview } = await this.runTests();
@@ -167,17 +170,25 @@ export class BusinessFactoryOrchestratorV5 {
         });
       }
 
-      // DEPLOY + LIVE wait for explicit user approval (generated_app_live)
-      updateTask(project, "DEPLOY", {
-        status: "WAITING",
-        progress: 0,
-        activity: "Waiting for APPROVAL → DEPLOY",
-      });
+      // LIVE waits for generated_app_live approval; post-live roadmap stays WAITING
       updateTask(project, "LIVE", {
         status: "WAITING",
         progress: 0,
-        activity: "Waiting for DEPLOY → GENERATED APP LIVE",
+        activity: "Waiting for APPROVAL → GENERATED APP LIVE",
       });
+      for (const stepId of [
+        "PRODUCTION_ISOLATION",
+        "SEPARATE_RUNTIME",
+        "CUSTOM_DOMAIN",
+        "MOLLIE",
+        "GROWTH",
+      ] as const) {
+        updateTask(project, stepId, {
+          status: "WAITING",
+          progress: 0,
+          activity: "After GENERATED APP LIVE",
+        });
+      }
 
       project = this.project;
       project.sandbox.previewUrl = previewPathFor(project.id);
@@ -198,7 +209,7 @@ export class BusinessFactoryOrchestratorV5 {
         updateTask(project, "APPROVAL", {
           status: "REQUIRES_APPROVAL",
           progress: 100,
-          activity: "Awaiting APPROVAL before DEPLOY → LIVE",
+          activity: "Awaiting APPROVAL → GENERATED APP LIVE",
           completedAt: new Date().toISOString(),
         });
         project.state = "APPROVAL_REQUIRED";
@@ -206,7 +217,7 @@ export class BusinessFactoryOrchestratorV5 {
         appendActivity(
           project,
           "Orchestrator",
-          "V5 ready for APPROVAL → DEPLOY → GENERATED APP LIVE (platform preview)",
+          "V5 ready for APPROVAL → GENERATED APP LIVE (then production roadmap)",
           "success"
         );
       } else if (requiresHumanReview || requiresSecurityApproval) {
@@ -230,7 +241,7 @@ export class BusinessFactoryOrchestratorV5 {
             action: "change_request",
             title: "Security scan requires approval",
             explanation:
-              "Generated code failed security scan. Review findings before DEPLOY.",
+              "Generated code failed security scan. Review findings before LIVE.",
             services: ["SecurityAgent"],
             estimatedCostEur: 0,
             risks: ["Unsafe patterns in generated code"],
@@ -360,10 +371,16 @@ export class BusinessFactoryOrchestratorV5 {
     this.finish("BusinessAgent", "IDEA", null, true);
   }
 
-  /** AI PLAN — planner + product + database + architecture (one visible step) */
-  private async runPlan() {
-    this.begin("PlannerAgent", "PLAN");
+  /** AI GENERATE — planner + product + database + architecture + generate prep */
+  private async runGenerate() {
+    this.begin("DeveloperAgent", "GENERATE");
     const project = this.project;
+
+    updateTask(project, "GENERATE", {
+      progress: 15,
+      activity: "AI GENERATE — planning…",
+    });
+    saveFactoryProject(project);
 
     const planResult = await runPlannerAgent(project.brief);
     addOutput(project, {
@@ -384,9 +401,9 @@ export class BusinessFactoryOrchestratorV5 {
     });
     this.trackCost("PlannerAgent");
 
-    updateTask(project, "PLAN", {
+    updateTask(project, "GENERATE", {
       progress: 40,
-      activity: "Product + database + architecture specs…",
+      activity: "AI GENERATE — product / database / architecture…",
     });
     saveFactoryProject(project);
 
@@ -430,18 +447,11 @@ export class BusinessFactoryOrchestratorV5 {
     });
     this.trackCost("ArchitectureAgent");
 
-    this.finish("PlannerAgent", "PLAN", out.id, true);
-  }
-
-  private async runGenerate() {
-    this.begin("DeveloperAgent", "GENERATE");
-    const project = this.project;
     updateTask(project, "GENERATE", {
-      progress: 50,
-      activity: "Preparing generation inputs for sandbox build…",
+      progress: 90,
+      activity: "AI GENERATE complete — ready for SANDBOX → BUILD",
     });
-    saveFactoryProject(project);
-    this.finish("DeveloperAgent", "GENERATE", null, true);
+    this.finish("DeveloperAgent", "GENERATE", out.id, true);
   }
 
   private async runSandbox() {
@@ -666,9 +676,9 @@ export class BusinessFactoryOrchestratorV5 {
     addApproval(project, {
       projectId: project.id,
       action: "generated_app_live",
-      title: "Deploy → GENERATED APP LIVE",
+      title: "GENERATED APP LIVE",
       explanation:
-        "Approve to DEPLOY the verified platform preview and mark GENERATED APP LIVE. This is SANDBOX: DEVELOPMENT ISOLATION on Cloudflare Free — not a separate production-isolated Worker. Ownership, Mollie, and custom domains stay gated separately.",
+        "Approve to publish the verified platform preview as GENERATED APP LIVE. This is SANDBOX: DEVELOPMENT ISOLATION on Cloudflare Free — not REAL PRODUCTION ISOLATION. After LIVE, the roadmap continues: isolation → separate runtime → custom domain → Mollie → V5 growth.",
       services: ["JIY.APP platform preview", "Sandbox DEVELOPMENT ISOLATION"],
       estimatedCostEur: 0,
       risks: [
@@ -711,7 +721,7 @@ export class BusinessFactoryOrchestratorV5 {
 
 /**
  * After user approves `generated_app_live`:
- * DEPLOY (verified preview) → LIVE (GENERATED APP LIVE on platform).
+ * verified platform preview → GENERATED APP LIVE, then unlock post-live roadmap.
  */
 export async function goGeneratedAppLive(
   projectId: string
@@ -723,25 +733,30 @@ export async function goGeneratedAppLive(
   }
 
   project.state = "DEPLOYING";
-  project.currentStep = "DEPLOY";
-  updateTask(project, "DEPLOY", {
+  project.currentStep = "LIVE";
+  updateTask(project, "LIVE", {
     status: "RUNNING",
     progress: 20,
-    activity: "Deploying verified platform preview…",
+    activity: "Publishing verified platform preview…",
     startedAt: new Date().toISOString(),
     error: null,
   });
-  appendActivity(project, "DeploymentAgent", "V5 DEPLOY started", "info");
+  appendActivity(
+    project,
+    "DeploymentAgent",
+    "V5 GENERATED APP LIVE publish started",
+    "info"
+  );
   saveFactoryProject(project);
 
   const result = await deployPreview(projectId);
   const refreshed = getFactoryProject(projectId)!;
 
   if (result.deployment.status !== "LIVE") {
-    updateTask(refreshed, "DEPLOY", {
+    updateTask(refreshed, "LIVE", {
       status: "FAILED",
       progress: 100,
-      activity: `Deploy failed: ${result.deployment.status}`,
+      activity: `Live publish failed: ${result.deployment.status}`,
       completedAt: new Date().toISOString(),
       error: result.deployment.error || result.deployment.status,
     });
@@ -755,13 +770,6 @@ export async function goGeneratedAppLive(
     return saveFactoryProject(refreshed);
   }
 
-  updateTask(refreshed, "DEPLOY", {
-    status: "COMPLETED",
-    progress: 100,
-    activity: "Preview deploy verified",
-    completedAt: new Date().toISOString(),
-  });
-
   refreshed.state = "LIVE";
   refreshed.currentStep = "LIVE";
   refreshed.liveAt = new Date().toISOString();
@@ -774,7 +782,7 @@ export async function goGeneratedAppLive(
     status: "COMPLETED",
     progress: 100,
     activity:
-      "GENERATED APP LIVE (platform preview — DEVELOPMENT ISOLATION, not production Worker)",
+      "GENERATED APP LIVE (platform preview — DEVELOPMENT ISOLATION). NEXT: REAL PRODUCTION ISOLATION",
     completedAt: new Date().toISOString(),
   });
   if (refreshed.passport) {
@@ -788,10 +796,11 @@ export async function goGeneratedAppLive(
       runtimeStatus: "PLATFORM_PREVIEW_LIVE",
     };
   }
+  unlockV5PostLiveRoadmap(refreshed);
   appendActivity(
     refreshed,
     "DeploymentAgent",
-    "GENERATED APP LIVE — platform preview under DEVELOPMENT ISOLATION (Cloudflare Free)",
+    "GENERATED APP LIVE — YOU ARE HERE. Next: REAL PRODUCTION ISOLATION (blocked on Cloudflare Free)",
     "success"
   );
   return saveFactoryProject(refreshed);

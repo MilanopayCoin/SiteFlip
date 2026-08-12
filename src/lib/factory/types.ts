@@ -87,13 +87,12 @@ export type V3PipelineStepId =
   | "READY";
 
 /**
- * V5 — user-facing end-to-end factory flow:
- * USER IDEA → AI PLAN → GENERATE → SANDBOX → BUILD → TEST → SECURITY →
- * PREVIEW → APPROVAL → DEPLOY → GENERATED APP LIVE
+ * V5 — factory flow through GENERATED APP LIVE, then post-live production roadmap:
+ * IDEA → AI GENERATE → SANDBOX → BUILD → TEST → SECURITY → PREVIEW → APPROVAL → LIVE
+ * → REAL PRODUCTION ISOLATION → SEPARATE RUNTIME → CUSTOM DOMAIN → MOLLIE → V5 GROWTH
  */
 export type V5PipelineStepId =
   | "IDEA"
-  | "PLAN"
   | "GENERATE"
   | "SANDBOX"
   | "BUILD"
@@ -101,10 +100,25 @@ export type V5PipelineStepId =
   | "SECURITY"
   | "PREVIEW"
   | "APPROVAL"
-  | "DEPLOY"
-  | "LIVE";
+  | "LIVE"
+  | "PRODUCTION_ISOLATION"
+  | "SEPARATE_RUNTIME"
+  | "CUSTOM_DOMAIN"
+  | "MOLLIE"
+  | "GROWTH";
 
 export type PipelineStepId = V2PipelineStepId | V3PipelineStepId | V5PipelineStepId;
+
+/** Post-LIVE V5 roadmap (after GENERATED APP LIVE) */
+export const V5_POST_LIVE_STEP_IDS = [
+  "PRODUCTION_ISOLATION",
+  "SEPARATE_RUNTIME",
+  "CUSTOM_DOMAIN",
+  "MOLLIE",
+  "GROWTH",
+] as const satisfies ReadonlyArray<V5PipelineStepId>;
+
+export type V5PostLiveStepId = (typeof V5_POST_LIVE_STEP_IDS)[number];
 
 export type ClaimClass = "VERIFIED" | "USER_PROVIDED" | "AI_HYPOTHESIS";
 
@@ -391,7 +405,7 @@ export const V3_PIPELINE_STEPS: Array<{
   { id: "READY", number: "13", label: "READY", agent: "DeploymentAgent", mvp: true },
 ];
 
-/** V5 pipeline — IDEA → GENERATED APP LIVE (platform preview; not production isolation) */
+/** V5 pipeline — IDEA → LIVE, then post-live production roadmap */
 export const V5_PIPELINE_STEPS: Array<{
   id: V5PipelineStepId;
   number: string;
@@ -399,17 +413,38 @@ export const V5_PIPELINE_STEPS: Array<{
   agent: FactoryAgentName;
   mvp: boolean;
 }> = [
-  { id: "IDEA", number: "01", label: "USER IDEA", agent: "BusinessAgent", mvp: true },
-  { id: "PLAN", number: "02", label: "AI PLAN", agent: "PlannerAgent", mvp: true },
-  { id: "GENERATE", number: "03", label: "GENERATE", agent: "DeveloperAgent", mvp: true },
-  { id: "SANDBOX", number: "04", label: "SANDBOX", agent: "DeploymentAgent", mvp: true },
-  { id: "BUILD", number: "05", label: "BUILD", agent: "DeveloperAgent", mvp: true },
-  { id: "TEST", number: "06", label: "TEST", agent: "TestingAgent", mvp: true },
-  { id: "SECURITY", number: "07", label: "SECURITY", agent: "SecurityAgent", mvp: true },
-  { id: "PREVIEW", number: "08", label: "PREVIEW", agent: "DeploymentAgent", mvp: true },
-  { id: "APPROVAL", number: "09", label: "APPROVAL", agent: "DeploymentAgent", mvp: true },
-  { id: "DEPLOY", number: "10", label: "DEPLOY", agent: "DeploymentAgent", mvp: true },
-  { id: "LIVE", number: "11", label: "GENERATED APP LIVE", agent: "DeploymentAgent", mvp: true },
+  { id: "IDEA", number: "01", label: "IDEA", agent: "BusinessAgent", mvp: true },
+  { id: "GENERATE", number: "02", label: "AI GENERATE", agent: "DeveloperAgent", mvp: true },
+  { id: "SANDBOX", number: "03", label: "SANDBOX", agent: "DeploymentAgent", mvp: true },
+  { id: "BUILD", number: "04", label: "BUILD", agent: "DeveloperAgent", mvp: true },
+  { id: "TEST", number: "05", label: "TEST", agent: "TestingAgent", mvp: true },
+  { id: "SECURITY", number: "06", label: "SECURITY", agent: "SecurityAgent", mvp: true },
+  { id: "PREVIEW", number: "07", label: "PREVIEW", agent: "DeploymentAgent", mvp: true },
+  { id: "APPROVAL", number: "08", label: "APPROVAL", agent: "DeploymentAgent", mvp: true },
+  { id: "LIVE", number: "09", label: "GENERATED APP LIVE", agent: "DeploymentAgent", mvp: true },
+  {
+    id: "PRODUCTION_ISOLATION",
+    number: "10",
+    label: "REAL PRODUCTION ISOLATION",
+    agent: "DeploymentAgent",
+    mvp: true,
+  },
+  {
+    id: "SEPARATE_RUNTIME",
+    number: "11",
+    label: "SEPARATE RUNTIME",
+    agent: "DeploymentAgent",
+    mvp: true,
+  },
+  {
+    id: "CUSTOM_DOMAIN",
+    number: "12",
+    label: "CUSTOM DOMAIN",
+    agent: "DeploymentAgent",
+    mvp: true,
+  },
+  { id: "MOLLIE", number: "13", label: "MOLLIE", agent: "PaymentAgent", mvp: true },
+  { id: "GROWTH", number: "14", label: "V5 GROWTH", agent: "GrowthAgent", mvp: true },
 ];
 
 export function getPipelineSteps(version: PipelineVersion = "v3") {

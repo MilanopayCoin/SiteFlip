@@ -70,6 +70,18 @@ export default function FactoryProjectPage() {
     productionGate?: { ok: boolean; blockers: string[] };
     isolation?: { blockProduction?: boolean; message?: string };
   } | null>(null);
+  const [postLive, setPostLive] = useState<{
+    youAreHereLabel: string;
+    currentMarker: string;
+    nextActionable: string | null;
+    gates: Array<{
+      id: string;
+      label: string;
+      status: string;
+      note: string;
+      blockers: string[];
+    }>;
+  } | null>(null);
   const [domains, setDomains] = useState<
     Array<{ domain: string; status: string; notes?: string[] }>
   >([]);
@@ -237,14 +249,68 @@ export default function FactoryProjectPage() {
     setDomains(data.domains || []);
   }, [id]);
 
+  const loadPostLive = useCallback(async () => {
+    const cached = readCachedFactoryProject(id);
+    // Ensure isolate has project for GET
+    if (cached?.pipelineVersion === "v5") {
+      await fetch(`/api/factory/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: cached }),
+      }).catch(() => null);
+    }
+    const res = await fetch(`/api/factory/projects/${id}/post-live`);
+    if (!res.ok) {
+      setPostLive(null);
+      return;
+    }
+    const data = await res.json();
+    setPostLive({
+      youAreHereLabel: data.snapshot?.youAreHereLabel || data.youAreHere,
+      currentMarker: data.snapshot?.currentMarker || "LIVE",
+      nextActionable: data.snapshot?.nextActionable || null,
+      gates: data.snapshot?.gates || [],
+    });
+  }, [id]);
+
   useEffect(() => {
     if (workspaceTab !== "Deployment") return;
     const t = window.setTimeout(() => {
       void loadDeployments();
       void loadDomains();
+      void loadPostLive();
     }, 0);
     return () => window.clearTimeout(t);
-  }, [workspaceTab, loadDeployments, loadDomains]);
+  }, [workspaceTab, loadDeployments, loadDomains, loadPostLive]);
+
+  async function attemptPostLiveGate(stepId: string) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/factory/projects/${id}/post-live`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stepId,
+        project: readCachedFactoryProject(id) || project,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(data.error || data.message || "Post-live gate failed");
+    } else if (data.project) {
+      setProject(data.project);
+      cacheFactoryProject(data.project);
+      setPostLive({
+        youAreHereLabel: data.snapshot?.youAreHereLabel || data.youAreHere,
+        currentMarker: data.snapshot?.currentMarker || "LIVE",
+        nextActionable: data.snapshot?.nextActionable || null,
+        gates: data.snapshot?.gates || [],
+      });
+      if (!data.ok && data.message) setError(data.message);
+    }
+    await load();
+    setBusy(false);
+  }
 
   async function deployAction(action: "preview" | "production" | "rollback", targetDeploymentId?: string) {
     setBusy(true);
@@ -727,9 +793,59 @@ export default function FactoryProjectPage() {
       {workspaceTab === "Deployment" && (
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Deployment — JIY.APP V4.4</CardTitle>
+            <CardTitle>
+              {project.pipelineVersion === "v5"
+                ? "Deployment — JIY.APP V5"
+                : "Deployment — JIY.APP V4.4"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
+            {project.pipelineVersion === "v5" && postLive && (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4">
+                <p className="font-medium text-rose-200">
+                  🔴 ŞU AN BURASI · {postLive.youAreHereLabel}
+                </p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  Marker: {postLive.currentMarker}
+                  {postLive.nextActionable
+                    ? ` · Next gate: ${postLive.nextActionable}`
+                    : ""}
+                </p>
+                <div className="mt-3 space-y-2">
+                  {postLive.gates.map((g) => (
+                    <div
+                      key={g.id}
+                      className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-zinc-200">
+                          {g.status === "COMPLETED"
+                            ? "✓"
+                            : g.id === postLive.nextActionable
+                              ? "→"
+                              : "·"}{" "}
+                          {g.label}{" "}
+                          <span className="text-xs text-zinc-500">
+                            [{g.status}]
+                          </span>
+                        </p>
+                        <p className="text-xs text-zinc-500">{g.note}</p>
+                      </div>
+                      {(g.status === "AVAILABLE" || g.status === "BLOCKED") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => attemptPostLiveGate(g.id)}
+                        >
+                          Check
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
               <p className="font-medium text-amber-200">
                 PRODUCTION ISOLATION REQUIRED
