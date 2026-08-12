@@ -31,7 +31,7 @@ export async function GET() {
   }
 
   let authReachable = false;
-  let schema: Record<string, boolean> = {};
+  const schema: Record<string, boolean> = {};
   let schemaReady = false;
   let serviceOk = false;
   let error: string | null = null;

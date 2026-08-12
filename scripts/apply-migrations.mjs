@@ -155,6 +155,71 @@ async function verifyCore(client) {
   return rows.map((r) => r.tablename);
 }
 
+/**
+ * Parse postgres URLs even when the password contains unencoded [ ] or :.
+ * Prefer pooler hosts when given a direct db.*.supabase.co URL (IPv4).
+ */
+function resolveConnection(dbUrl) {
+  const raw = String(dbUrl).trim();
+  let user;
+  let password;
+  let hostname;
+  let port = 5432;
+  let database = "postgres";
+
+  try {
+    const u = new URL(raw);
+    user = decodeURIComponent(u.username);
+    password = decodeURIComponent(u.password);
+    hostname = u.hostname;
+    port = Number(u.port || 5432);
+    database = (u.pathname || "/postgres").replace(/^\//, "") || "postgres";
+  } catch {
+    /* fall through */
+  }
+
+  const manual = raw.match(
+    /^postgres(?:ql)?:\/\/([^:]+):(.+)@([^:/]+)(?::(\d+))?\/([^?]*)/
+  );
+  if (manual) {
+    const manualPass = decodeURIComponent(manual[2]);
+    // If URL parser truncated password (e.g. unencoded brackets), prefer manual.
+    if (!password || manualPass.length >= (password?.length || 0)) {
+      user = decodeURIComponent(manual[1]);
+      password = manualPass;
+      hostname = manual[3];
+      port = Number(manual[4] || 5432);
+      database = manual[5] || "postgres";
+    }
+  }
+
+  if (!hostname || !user || password == null) {
+    throw new Error("Could not parse SUPABASE_DB_URL");
+  }
+
+  const m = hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+  if (m) {
+    const ref = m[1];
+    return {
+      host: "aws-0-eu-central-1.pooler.supabase.com",
+      port: 6543,
+      user: user.includes(".") ? user : `postgres.${ref}`,
+      password,
+      database,
+      ssl: { rejectUnauthorized: false },
+    };
+  }
+
+  return {
+    host: hostname,
+    port,
+    user,
+    password,
+    database,
+    ssl: { rejectUnauthorized: false },
+  };
+}
+
 async function main() {
   const dbUrl = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
   if (!dbUrl) {
@@ -172,10 +237,14 @@ async function main() {
     process.exit(2);
   }
 
-  const client = new pg.Client({
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
-  });
+  const cfg = resolveConnection(dbUrl);
+  console.log(
+    "Connecting host=%s port=%s user_len=%s",
+    cfg.host,
+    cfg.port,
+    cfg.user.length
+  );
+  const client = new pg.Client(cfg);
   await client.connect();
   try {
     const results = {};
