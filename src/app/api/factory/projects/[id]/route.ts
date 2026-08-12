@@ -21,6 +21,18 @@ export async function GET(request: Request, ctx: Ctx) {
   const status = await getSchemaStatus();
   const user = await resolveRequestUser(request);
 
+  // Auth before load messaging — avoid false "Not found" when cookies are missing
+  if (status.productionPersistence && !user) {
+    return NextResponse.json(
+      {
+        error: "Authentication required",
+        code: "AUTH_REQUIRED",
+        loginUrl: `/login?next=/build/${id}`,
+      },
+      { status: 401 }
+    );
+  }
+
   const loaded = await loadFactoryProject(id);
   const project = loaded.project ?? getFactoryProject(id) ?? null;
 
@@ -28,16 +40,8 @@ export async function GET(request: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Cross-user access blocked when authenticated or production persistence
-  if (
-    (status.productionPersistence || user) &&
-    user &&
-    project.ownerId !== user.id
-  ) {
+  if (user && project.ownerId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  if (status.productionPersistence && !user) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
   return NextResponse.json({

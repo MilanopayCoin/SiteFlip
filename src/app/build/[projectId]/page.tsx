@@ -98,25 +98,35 @@ export default function FactoryProjectPage() {
     let res = await fetch(`/api/factory/projects/${id}`);
     let data = await res.json();
 
+    if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+      window.location.href = data.loginUrl || `/login?next=/build/${id}`;
+      return;
+    }
+
     // Rehydrate LOCAL project into the current Worker isolate
-    if (!res.ok && cached) {
+    if (!res.ok && cached && res.status !== 403) {
       res = await fetch(`/api/factory/projects/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project: cached }),
       });
       data = await res.json();
+      if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+        window.location.href = data.loginUrl || `/login?next=/build/${id}`;
+        return;
+      }
     }
 
     if (!res.ok) {
-      if (cached) {
+      if (cached && res.status !== 403) {
         setError(null);
         setLoadState("ready");
         return;
       }
       setError(
-        data.error ||
-          "Project not found. LOCAL / DEMO projects only exist in this browser session — create a new one from /build."
+        res.status === 403
+          ? "This factory project belongs to another account."
+          : data.error || "Project not found."
       );
       setLoadState("missing");
       return;
@@ -132,25 +142,35 @@ export default function FactoryProjectPage() {
     let cancelled = false;
     const tick = async () => {
       // Always refresh UI from server — even while /run is in flight.
-      // Blocking polls on busy left mobile users staring at "No outputs yet"
-      // while the Worker had already finished (or was still running).
       let res = await fetch(`/api/factory/projects/${id}`);
       let data = await res.json();
+      if (cancelled) return;
+
+      if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+        window.location.href = data.loginUrl || `/login?next=/build/${id}`;
+        return;
+      }
+
       const cached = readCachedFactoryProject(id);
-      if (!res.ok && cached && !busy) {
+      if (!res.ok && cached && !busy && res.status !== 403) {
         res = await fetch(`/api/factory/projects/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ project: cached }),
         });
         data = await res.json();
+        if (cancelled) return;
+        if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+          window.location.href = data.loginUrl || `/login?next=/build/${id}`;
+          return;
+        }
       }
-      if (cancelled) return;
       if (!res.ok) {
         if (!cached) {
           setError(
-            data.error ||
-              "Project not found. LOCAL / DEMO projects only exist in this browser session — create a new one from /build."
+            res.status === 403
+              ? "This factory project belongs to another account."
+              : data.error || "Project not found."
           );
           setLoadState("missing");
         }
@@ -171,7 +191,7 @@ export default function FactoryProjectPage() {
       setLoadState((s) => {
         if (s === "loading") {
           setError(
-            "Could not load this factory project. It may be LOCAL / DEMO / NOT PERSISTED and unavailable in this session."
+            "Could not load this factory project. Sign in again if your session expired."
           );
           return "missing";
         }
@@ -446,11 +466,17 @@ export default function FactoryProjectPage() {
           {error || "Factory project not found."}
         </p>
         <p className="mt-2 text-sm text-zinc-500">
-          LOCAL / DEMO / NOT PERSISTED — projects are not stored in Supabase yet.
+          Sign in with the account that owns this project, or create a new one
+          from /build.
         </p>
-        <Button className="mt-4" asChild>
-          <Link href="/build">Back to Factory</Link>
-        </Button>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <Button asChild>
+            <Link href={`/login?next=/build/${id}`}>Sign in</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/build">Back to Factory</Link>
+          </Button>
+        </div>
       </div>
     );
   }

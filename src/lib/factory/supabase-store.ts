@@ -17,6 +17,11 @@ import {
 async function factoryClient() {
   return (await createClient()) || (await createServiceClient());
 }
+
+/** Reliable read client — service role when available (API routes enforce authz). */
+async function factoryReadClient() {
+  return (await createServiceClient()) || (await createClient());
+}
 /** DB enum factory_project_state has no READY — map + keep app state in sandbox */
 const DB_STATES = new Set([
   "IDEA",
@@ -264,7 +269,9 @@ export async function loadFactoryProject(
     return { project: mem ?? null, mode: "demo" };
   }
 
-  const supabase = await factoryClient();
+  // Prefer service role for cross-isolate reads. Session/anon RLS often returns
+  // empty on Workers when cookies are missing → false "Not found".
+  const supabase = await factoryReadClient();
   if (!supabase) return { project: mem ?? null, mode: "demo" };
 
   const { data, error } = await supabase
@@ -334,7 +341,7 @@ export async function listPersistedFactoryProjects(ownerId?: string): Promise<{
   if (!status.productionPersistence) {
     return { projects: listMemoryProjects(ownerId), mode: "demo" };
   }
-  const supabase = await factoryClient();
+  const supabase = await factoryReadClient();
   if (!supabase) {
     return { projects: listMemoryProjects(ownerId), mode: "demo" };
   }

@@ -166,6 +166,10 @@ export default function FactoryPreviewPage() {
       }
 
       let res = await fetch(`/api/factory/projects/${id}/preview`);
+      if (res.status === 401) {
+        window.location.href = `/login?next=/build/${id}/preview`;
+        return;
+      }
       if (!res.ok && cached) {
         await fetch(`/api/factory/projects/${id}`, {
           method: "PUT",
@@ -178,7 +182,9 @@ export default function FactoryPreviewPage() {
       if (!res.ok) {
         if (!cached) {
           setError(
-            "Preview not found. LOCAL / DEMO projects are session-scoped — re-run the pipeline from /build."
+            res.status === 401
+              ? "Sign in required to open this preview."
+              : "Preview not found. Sign in with the project owner account, or re-open from /build."
           );
         }
         return;
