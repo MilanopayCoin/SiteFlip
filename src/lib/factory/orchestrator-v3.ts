@@ -804,11 +804,25 @@ export class BusinessFactoryOrchestratorV3 {
 export async function runFactoryPipeline(projectId: string): Promise<FactoryProject> {
   const project = getFactoryProject(projectId);
   if (!project) throw new Error("Factory project not found");
+  let result: FactoryProject;
   if (project.pipelineVersion === "v3" || project.pipelineVersion === "v4") {
-    return new BusinessFactoryOrchestratorV3(projectId).runPipeline();
+    result = await new BusinessFactoryOrchestratorV3(projectId).runPipeline();
+  } else {
+    const { BusinessFactoryOrchestrator } = await import("./orchestrator");
+    result = await new BusinessFactoryOrchestrator(projectId).runPipeline();
   }
-  const { BusinessFactoryOrchestrator } = await import("./orchestrator");
-  return new BusinessFactoryOrchestrator(projectId).runPipeline();
+  // Persist when production schema is ready (honest DEMO when not)
+  try {
+    const { persistFactoryProject } = await import("./supabase-store");
+    const persisted = await persistFactoryProject(result);
+    if (persisted.ok && persisted.mode === "supabase") {
+      result.persistenceMode = "SUPABASE";
+      saveFactoryProject(result);
+    }
+  } catch {
+    // persistence probe failure must not crash pipeline
+  }
+  return result;
 }
 
 export function getFactoryOrchestrator(project: FactoryProject) {

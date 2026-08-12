@@ -3,45 +3,99 @@ import {
   getFactoryProject,
   saveFactoryProject,
 } from "@/lib/factory/store";
+import {
+  loadFactoryProject,
+  persistFactoryProject,
+} from "@/lib/factory/supabase-store";
 import { getPipelineSteps } from "@/lib/factory/types";
 import type { FactoryProject } from "@/lib/factory/types";
+import { resolveRequestUser } from "@/lib/api/request-user";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
+import { ensureCloudflareEnv } from "@/lib/supabase/env";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
-  const project = getFactoryProject(id);
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
 
-  // Allow client to rehydrate LOCAL project into this isolate
-  if (!project) {
-    const url = new URL(request.url);
-    if (url.searchParams.get("hydrate") === "1") {
-      // no body on GET — handled via POST hydrate below
-    }
-  }
+  const loaded = await loadFactoryProject(id);
+  const project = loaded.project ?? getFactoryProject(id) ?? null;
 
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Cross-user access blocked when authenticated or production persistence
+  if (
+    (status.productionPersistence || user) &&
+    user &&
+    project.ownerId !== user.id
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
   return NextResponse.json({
     project,
     pipeline: getPipelineSteps(project.pipelineVersion ?? "v2"),
     pendingApprovals: project.approvals.filter((a) => a.status === "PENDING"),
+    persistenceMode: project.persistenceMode,
+    schemaReady: status.schemaReady,
   });
 }
 
 /** Rehydrate a LOCAL/DEMO project into this Worker isolate */
 export async function PUT(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
   const body = await request.json().catch(() => null);
   const incoming = body?.project as FactoryProject | undefined;
   if (!incoming || incoming.id !== id) {
     return NextResponse.json({ error: "Invalid project payload" }, { status: 400 });
   }
+
+  if (status.productionPersistence) {
+    if (!user) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+    if (incoming.ownerId !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const existing = await loadFactoryProject(id);
+    if (existing.project && existing.project.ownerId !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const saved = saveFactoryProject(incoming);
+    const persisted = await persistFactoryProject(saved);
+    if (!persisted.ok) {
+      return NextResponse.json(
+        {
+          error: "Persist failed",
+          details: persisted.error,
+          note: "DEMO fallback disabled — production Supabase is healthy",
+        },
+        { status: 503 }
+      );
+    }
+    saved.persistenceMode = "SUPABASE";
+    return NextResponse.json({
+      project: saved,
+      pipeline: getPipelineSteps(saved.pipelineVersion ?? "v2"),
+      pendingApprovals: saved.approvals.filter((a) => a.status === "PENDING"),
+      persistenceMode: "SUPABASE",
+    });
+  }
+
   if (incoming.persistenceMode === "SUPABASE") {
     return NextResponse.json(
-      { error: "Only LOCAL/DEMO projects can be hydrated this way" },
+      { error: "Only LOCAL/DEMO projects can be hydrated this way when schema is not ready" },
       { status: 400 }
     );
   }
@@ -50,5 +104,6 @@ export async function PUT(request: Request, ctx: Ctx) {
     project: saved,
     pipeline: getPipelineSteps(saved.pipelineVersion ?? "v2"),
     pendingApprovals: saved.approvals.filter((a) => a.status === "PENDING"),
+    persistenceMode: saved.persistenceMode,
   });
 }

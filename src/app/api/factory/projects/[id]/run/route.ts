@@ -3,9 +3,15 @@ import {
   getFactoryProject,
   saveFactoryProject,
 } from "@/lib/factory/store";
+import {
+  loadFactoryProject,
+  persistFactoryProject,
+} from "@/lib/factory/supabase-store";
 import { runFactoryPipeline } from "@/lib/factory/orchestrator-v3";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
+import { resolveRequestUser } from "@/lib/api/request-user";
 import type { FactoryProject } from "@/lib/factory/types";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -20,12 +26,18 @@ export async function POST(request: Request, ctx: Ctx) {
 
   const { id } = await ctx.params;
   const body = await request.json().catch(() => ({}));
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
 
-  // Cloudflare isolates do not share memory — allow client to hydrate LOCAL project
-  let project = getFactoryProject(id);
+  let project = (await loadFactoryProject(id)).project ?? getFactoryProject(id);
   const incoming = body?.project as FactoryProject | undefined;
+
   if (!project && incoming && incoming.id === id) {
-    if (incoming.persistenceMode === "SUPABASE") {
+    if (status.productionPersistence) {
+      if (!user || incoming.ownerId !== user.id) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    } else if (incoming.persistenceMode === "SUPABASE") {
       return NextResponse.json(
         { error: "Only LOCAL/DEMO projects can be hydrated this way" },
         { status: 400 }
@@ -44,12 +56,35 @@ export async function POST(request: Request, ctx: Ctx) {
     );
   }
 
+  if (status.productionPersistence) {
+    if (!user) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+    if (project.ownerId !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
   if (project.state === "PAUSED") {
     return NextResponse.json({ error: "Project is paused" }, { status: 400 });
   }
 
   try {
     const result = await runFactoryPipeline(id);
+    const persisted = await persistFactoryProject(result);
+    if (status.productionPersistence && !persisted.ok) {
+      return NextResponse.json(
+        {
+          error: "Pipeline finished but persist failed",
+          details: persisted.error,
+          project: result,
+        },
+        { status: 503 }
+      );
+    }
+    if (persisted.mode === "supabase") {
+      result.persistenceMode = "SUPABASE";
+    }
     return NextResponse.json({
       project: result,
       message:
@@ -59,6 +94,7 @@ export async function POST(request: Request, ctx: Ctx) {
             ? "Pipeline failed"
             : "Pipeline complete",
       persistenceMode: result.persistenceMode,
+      schemaReady: status.schemaReady,
     });
   } catch (error) {
     console.error("[factory/run]", error);

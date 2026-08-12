@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRequestUser } from "@/lib/api/request-user";
-import {
-  ensureProfile,
-  getProfileById,
-  getProfileByUsername,
-  saveProfile,
-} from "@/lib/profile/store";
 import { profileCompletionPercent } from "@/lib/profile/completion";
 import type { UserProfile } from "@/lib/profile/types";
+import {
+  loadProfileById,
+  loadProfileByUsername,
+  updateProfileFields,
+  upsertProfile,
+} from "@/lib/profile/supabase-store";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
+import { ensureCloudflareEnv } from "@/lib/supabase/env";
 
 const updateSchema = z.object({
   username: z
@@ -33,40 +35,67 @@ const updateSchema = z.object({
 });
 
 export async function GET(request: Request) {
+  await ensureCloudflareEnv();
+  const status = await getSchemaStatus();
   const user = await resolveRequestUser(request);
   const url = new URL(request.url);
   const hydrateId = url.searchParams.get("userId");
-
-  // Prefer authenticated user; allow demo hydrate by id for LOCAL
   const hydrateHeader = request.headers.get("x-siteflip-demo-user");
-  const userId = user?.id || hydrateId || hydrateHeader;
+
+  // When production persistence is healthy, demo hydrate headers are blocked
+  const userId = user?.id || (!status.productionPersistence ? hydrateId || hydrateHeader : null);
   if (!userId) {
     return NextResponse.json(
       {
         error: "Not authenticated",
-        persistenceMode: "LOCAL",
-        note: "LOCAL / DEMO / NOT PERSISTED until Supabase profiles schema is available",
+        persistenceMode: status.productionPersistence ? "SUPABASE" : "LOCAL",
+        schemaReady: status.schemaReady,
+        note: status.productionPersistence
+          ? "Sign in required — DEMO hydrate disabled"
+          : "LOCAL / DEMO / NOT PERSISTED until Supabase profiles schema is available",
       },
       { status: 401 }
     );
   }
 
-  let profile = getProfileById(userId);
-  if (!profile) {
-    profile = ensureProfile(userId, user?.email || `${userId}@siteflip.local`, {
-      persistenceMode: "LOCAL",
+  let loaded = await loadProfileById(userId);
+  if (!loaded.profile && user) {
+    const created = await upsertProfile({
+      id: userId,
+      email: user.email || `${userId}@siteflip.local`,
+      username: `user_${userId.replace(/-/g, "").slice(0, 8)}`,
+      displayName: user.email?.split("@")[0] || "User",
     });
+    loaded = { profile: created.profile, mode: created.mode };
+  }
+
+  const profile = loaded.profile;
+  if (!profile) {
+    return NextResponse.json(
+      {
+        error: "Profile not found",
+        persistenceMode: loaded.mode.toUpperCase(),
+        schemaReady: status.schemaReady,
+      },
+      { status: 404 }
+    );
   }
 
   return NextResponse.json({
     profile,
     completionPercent: profileCompletionPercent(profile),
     persistenceMode: profile.persistenceMode,
-    note: "LOCAL / DEMO / NOT PERSISTED — profile is not permanently stored yet",
+    schemaReady: status.schemaReady,
+    productionPersistence: status.productionPersistence,
+    note: status.productionPersistence
+      ? "Profile loaded from Supabase"
+      : status.reason || "LOCAL / DEMO / NOT PERSISTED",
   });
 }
 
 export async function PUT(request: Request) {
+  await ensureCloudflareEnv();
+  const status = await getSchemaStatus();
   const user = await resolveRequestUser(request);
   const body = await request.json().catch(() => ({}));
   const parsed = updateSchema.safeParse(body);
@@ -77,16 +106,32 @@ export async function PUT(request: Request) {
     );
   }
 
-  // Hydrate full profile from client (isolate bridge)
+  // Hydrate full profile from client (isolate bridge) — DEMO only when not production-ready
   if (body?.profile && typeof body.profile === "object") {
     const incoming = body.profile as UserProfile;
     if (incoming.id && incoming.username) {
       if (user && incoming.id !== user.id) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+      if (status.productionPersistence && (!user || incoming.id !== user.id)) {
+        return NextResponse.json(
+          { error: "Forbidden — DEMO hydrate disabled when production Supabase is healthy" },
+          { status: 403 }
+        );
+      }
       const data = parsed.data;
-      const merged: UserProfile = {
-        ...incoming,
+      if (
+        data.username &&
+        data.username.toLowerCase() !== incoming.username.toLowerCase()
+      ) {
+        const taken = await loadProfileByUsername(data.username);
+        if (taken.profile && taken.profile.id !== incoming.id) {
+          return NextResponse.json({ error: "Username already taken" }, { status: 409 });
+        }
+      }
+      const result = await upsertProfile({
+        id: incoming.id,
+        email: incoming.email || user?.email || `${incoming.id}@siteflip.local`,
         username: data.username || incoming.username,
         displayName:
           data.displayName !== undefined ? data.displayName : incoming.displayName,
@@ -105,66 +150,71 @@ export async function PUT(request: Request) {
         budget: data.budget !== undefined ? data.budget : incoming.budget,
         risk: data.risk !== undefined ? data.risk : incoming.risk,
         workload: data.workload !== undefined ? data.workload : incoming.workload,
-        persistenceMode: incoming.persistenceMode || "LOCAL",
-      };
-      if (
-        merged.username.toLowerCase() !== incoming.username.toLowerCase()
-      ) {
-        const taken = getProfileByUsername(merged.username);
-        if (taken && taken.id !== merged.id) {
-          return NextResponse.json({ error: "Username already taken" }, { status: 409 });
-        }
-      }
-      const saved = saveProfile(merged);
+      });
       return NextResponse.json({
-        profile: saved,
-        completionPercent: profileCompletionPercent(saved),
-        persistenceMode: saved.persistenceMode,
-        note: "LOCAL / DEMO / NOT PERSISTED",
+        profile: result.profile,
+        completionPercent: profileCompletionPercent(result.profile),
+        persistenceMode: result.profile.persistenceMode,
+        schemaReady: status.schemaReady,
+        note:
+          result.mode === "supabase"
+            ? "Profile persisted to Supabase"
+            : result.error || "LOCAL / DEMO / NOT PERSISTED",
       });
     }
   }
 
-  const userId = user?.id || body?.userId;
+  const userId = user?.id || (!status.productionPersistence ? body?.userId : null);
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const profile =
-    getProfileById(userId) ||
-    ensureProfile(userId, user?.email || `${userId}@siteflip.local`, {
-      persistenceMode: "LOCAL",
-    });
+  if (status.productionPersistence && user && userId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const data = parsed.data;
-  if (data.username && data.username.toLowerCase() !== profile.username.toLowerCase()) {
-    const taken = getProfileByUsername(data.username);
-    if (taken && taken.id !== profile.id) {
+  if (data.username) {
+    const taken = await loadProfileByUsername(data.username);
+    if (taken.profile && taken.profile.id !== userId) {
       return NextResponse.json({ error: "Username already taken" }, { status: 409 });
     }
-    profile.username = data.username;
   }
-  if (data.displayName !== undefined) profile.displayName = data.displayName;
-  if (data.country !== undefined) profile.country = data.country;
-  if (data.bio !== undefined) profile.bio = data.bio;
-  if (data.website !== undefined) profile.website = data.website;
-  if (data.skills !== undefined) profile.skills = data.skills;
-  if (data.businessInterests !== undefined) {
-    profile.businessInterests = data.businessInterests;
-  }
-  if (data.preferredBusinessType !== undefined) {
-    profile.preferredBusinessType = data.preferredBusinessType;
-  }
-  if (data.budget !== undefined) profile.budget = data.budget;
-  if (data.risk !== undefined) profile.risk = data.risk;
-  if (data.workload !== undefined) profile.workload = data.workload;
-  profile.persistenceMode = "LOCAL";
 
-  const saved = saveProfile(profile);
+  const result = await updateProfileFields(
+    userId,
+    user?.email || `${userId}@siteflip.local`,
+    {
+      username: data.username,
+      displayName: data.displayName,
+      country: data.country,
+      bio: data.bio,
+      website: data.website,
+      skills: data.skills,
+      businessInterests: data.businessInterests,
+      preferredBusinessType: data.preferredBusinessType,
+      budget: data.budget,
+      risk: data.risk,
+      workload: data.workload,
+    }
+  );
+
+  if (!result.profile) {
+    return NextResponse.json(
+      { error: result.error || "Profile update failed" },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json({
-    profile: saved,
-    completionPercent: profileCompletionPercent(saved),
-    persistenceMode: saved.persistenceMode,
-    note: "LOCAL / DEMO / NOT PERSISTED — profile is not permanently stored yet",
+    profile: result.profile,
+    completionPercent: profileCompletionPercent(result.profile),
+    persistenceMode: result.profile.persistenceMode,
+    schemaReady: status.schemaReady,
+    productionPersistence: status.productionPersistence,
+    note:
+      result.mode === "supabase"
+        ? "Profile persisted to Supabase"
+        : result.error || status.reason || "LOCAL / DEMO / NOT PERSISTED",
   });
 }

@@ -142,8 +142,8 @@ export default function SignupPage() {
           </form>
           {message && <p className="mt-4 text-sm text-zinc-400">{message}</p>}
           <p className="mt-3 text-xs text-zinc-600">
-            Profile data is LOCAL / DEMO / NOT PERSISTED until Supabase schema is
-            available.
+            Registration uses Supabase Auth when configured. Profile rows persist
+            after migrations 001–004 are applied.
           </p>
           <p className="mt-4 text-center text-sm text-zinc-500">
             Already have an account?{" "}

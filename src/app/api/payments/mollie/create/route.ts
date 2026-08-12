@@ -188,7 +188,22 @@ export async function POST(request: Request) {
     });
   }
 
-  // DEMO memory path when Supabase unavailable
+  // DEMO memory path only when Supabase Auth is not configured
+  const { getSchemaStatus } = await import("@/lib/supabase/schema-ready");
+  const status = await getSchemaStatus();
+  if (status.productionPersistence || isSupabaseConfigured()) {
+    return jsonError(
+      status.productionPersistence
+        ? "Supabase payment path required — DEMO fallback disabled"
+        : "Supabase session required for payments. Schema may not be applied yet (migrations 001–004).",
+      503,
+      {
+        schemaReady: status.schemaReady,
+        note: status.reason,
+      }
+    );
+  }
+
   memoryStore.ensureDemoUser(user.id, user.email);
   const existing =
     transactionId &&

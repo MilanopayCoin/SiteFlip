@@ -63,13 +63,20 @@ export function createFactoryProject(
   ownerId = "demo-user",
   pipelineVersion: PipelineVersion = "v3"
 ): FactoryProject {
-  const id = `fp_${nanoid(10)}`;
+  // UUID required for Supabase factory_projects.id
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${nanoid(8)}-${nanoid(4)}-${nanoid(4)}-${nanoid(4)}-${nanoid(12)}`;
   const now = new Date().toISOString();
-  const slug = `project-${id.slice(3, 9)}`;
+  const slug = `project-${id.replace(/-/g, "").slice(0, 8)}`;
   const steps = getPipelineSteps(pipelineVersion);
 
   const tasks: FactoryTask[] = steps.map((step) => ({
-    id: `task_${nanoid(8)}`,
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `task_${nanoid(8)}`,
     projectId: id,
     stepId: step.id,
     agent: step.agent,
@@ -137,8 +144,8 @@ export function createFactoryProject(
         agent: "Orchestrator",
         message:
           pipelineVersion === "v2"
-            ? "Factory project created (LOCAL / DEMO / NOT PERSISTED). Waiting to run pipeline."
-            : "JIY.APP Factory project created (LOCAL / DEMO / NOT PERSISTED). Mini-SaaS pipeline ready.",
+            ? "Factory project created. Persistence mode set after Supabase schema check."
+            : "JIY.APP Factory project created. Persistence mode set after Supabase schema check.",
         level: "info",
       },
     ],

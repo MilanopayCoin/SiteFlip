@@ -5,7 +5,8 @@ import {
   isSupabaseConfigured,
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/env";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { getSchemaStatus, invalidateSchemaStatusCache } from "@/lib/supabase/schema-ready";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,8 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   await ensureCloudflareEnv();
-
+  invalidateSchemaStatusCache();
+  const status = await getSchemaStatus(true);
   const configured = isSupabaseConfigured();
   const publicEnv = getSupabasePublicEnv();
   const hasService = isSupabaseServiceConfigured();
@@ -25,61 +27,14 @@ export async function GET() {
       mode: "demo",
       supabaseConfigured: false,
       hasServiceRole: false,
+      schemaReady: false,
+      productionPersistence: false,
       schema: null,
       message: "Supabase env not available — DEMO fallback active",
     });
   }
 
-  let authReachable = false;
-  const schema: Record<string, boolean> = {};
-  let schemaReady = false;
   let serviceOk = false;
-  let error: string | null = null;
-
-  try {
-    const health = await fetch(`${publicEnv.url}/auth/v1/health`, {
-      headers: { apikey: publicEnv.anonKey },
-    });
-    authReachable = health.ok;
-  } catch {
-    authReachable = false;
-    error = "auth_unreachable";
-  }
-
-  const tables = [
-    "profiles",
-    "businesses",
-    "listings",
-    "offers",
-    "offer_events",
-    "messages",
-    "conversations",
-    "watchlists",
-    "rental_requests",
-    "transactions",
-    "payments",
-    "factory_projects",
-    "factory_runs",
-    "factory_outputs",
-  ];
-
-  try {
-    const supabase = await createClient();
-    if (supabase) {
-      for (const table of tables) {
-        const { error: qErr } = await supabase.from(table).select("*").limit(0);
-        // Empty select: missing table => error; existing => ok (even if RLS blocks rows)
-        const missing =
-          qErr?.code === "PGRST205" ||
-          qErr?.message?.toLowerCase().includes("could not find the table");
-        schema[table] = !missing;
-      }
-      schemaReady = tables.every((t) => schema[t]);
-    }
-  } catch {
-    error = error ?? "schema_check_failed";
-  }
-
   if (hasService) {
     try {
       const service = await createServiceClient();
@@ -97,18 +52,20 @@ export async function GET() {
     }
   }
 
-  const mode = configured && authReachable ? "supabase" : "demo";
-
   return NextResponse.json({
-    ok: configured && authReachable,
-    mode,
+    ok: configured && status.authReachable,
+    mode: status.productionPersistence ? "supabase" : status.authReachable ? "supabase_auth_only" : "demo",
     supabaseConfigured: configured,
-    authReachable,
+    authReachable: status.authReachable,
     hasServiceRole: hasService,
     serviceRoleUsable: hasService ? serviceOk : false,
-    schemaReady,
-    schema,
+    schemaReady: status.schemaReady,
+    productionPersistence: status.productionPersistence,
+    schema: status.tables,
     urlHost: new URL(publicEnv.url).host,
-    error,
+    error: status.reason || null,
+    remainingDemoFallback: status.productionPersistence
+      ? null
+      : "DEMO/LOCAL memory paths remain until migrations 001–004 are applied",
   });
 }

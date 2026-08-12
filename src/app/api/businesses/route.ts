@@ -42,14 +42,30 @@ export async function GET(request: Request) {
   if (!user) return jsonError("Authentication required", 401);
 
   if (user.mode === "supabase") {
+    const { getSchemaStatus } = await import("@/lib/supabase/schema-ready");
+    const status = await getSchemaStatus();
     const supabase = await createClient();
     const { data, error } = await supabase!
       .from("businesses")
       .select("*")
       .eq("current_owner_id", user.id)
       .order("updated_at", { ascending: false });
-    if (error) return jsonError("Failed to load businesses", 500);
-    return jsonOk({ businesses: data, mode: "supabase" });
+    if (error) {
+      if (status.productionPersistence) {
+        return jsonError(error.message || "Failed to load businesses", 500);
+      }
+      return jsonError(
+        error.message || "Failed to load businesses — schema may not be applied",
+        503,
+        { schemaReady: status.schemaReady, note: status.reason }
+      );
+    }
+    return jsonOk({
+      businesses: data,
+      mode: "supabase",
+      schemaReady: status.schemaReady,
+      productionPersistence: status.productionPersistence,
+    });
   }
 
   memoryStore.ensureDemoUser(user.id, user.email);
@@ -78,6 +94,8 @@ export async function POST(request: Request) {
     : [];
 
   if (user.mode === "supabase") {
+    const { getSchemaStatus } = await import("@/lib/supabase/schema-ready");
+    const status = await getSchemaStatus();
     const supabase = await createClient();
     const slug = `${slugify(input.name)}-${Date.now().toString(36)}`;
     const { data: business, error } = await supabase!
@@ -100,7 +118,14 @@ export async function POST(request: Request) {
       })
       .select("*")
       .single();
-    if (error) return jsonError(error.message, 500);
+    if (error) {
+      return jsonError(error.message, status.productionPersistence ? 500 : 503, {
+        schemaReady: status.schemaReady,
+        note: status.productionPersistence
+          ? "DEMO fallback disabled"
+          : status.reason || "Apply migrations 001–004",
+      });
+    }
 
     await supabase!.from("business_owners").insert({
       business_id: business.id,
@@ -116,7 +141,15 @@ export async function POST(request: Request) {
       created_by: user.id,
     });
 
-    return jsonOk({ business, mode: "supabase" }, 201);
+    return jsonOk(
+      {
+        business,
+        mode: "supabase",
+        schemaReady: status.schemaReady,
+        productionPersistence: status.productionPersistence,
+      },
+      201
+    );
   }
 
   memoryStore.ensureDemoUser(user.id, user.email);

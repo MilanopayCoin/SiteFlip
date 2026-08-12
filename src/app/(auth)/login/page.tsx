@@ -37,7 +37,14 @@ export default function LoginPage() {
 
     const supabase = await createBrowserClient();
     if (!supabase) {
-      // Demo local login — create/restore LOCAL session from email
+      // DEMO only when public Supabase config is unavailable
+      if (configured) {
+        setMessage(
+          "Supabase Auth client unavailable. DEMO login disabled while Supabase is configured."
+        );
+        setLoading(false);
+        return;
+      }
       const userId = `demo_${btoa(email).replace(/[^a-z0-9]/gi, "").slice(0, 12)}`;
       saveDemoSession({ userId, email, mode: "demo" });
       const res = await fetch("/api/profile", {
