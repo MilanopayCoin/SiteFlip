@@ -10,12 +10,18 @@ import { buildBusinessPassport } from "@/lib/factory/passport";
 import { computeValuation } from "@/lib/ai";
 import { VALUATION_DISCLAIMER } from "@/lib/utils";
 import type { BusinessPlan, BrandPlan, ProductSpec } from "@/lib/factory/schemas";
+import type { FactoryProject } from "@/lib/factory/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function POST(_request: Request, ctx: Ctx) {
+export async function POST(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const project = getFactoryProject(id);
+  const body = await request.json().catch(() => ({}));
+  let project = getFactoryProject(id);
+  const incoming = (body as { project?: FactoryProject })?.project;
+  if (!project && incoming && incoming.id === id && incoming.persistenceMode !== "SUPABASE") {
+    project = saveFactoryProject(incoming);
+  }
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

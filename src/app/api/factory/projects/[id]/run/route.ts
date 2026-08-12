@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { getFactoryProject } from "@/lib/factory/store";
+import {
+  getFactoryProject,
+  saveFactoryProject,
+} from "@/lib/factory/store";
 import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
+import type { FactoryProject } from "@/lib/factory/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,9 +19,29 @@ export async function POST(request: Request, ctx: Ctx) {
   }
 
   const { id } = await ctx.params;
-  const project = getFactoryProject(id);
+  const body = await request.json().catch(() => ({}));
+
+  // Cloudflare isolates do not share memory — allow client to hydrate LOCAL project
+  let project = getFactoryProject(id);
+  const incoming = body?.project as FactoryProject | undefined;
+  if (!project && incoming && incoming.id === id) {
+    if (incoming.persistenceMode === "SUPABASE") {
+      return NextResponse.json(
+        { error: "Only LOCAL/DEMO projects can be hydrated this way" },
+        { status: 400 }
+      );
+    }
+    project = saveFactoryProject(incoming);
+  }
+
   if (!project) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(
+      {
+        error: "Not found",
+        hint: "LOCAL projects must include the full project payload (client cache) when calling /run across Worker isolates",
+      },
+      { status: 404 }
+    );
   }
 
   if (project.state === "PAUSED") {
@@ -35,6 +59,7 @@ export async function POST(request: Request, ctx: Ctx) {
           : result.state === "FAILED"
             ? "Pipeline failed"
             : "Pipeline complete",
+      persistenceMode: result.persistenceMode,
     });
   } catch (error) {
     console.error("[factory/run]", error);

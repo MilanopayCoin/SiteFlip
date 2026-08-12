@@ -111,7 +111,11 @@ export default function FactoryProjectPage() {
         body: JSON.stringify({ project: cached }),
       });
     }
-    const res = await fetch(`/api/factory/projects/${id}/run`, { method: "POST" });
+    const res = await fetch(`/api/factory/projects/${id}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: cached ?? project }),
+    });
     const data = await res.json();
     if (res.ok && data.project) {
       cacheFactoryProject(data.project);
@@ -153,7 +157,11 @@ export default function FactoryProjectPage() {
     const res = await fetch(`/api/factory/projects/${id}/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approvalId, decision }),
+      body: JSON.stringify({
+        approvalId,
+        decision,
+        project: cached ?? project,
+      }),
     });
     const data = await res.json();
     if (res.ok && data.project) {

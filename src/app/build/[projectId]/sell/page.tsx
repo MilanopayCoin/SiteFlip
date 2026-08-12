@@ -60,6 +60,8 @@ export default function FactorySellPage() {
     }
     const res = await fetch(`/api/factory/projects/${id}/sell`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: cached }),
     });
     const json = await res.json();
     if (res.ok && cached) {

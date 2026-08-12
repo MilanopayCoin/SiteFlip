@@ -6,6 +6,7 @@ import {
 } from "@/lib/factory/store";
 import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
 import { z } from "zod";
+import type { FactoryProject } from "@/lib/factory/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,12 +18,17 @@ const bodySchema = z.object({
 
 export async function POST(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const project = getFactoryProject(id);
+  const raw = await request.json().catch(() => ({}));
+  const incoming = (raw as { project?: FactoryProject })?.project;
+  let project = getFactoryProject(id);
+  if (!project && incoming && incoming.id === id && incoming.persistenceMode !== "SUPABASE") {
+    project = saveFactoryProject(incoming);
+  }
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const parsed = bodySchema.safeParse(await request.json());
+  const parsed = bodySchema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: "Validation failed" }, { status: 400 });
   }
