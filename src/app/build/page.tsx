@@ -188,7 +188,7 @@ export default function BuildFactoryPage() {
                 note: "Profile preferences are AI context only — explicit idea overrides them",
               }
             : undefined,
-          run: false,
+          run: true,
         }),
       });
       const data = await create.json();
@@ -204,15 +204,36 @@ export default function BuildFactoryPage() {
         throw new Error(data.error || "Failed to create project");
       }
 
-      if (data.fullProject) {
-        cacheFactoryProject(data.fullProject);
+      let full = data.fullProject as FactoryProject | undefined;
+      // Cloudflare Free may defer persist after a long in-create pipeline
+      if (full && (data.persistDeferred || data.persistOk === false)) {
+        const put = await fetch(`/api/factory/projects/${full.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: full }),
+        });
+        const putData = await put.json().catch(() => ({}));
+        if (put.ok && putData.project) full = putData.project;
+      }
+
+      if (full) {
+        cacheFactoryProject(full);
       }
 
       setCostNote(
         `Estimated AI cost €${data.estimatedCost.aiCostEur} · infra €${data.estimatedCost.infrastructureMonthlyEur}/mo`
       );
 
-      router.push(`/build/${data.project.id}?autostart=1`);
+      // Pipeline already ran on create when possible — open project ready
+      const needsAutostart =
+        !full ||
+        full.state === "IDEA" ||
+        !(full.outputs && full.outputs.length > 0);
+      router.push(
+        needsAutostart
+          ? `/build/${data.project.id}?autostart=1`
+          : `/build/${data.project.id}`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {
@@ -527,7 +548,7 @@ export default function BuildFactoryPage() {
               ) : (
                 <Button type="submit" size="lg" disabled={loading}>
                   {loading
-                    ? "Running factory pipeline…"
+                    ? "Building your app… 1–2 min, keep this screen open"
                     : "Start Business Factory"}
                   <ArrowRight className="h-4 w-4" />
                 </Button>

@@ -144,7 +144,9 @@ export async function POST(request: Request) {
     }
 
     const persisted = await persistFactoryProject(result);
-    if (persisted.ok && persisted.mode === "supabase") {
+    let persistOk = persisted.ok && persisted.mode === "supabase";
+    let persistDeferred = false;
+    if (persistOk) {
       result.persistenceMode = "SUPABASE";
       appendActivity(
         result,
@@ -154,20 +156,30 @@ export async function POST(request: Request) {
       );
       saveFactoryProject(result);
     } else if (status.productionPersistence && !persisted.ok) {
-      return NextResponse.json(
-        {
-          error: "Failed to persist factory project",
-          details: persisted.error,
-          note: "DEMO fallback disabled — production Supabase is healthy",
-        },
-        { status: 503 }
+      // After a long pipeline, Free Workers may hit subrequest limits.
+      // Still return the project so the client can PUT in a fresh invocation.
+      const subrequestExhausted = /too many subrequests/i.test(
+        persisted.error || ""
       );
+      persistDeferred = subrequestExhausted || Boolean(result.outputs?.length);
+      if (!persistDeferred) {
+        return NextResponse.json(
+          {
+            error: "Failed to persist factory project",
+            details: persisted.error,
+            note: "DEMO fallback disabled — production Supabase is healthy",
+          },
+          { status: 503 }
+        );
+      }
     }
 
     const persistedNote =
       result.persistenceMode === "SUPABASE"
         ? "Persisted to Supabase factory_projects"
-        : "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available";
+        : persistDeferred
+          ? "Pipeline finished — client should PUT to persist (Worker Free subrequest limit)"
+          : "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available";
 
     const limitations =
       pipelineVersion === "v2"
@@ -202,6 +214,9 @@ export async function POST(request: Request) {
       persistenceMode: result.persistenceMode,
       schemaReady: status.schemaReady,
       productionPersistence: status.productionPersistence,
+      persistOk,
+      persistDeferred,
+      persistError: persistOk ? undefined : persisted.error,
     });
   } catch (error) {
     console.error("[factory/projects]", error);

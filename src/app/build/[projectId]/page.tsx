@@ -131,17 +131,13 @@ export default function FactoryProjectPage() {
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      // Do not poll-overwrite UI or rehydrate while pipeline is running
-      if (busy) return;
-      const cached = readCachedFactoryProject(id);
-      if (cached && !cancelled) {
-        setProject(cached);
-        setError(null);
-        setLoadState("ready");
-      }
+      // Always refresh UI from server — even while /run is in flight.
+      // Blocking polls on busy left mobile users staring at "No outputs yet"
+      // while the Worker had already finished (or was still running).
       let res = await fetch(`/api/factory/projects/${id}`);
       let data = await res.json();
-      if (!res.ok && cached) {
+      const cached = readCachedFactoryProject(id);
+      if (!res.ok && cached && !busy) {
         res = await fetch(`/api/factory/projects/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -149,7 +145,7 @@ export default function FactoryProjectPage() {
         });
         data = await res.json();
       }
-      if (cancelled || busy) return;
+      if (cancelled) return;
       if (!res.ok) {
         if (!cached) {
           setError(
@@ -163,7 +159,10 @@ export default function FactoryProjectPage() {
       setError(null);
       setProject(data.project);
       cacheFactoryProject(data.project);
-      setPipeline(data.pipeline ?? getPipelineSteps(data.project?.pipelineVersion ?? "v3"));
+      setPipeline(
+        data.pipeline ??
+          getPipelineSteps(data.project?.pipelineVersion ?? "v3")
+      );
       setLoadState("ready");
     };
     void tick();
@@ -181,7 +180,7 @@ export default function FactoryProjectPage() {
     }, 8000);
     const t = setInterval(() => {
       void tick();
-    }, 4000);
+    }, 3000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -193,62 +192,79 @@ export default function FactoryProjectPage() {
     setBusy(true);
     setError(null);
     const cached = readCachedFactoryProject(id);
-    // Only hydrate isolate when project is missing (404). Never PUT a stale
-    // client cache over a live Supabase project — that wiped GENERATE outputs.
-    let res = await fetch(`/api/factory/projects/${id}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project: cached ?? project }),
-    });
-    if (res.status === 404 && cached) {
-      await fetch(`/api/factory/projects/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: cached }),
-      });
-      res = await fetch(`/api/factory/projects/${id}/run`, {
+    const controller = new AbortController();
+    const kill = window.setTimeout(() => controller.abort(), 180_000);
+    try {
+      let res = await fetch(`/api/factory/projects/${id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: cached }),
+        body: JSON.stringify({ project: cached ?? project }),
+        signal: controller.signal,
       });
-    }
-    const data = await res.json();
-    if (res.ok && data.project) {
-      cacheFactoryProject(data.project);
-      setProject(data.project);
-      // Cloudflare Free: /run may exhaust subrequests — persist in a fresh request
-      if (data.persistDeferred || data.persistOk === false) {
-        const put = await fetch(`/api/factory/projects/${id}`, {
+      if (res.status === 404 && cached) {
+        await fetch(`/api/factory/projects/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project: data.project }),
+          body: JSON.stringify({ project: cached }),
         });
-        const putData = await put.json().catch(() => ({}));
-        if (put.ok && putData.project) {
-          cacheFactoryProject(putData.project);
-          setProject(putData.project);
-        }
+        res = await fetch(`/api/factory/projects/${id}/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: cached }),
+          signal: controller.signal,
+        });
       }
-    } else {
+      const data = await res.json();
+      if (res.ok && data.project) {
+        cacheFactoryProject(data.project);
+        setProject(data.project);
+        if (data.persistDeferred || data.persistOk === false) {
+          const put = await fetch(`/api/factory/projects/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project: data.project }),
+          });
+          const putData = await put.json().catch(() => ({}));
+          if (put.ok && putData.project) {
+            cacheFactoryProject(putData.project);
+            setProject(putData.project);
+          }
+        }
+      } else {
+        setError(
+          data.error ||
+            "Pipeline failed — tap Start pipeline to retry"
+        );
+      }
+    } catch (err) {
       setError(
-        data.error ||
-          "Pipeline failed — re-create from /build (LOCAL memory is isolate-scoped)"
+        err instanceof Error && err.name === "AbortError"
+          ? "Pipeline is taking longer than expected. Pull to refresh or tap Start pipeline — the Worker may still finish."
+          : err instanceof Error
+            ? err.message
+            : "Pipeline request failed"
       );
+    } finally {
+      window.clearTimeout(kill);
+      await load();
+      setBusy(false);
     }
-    await load();
-    setBusy(false);
   }
 
-  // Auto-start pipeline once after create (?autostart=1)
+  // Auto-start when project is still IDEA with no outputs (create handoff or refresh)
   useEffect(() => {
     if (autoStarted.current) return;
-    if (searchParams.get("autostart") !== "1") return;
-    if (!project || project.outputs.length > 0) return;
+    if (!project) return;
+    if (project.outputs.length > 0) return;
     if (project.state !== "IDEA") return;
+    const force =
+      searchParams.get("autostart") === "1" ||
+      searchParams.get("autostart") === "true";
+    // Always auto-start empty IDEA projects — do not depend only on ?autostart=
     autoStarted.current = true;
     const t = window.setTimeout(() => {
       void runAgain();
-    }, 0);
+    }, force ? 0 : 250);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, searchParams]);
@@ -514,10 +530,36 @@ export default function FactoryProjectPage() {
             <Link href={`/build/${id}/rent`}>BUILD → RENT</Link>
           </Button>
           <Button variant="ghost" size="sm" disabled={busy} onClick={runAgain}>
-            Re-run pipeline
+            {project.outputs.length === 0 ? "Start pipeline" : "Re-run pipeline"}
           </Button>
         </div>
       </div>
+
+      {(busy ||
+        (project.state === "IDEA" && project.outputs.length === 0)) && (
+        <div className="mt-4 rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
+          {busy ? (
+            <p className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Pipeline running — usually 1–2 minutes. Keep this tab open; progress
+              refreshes automatically.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p>Pipeline not started yet — no agent outputs.</p>
+              <Button size="sm" disabled={busy} onClick={runAgain}>
+                Start pipeline
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          {error}
+        </div>
+      )}
 
       {/* V3 workspace tabs — mobile-first horizontal scroll */}
       <div className="mt-6 -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
