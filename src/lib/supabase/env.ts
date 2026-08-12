@@ -53,7 +53,7 @@ export async function ensureCloudflareEnv(): Promise<void> {
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const ctx = await getCloudflareContext({ async: true });
-    const env = ctx?.env as Record<string, unknown> | undefined;
+    const env = ctx?.env as unknown as Record<string, unknown> | undefined;
     if (!env) return;
 
     const keys = [
@@ -141,7 +141,7 @@ export async function getDbSecretPresence(): Promise<{
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const ctx = await getCloudflareContext({ async: true });
-    const env = (ctx?.env || {}) as Record<string, unknown>;
+    const env = (ctx?.env || {}) as unknown as Record<string, unknown>;
     const bindingKeys = Object.keys(env)
       .filter((k) => /supabase|migrate|database|mollie|groq|ai_/i.test(k))
       .sort();
