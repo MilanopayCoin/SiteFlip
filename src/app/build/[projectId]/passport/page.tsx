@@ -126,6 +126,10 @@ export default function FactoryPassportPage() {
             />
             <Row label="Factory status" value={project.state} />
             <Row label="Lifecycle" value={passport?.lifecycle || "BUILDING"} />
+            <Row
+              label="App version"
+              value={passport?.applicationVersion || "—"}
+            />
           </CardContent>
         </Card>
         <Card>
@@ -152,7 +156,65 @@ export default function FactoryPassportPage() {
             />
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="space-y-2 p-5 text-sm">
+            <Row label="Build" value={passport?.buildStatus || "—"} />
+            <Row label="Tests" value={passport?.testStatus || "—"} />
+            <Row label="Security" value={passport?.securityStatus || "—"} />
+            <Row
+              label="Deployment"
+              value={passport?.deploymentStatus || "NOT_DEPLOYED"}
+            />
+            <Row
+              label="Runtime"
+              value={passport?.runtimeStatus || "—"}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-2 p-5 text-sm">
+            <Row
+              label="Preview URL"
+              value={passport?.previewUrl || project.sandbox.previewUrl || "—"}
+            />
+            <Row
+              label="Production URL"
+              value={
+                passport?.productionUrl ||
+                project.sandbox.productionUrl ||
+                "NOT DEPLOYED"
+              }
+            />
+            <Row
+              label="Deploy version"
+              value={passport?.deploymentVersion || "—"}
+            />
+            <Row
+              label="Last deployment"
+              value={
+                passport?.lastDeploymentAt
+                  ? new Date(passport.lastDeploymentAt).toLocaleString()
+                  : "—"
+              }
+            />
+          </CardContent>
+        </Card>
       </div>
+
+      {(passport?.features?.length ?? 0) > 0 && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Features</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {passport!.features!.map((f) => (
+              <Badge key={f} variant="outline">
+                {f}
+              </Badge>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mt-4">
         <CardHeader>

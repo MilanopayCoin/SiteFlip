@@ -122,7 +122,7 @@ export async function POST(request: Request) {
       await supabase!.from("business_events").insert({
         business_id: input.business_id,
         event_type: "listed",
-        title: "Listed on SITEFLIP",
+        title: "Listed on JIY.APP",
         description: `${input.listing_type} listing published`,
         created_by: user.id,
       });

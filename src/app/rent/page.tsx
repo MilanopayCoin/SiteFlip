@@ -56,7 +56,7 @@ export default async function RentPage({ searchParams }: Props) {
           </Button>
         </div>
         <p className="mt-4 text-xs text-zinc-600">
-          Rent-to-own uses a flexible contract architecture. SITEFLIP does not create
+          Rent-to-own uses a flexible contract architecture. JIY.APP does not create
           automatically legally binding ownership-transfer contracts.
         </p>
       </div>

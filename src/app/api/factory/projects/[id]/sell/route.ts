@@ -62,30 +62,39 @@ export async function POST(request: Request, ctx: Ctx) {
   const passport = project.passport ?? buildBusinessPassport(project);
   project.passport = passport;
 
+  const marketplaceStatus =
+    project.state === "LIVE" && project.sandbox.productionUrl
+      ? "LIVE"
+      : project.sandbox.previewUrl || project.sandbox.deploymentStatus === "READY"
+        ? "PREVIEW"
+        : "DRAFT";
+
   const listingDraft = {
     title: effectivePlan?.businessName || project.name,
     summary:
       effectivePlan?.businessDescription ||
       brand?.brandDescription ||
-      `${project.name} — factory-generated ${project.pipelineVersion === "v3" ? "starter mini-SaaS" : "early-stage digital business"}.`,
+      `${project.name} — factory-generated ${project.pipelineVersion === "v3" || project.pipelineVersion === "v4" ? "starter mini-SaaS" : "early-stage digital business"}.`,
     description: [
       effectivePlan?.valueProposition,
       effectivePlan?.solution,
       product?.coreProduct,
       `Target customer: ${effectivePlan?.targetCustomer || project.brief.targetCustomer}`,
       `Revenue model: ${effectivePlan?.revenueModel || "Not specified"}`,
-      project.pipelineVersion === "v3"
+      project.pipelineVersion === "v3" || project.pipelineVersion === "v4"
         ? "Technology: Next.js starter MVP scaffold (AI GENERATED STARTER)"
         : undefined,
     ]
       .filter(Boolean)
       .join("\n\n"),
     listingType: "SELL" as const,
+    marketplaceStatus,
+    prepareForSale: marketplaceStatus === "LIVE",
     suggestedAskingPriceRange: {
       minEur: valuation.minimum_value,
       maxEur: valuation.maximum_value,
       estimateEur: valuation.estimated_value,
-      note: "AI ESTIMATE — zero operating revenue assumed. User must approve before publishing.",
+      note: "AI ESTIMATE — zero operating revenue assumed. User must approve before publishing. Never a guaranteed valuation.",
     },
     features: product?.mvpFeatures ?? [],
     technology: project.passport?.technology ?? [],
@@ -104,8 +113,8 @@ export async function POST(request: Request, ctx: Ctx) {
       action: "publish_listing",
       title: "Publish marketplace listing",
       explanation:
-        "Listing draft is ready. Publishing to SITEFLIP marketplace requires your explicit approval. AI valuation is an estimate only.",
-      services: ["SITEFLIP marketplace"],
+        "Listing draft is ready. Publishing to JIY.APP marketplace requires your explicit approval. AI valuation is an estimate only.",
+      services: ["JIY.APP marketplace"],
       estimatedCostEur: 0,
       risks: ["Listing without traction or verified metrics"],
     });
@@ -133,10 +142,12 @@ export async function POST(request: Request, ctx: Ctx) {
       "Add 30 days of metrics history",
     ],
     listOnSiteflipPath: `/sell?fromFactory=${project.id}`,
+    marketplaceStatus,
     disclaimer: VALUATION_DISCLAIMER,
     assumptions: [
-      "Valuation uses zero operating revenue — estimate reflects early-stage heuristics only",
+      "AI ESTIMATE — valuation uses zero operating revenue",
       "No fabricated customers, traffic, or revenue",
+      `Marketplace status: ${marketplaceStatus} — LIVE only after verified production deployment`,
       "Listing is NOT published until publish_listing approval",
       passport.persistenceNote,
     ],

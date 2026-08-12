@@ -17,14 +17,12 @@ import { BusinessCard } from "@/components/marketplace/business-card";
 import { getEnrichedListings } from "@/lib/data/demo";
 
 const LIFECYCLE = [
-  "CREATE",
+  "BUILD",
   "GROW",
-  "RENT",
   "BUY",
+  "RENT",
   "REVIVE",
   "SELL",
-  "REINVEST",
-  "BUILD AGAIN",
 ];
 
 const HOW = [
@@ -71,18 +69,18 @@ export default function HomePage() {
             className="mx-auto max-w-4xl text-center"
           >
             <p className="mb-4 text-sm font-medium uppercase tracking-[0.2em] text-violet-400">
-              SITEFLIP
+              JIY.APP · AI Business Factory
             </p>
             <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-6xl md:text-7xl">
-              Build. Buy. Rent.
+              Turn ideas into
               <br />
               <span className="bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 bg-clip-text text-transparent">
-                Revive. Sell.
+                businesses.
               </span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-base text-zinc-400 sm:text-lg">
-              The AI-powered marketplace for digital businesses — the operating
-              system for acquisitions across the full lifecycle.
+              Build with AI, grow, buy, rent, revive, and sell digital businesses —
+              across the full lifecycle on jiy.app.
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
               <Button size="xl" asChild>
@@ -176,7 +174,7 @@ export default function HomePage() {
                   Build your next business with AI.
                 </h2>
                 <p className="mt-3 text-zinc-400">
-                  Tell SITEFLIP your revenue goal. Get a blueprint, brand
+                  Tell JIY.APP your revenue goal. Get a blueprint, brand
                   concept, landing structure, and growth plan — then start
                   building.
                 </p>
@@ -187,7 +185,7 @@ export default function HomePage() {
                 </Button>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/30 p-6 font-mono text-sm text-zinc-400">
-                <p className="text-violet-300">$ siteflip build</p>
+                <p className="text-violet-300">$ jiy build</p>
                 <p className="mt-2">
                   → “I want an online business that can make €2,000/month.”
                 </p>
@@ -232,7 +230,7 @@ export default function HomePage() {
                 Trust & Verification
               </h2>
               <p className="mt-2 max-w-2xl text-zinc-400">
-                SITEFLIP never fakes verification, revenue, or transactions.
+                JIY.APP never fakes verification, revenue, or transactions.
                 Domain ownership verification ships in MVP. Revenue and traffic
                 verification interfaces are prepared for Mollie, Shopify, Google
                 Analytics, Search Console, PayPal, and Cloudflare.
@@ -248,11 +246,11 @@ export default function HomePage() {
       </section>
 
       {/* FAQ */}
-      <Section title="FAQ" subtitle="What makes SITEFLIP different.">
+      <Section title="FAQ" subtitle="What makes JIY.APP different.">
         <div className="mx-auto max-w-3xl space-y-4">
           {[
             {
-              q: "Is SITEFLIP just a website marketplace?",
+              q: "Is JIY.APP just a website marketplace?",
               a: "No. It is an online business lifecycle platform — build, grow, buy, rent, revive, sell, and reinvest.",
             },
             {

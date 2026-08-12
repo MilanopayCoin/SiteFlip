@@ -61,7 +61,7 @@ export async function POST(request: Request) {
   if (action === "create_user") {
     const email = String(body.email || "");
     const password = String(body.password || "");
-    const fullName = String(body.full_name || "SITEFLIP User");
+    const fullName = String(body.full_name || "JIY.APP User");
     if (!email || !password) {
       return NextResponse.json(
         { error: "email and password required" },

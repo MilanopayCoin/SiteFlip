@@ -28,7 +28,7 @@ const createSchema = z.object({
 });
 
 /**
- * Create a Mollie Checkout payment for a SITEFLIP transaction.
+ * Create a Mollie Checkout payment for a JIY.APP transaction.
  * Mollie is a payment processor — NOT escrow.
  * Paid status does NOT transfer business ownership.
  */
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
       payment = await createMolliePayment({
         amount: input.amount,
         currency: input.currency,
-        description: input.description || `SITEFLIP ${input.type} payment`,
+        description: input.description || `JIY.APP ${input.type} payment`,
         redirectUrl,
         webhookUrl,
         metadata: {
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
     payment = await createMolliePayment({
       amount: input.amount,
       currency: input.currency,
-      description: input.description || `SITEFLIP ${input.type} payment`,
+      description: input.description || `JIY.APP ${input.type} payment`,
       redirectUrl,
       webhookUrl,
       metadata: {
@@ -257,6 +257,6 @@ export async function GET() {
       webhook: "/api/payments/mollie/webhook",
     },
     notice:
-      "SITEFLIP uses Mollie as payment processor only — not escrow. No real payment is created by this health check.",
+      "JIY.APP uses Mollie as payment processor only — not escrow. No real payment is created by this health check.",
   });
 }

@@ -77,7 +77,7 @@ export default function SignupPage() {
     <div className="mx-auto flex max-w-md flex-col px-4 py-16">
       <Card>
         <CardHeader>
-          <CardTitle>Create your SITEFLIP account</CardTitle>
+          <CardTitle>Create your JIY.APP account</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">

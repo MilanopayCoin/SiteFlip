@@ -85,7 +85,7 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
           <p className="text-sm text-zinc-400">
             {modeLabel === "LIVE"
-              ? "Live portfolio from your SITEFLIP account."
+              ? "Live portfolio from your JIY.APP account."
               : "DEMO mode — create businesses/listings locally, or connect Supabase Auth."}
           </p>
         </div>

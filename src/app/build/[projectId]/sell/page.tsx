@@ -178,7 +178,7 @@ export default function FactorySellPage() {
             ))}
           </ul>
           <Button asChild>
-            <Link href={data.listOnSiteflipPath}>List on SITEFLIP</Link>
+            <Link href={data.listOnSiteflipPath}>List on JIY.APP</Link>
           </Button>
         </div>
       )}

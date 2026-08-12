@@ -65,7 +65,7 @@ export function SiteHeader() {
             <Sparkles className="h-4 w-4 text-white" />
           </div>
           <span className="text-lg font-semibold tracking-tight text-white">
-            SITE<span className="text-violet-400">FLIP</span>
+            JIY<span className="text-violet-400">.APP</span>
           </span>
         </Link>
 
@@ -154,11 +154,11 @@ export function SiteFooter() {
         <div className="md:col-span-2">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-violet-400" />
-            <span className="text-lg font-semibold text-white">SITEFLIP</span>
+            <span className="text-lg font-semibold text-white">JIY.APP</span>
           </div>
           <p className="mt-3 max-w-md text-sm text-zinc-500">
-            The operating system for digital business acquisitions. Build. Buy.
-            Rent. Revive. Grow. Sell.
+            AI Business Factory. Turn ideas into businesses.
+            BUILD → GROW → BUY → RENT → REVIVE → SELL
           </p>
         </div>
         <div>
@@ -181,7 +181,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-white/5 py-4 text-center text-xs text-zinc-600">
-        © {new Date().getFullYear()} SITEFLIP. AI valuations are informational only.
+        © {new Date().getFullYear()} JIY.APP. AI valuations are informational only.
       </div>
     </footer>
   );

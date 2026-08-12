@@ -115,7 +115,7 @@ export async function POST(request: Request) {
                 payment_ref: paymentId,
                 updated_at: new Date().toISOString(),
                 notes:
-                  "Mollie payment verified server-side. Not escrow. Ownership transfer still requires SITEFLIP workflow.",
+                  "Mollie payment verified server-side. Not escrow. Ownership transfer still requires JIY.APP workflow.",
               })
               .eq("id", transactionId);
 

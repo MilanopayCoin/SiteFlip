@@ -2,20 +2,26 @@ import type { BusinessPassport, FactoryProject } from "./types";
 import { getOutputByAgent } from "./store";
 import type {
   ArchitectureSpec,
-  CodeArtifact,
   PlanSpec,
   ProductSpec,
   SecurityScan,
   TestReport,
 } from "./schemas";
+import { listDeploymentsForProject } from "./deployment/cloudflare-provider";
 
 export function buildBusinessPassport(project: FactoryProject): BusinessPassport {
-  const isV3 = project.pipelineVersion === "v3";
-  const planSpec = isV3
+  const isV3Plus =
+    project.pipelineVersion === "v3" || project.pipelineVersion === "v4";
+  const planSpec = isV3Plus
     ? (getOutputByAgent(project, "PlannerAgent")?.data as PlanSpec | undefined)
     : undefined;
   const plan = getOutputByAgent(project, "BusinessAgent")?.data as
-    | { businessName?: string; businessModel?: string; targetCustomer?: string; revenueModel?: string }
+    | {
+        businessName?: string;
+        businessModel?: string;
+        targetCustomer?: string;
+        revenueModel?: string;
+      }
     | undefined;
   const arch = getOutputByAgent(project, "ArchitectureAgent")?.data as
     | ArchitectureSpec
@@ -30,9 +36,13 @@ export function buildBusinessPassport(project: FactoryProject): BusinessPassport
     | SecurityScan
     | undefined;
 
+  const deployments = listDeploymentsForProject(project.id);
+  const latest = deployments[0];
+  const liveDeploy = deployments.find((d) => d.status === "LIVE");
+
   const lifecycle =
     project.state === "LIVE"
-      ? "GROWING"
+      ? "LIVE"
       : project.state === "READY" || project.state === "APPROVAL_REQUIRED"
         ? "READY"
         : "BUILDING";
@@ -46,7 +56,7 @@ export function buildBusinessPassport(project: FactoryProject): BusinessPassport
       .map((a) => ({ at: a.at, label: `${a.agent}: ${a.message}` })),
   ];
   if (project.liveAt) {
-    timeline.push({ at: project.liveAt, label: "Marked LIVE (sandbox)" });
+    timeline.push({ at: project.liveAt, label: "Marked LIVE (verified)" });
   }
 
   const testStatus = tests
@@ -71,9 +81,13 @@ export function buildBusinessPassport(project: FactoryProject): BusinessPassport
       planSpec?.businessName || plan?.businessName || project.name,
     createdAt: project.createdAt,
     businessModel:
-      planSpec?.businessModel || plan?.businessModel || project.brief.businessType,
+      planSpec?.businessModel ||
+      plan?.businessModel ||
+      project.brief.businessType,
     targetCustomer:
-      planSpec?.targetCustomer || plan?.targetCustomer || project.brief.targetCustomer,
+      planSpec?.targetCustomer ||
+      plan?.targetCustomer ||
+      project.brief.targetCustomer,
     technology: arch?.techStack?.length
       ? arch.techStack
       : project.brief.preferredTechnology?.split(/,\s*/) || [],
@@ -87,14 +101,29 @@ export function buildBusinessPassport(project: FactoryProject): BusinessPassport
     persistenceMode: project.persistenceMode,
     persistenceNote:
       project.persistenceMode === "SUPABASE"
-        ? "Persisted to Supabase factory tables"
+        ? "Persisted to factory tables"
         : "LOCAL / DEMO / NOT PERSISTED — in-memory factory store only. Data may be lost on redeploy.",
     pipelineVersion: project.pipelineVersion,
-    applicationVersion: isV3 ? "v3-starter-mvp" : "v2-landing",
+    applicationVersion:
+      latest?.version ||
+      (project.pipelineVersion === "v4"
+        ? "v4-starter"
+        : project.pipelineVersion === "v3"
+          ? "v3-starter-mvp"
+          : "v2-landing"),
     features: product?.mvpFeatures ?? planSpec?.mvpPages ?? [],
     buildStatus: project.sandbox.deploymentStatus,
     testStatus,
     securityStatus,
-    previewUrl: project.sandbox.previewUrl,
+    previewUrl: project.sandbox.previewUrl || liveDeploy?.previewUrl || null,
+    productionUrl:
+      project.sandbox.productionUrl || liveDeploy?.productionUrl || null,
+    deploymentStatus: latest?.status || "NOT_DEPLOYED",
+    deploymentVersion: latest?.version || null,
+    lastDeploymentAt: latest?.createdAt || null,
+    runtimeStatus:
+      latest?.status === "LIVE"
+        ? "AI GENERATED STARTER · verified preview"
+        : "NOT LIVE",
   };
 }

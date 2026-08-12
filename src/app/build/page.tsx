@@ -172,20 +172,20 @@ export default function BuildFactoryPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-violet-400">
-            AI Business Factory
+            JIY.APP · AI Business Factory
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-white sm:text-5xl">
-            Build your next business.
+            Turn ideas into businesses.
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-400">
-            Describe an idea in natural language. SITEFLIP V3 runs modular agents to
+            Describe an idea in natural language. JIY.APP runs modular agents to
             generate a working starter mini-SaaS — plan, product spec, database spec,
             code scaffold, tests, security scan, and preview. Production deploy and
             payments always require your approval.
           </p>
         </div>
         <Badge variant="outline" className="gap-1">
-          <Factory className="h-3.5 w-3.5" /> Factory V3
+          <Factory className="h-3.5 w-3.5" /> Factory V4
         </Badge>
       </div>
 
@@ -196,7 +196,7 @@ export default function BuildFactoryPage() {
           variant={pipelineMode === "v3" ? "default" : "outline"}
           onClick={() => setPipelineMode("v3")}
         >
-          V3 — Mini-SaaS
+          V3/V4 — Mini-SaaS
         </Button>
         <Button
           type="button"

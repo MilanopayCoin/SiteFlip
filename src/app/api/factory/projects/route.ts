@@ -36,11 +36,15 @@ export async function POST(request: Request) {
     }
 
     const pipelineVersion: PipelineVersion =
-      body?.pipelineVersion === "v2" ? "v2" : "v3";
+      body?.pipelineVersion === "v2"
+        ? "v2"
+        : body?.pipelineVersion === "v4"
+          ? "v4"
+          : "v3";
     const cost =
-      pipelineVersion === "v3"
-        ? estimateV3PipelineCost()
-        : estimateFullPipelineCost();
+      pipelineVersion === "v2"
+        ? estimateFullPipelineCost()
+        : estimateV3PipelineCost();
     const { resolveRequestUser } = await import("@/lib/api/request-user");
     const user = await resolveRequestUser(request);
     const ownerId = user?.id || "demo-user";
@@ -68,21 +72,22 @@ export async function POST(request: Request) {
     }
 
     const limitations =
-      pipelineVersion === "v3"
+      pipelineVersion === "v2"
         ? [
-            "AI Business Factory V3 — generates starter mini-SaaS scaffold",
-            "AI GENERATED STARTER — not production-ready SaaS",
-            "Production deploy, payments, domains, DB, and marketplace require approval",
-            "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
-            "SANDBOX: DEVELOPMENT ISOLATION — not production-grade sandboxing",
-          ]
-        : [
-            "AI Business Factory V2 — starter landing page pipeline",
+            "JIY.APP Factory V2 — starter landing page pipeline",
             "AI-generated outputs require your review",
             "Starter landing preview is not a complete production SaaS",
             "Production deploy, payments, domains, and marketplace publish require approval",
             "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
             "No real-time market data unless an external API is connected",
+          ]
+        : [
+            "JIY.APP AI Business Factory — generates starter mini-SaaS scaffold",
+            "AI GENERATED STARTER — not production-ready SaaS",
+            "Production deploy of generated apps requires PRODUCTION ISOLATION",
+            "Preview deploy available after build/test/security verification",
+            "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
+            "SANDBOX: DEVELOPMENT ISOLATION — not production-grade sandboxing",
           ];
 
     return NextResponse.json({

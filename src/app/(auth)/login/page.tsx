@@ -97,7 +97,7 @@ export default function LoginPage() {
     <div className="mx-auto flex max-w-md flex-col px-4 py-16">
       <Card>
         <CardHeader>
-          <CardTitle>Sign in to SITEFLIP</CardTitle>
+          <CardTitle>Sign in to JIY.APP</CardTitle>
         </CardHeader>
         <CardContent>
           {configured === false && (

@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   if (pingAi && ai.primary !== "heuristic") {
     try {
       const result = await aiChat(
-        "You are SITEFLIP health check. Reply with JSON {\"ok\":true}. Do not invent data.",
+        "You are JIY.APP health check. Reply with JSON {\"ok\":true}. Do not invent data.",
         "ping",
         { json: true }
       );

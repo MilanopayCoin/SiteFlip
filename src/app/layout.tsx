@@ -15,18 +15,20 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "SITEFLIP — Build. Buy. Rent. Revive. Sell.",
-    template: "%s · SITEFLIP",
+    default: "JIY.APP — Turn ideas into businesses.",
+    template: "%s · JIY.APP",
   },
   description:
-    "The AI-powered marketplace for digital businesses. The operating system for digital business acquisitions.",
+    "JIY.APP — AI Business Factory. BUILD → GROW → BUY → RENT → REVIVE → SELL.",
   keywords: [
+    "AI business factory",
+    "build saas with AI",
     "digital business marketplace",
     "buy saas",
     "rent website",
     "revive abandoned project",
-    "AI business builder",
   ],
+  metadataBase: new URL("https://jiy.app"),
 };
 
 export default function RootLayout({

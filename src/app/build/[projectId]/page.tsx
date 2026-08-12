@@ -23,7 +23,7 @@ import {
 } from "@/lib/factory/client-cache";
 import type { CodeArtifact, SecurityScan, TestReport } from "@/lib/factory/schemas";
 
-const WORKSPACE_TABS = [
+  const WORKSPACE_TABS = [
   "Overview",
   "Pipeline",
   "Generated App",
@@ -32,6 +32,7 @@ const WORKSPACE_TABS = [
   "Tests",
   "Security",
   "Preview",
+  "Deployment",
   "Cost",
   "Passport",
   "Approval",
@@ -195,6 +196,41 @@ export default function FactoryProjectPage() {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, searchParams]);
+
+  async function deployAction(action: "preview" | "production") {
+    setBusy(true);
+    setError(null);
+    const cached = readCachedFactoryProject(id);
+    if (cached) {
+      await fetch(`/api/factory/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: cached }),
+      });
+    }
+    const res = await fetch(`/api/factory/projects/${id}/deploy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        project: cached ?? project,
+      }),
+    });
+    const data = await res.json();
+    if (data.project) {
+      cacheFactoryProject(data.project);
+      setProject(data.project);
+    }
+    if (!res.ok || data.blocked) {
+      setError(
+        data.message ||
+          data.error ||
+          "PRODUCTION ISOLATION REQUIRED — production deploy blocked"
+      );
+    }
+    await load();
+    setBusy(false);
+  }
 
   async function decide(approvalId: string, decision: "APPROVE" | "EDIT" | "CANCEL") {
     setBusy(true);
@@ -602,6 +638,68 @@ export default function FactoryProjectPage() {
         </Card>
       )}
 
+      {workspaceTab === "Deployment" && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Deployment — JIY.APP V4</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+              <p className="font-medium text-amber-200">
+                PRODUCTION ISOLATION REQUIRED
+              </p>
+              <p className="mt-1 text-zinc-400">
+                Current mode is SANDBOX: DEVELOPMENT ISOLATION. Generated apps are
+                not deployed into the main JIY.APP Worker. Production LIVE is blocked
+                until separate Worker identities and resource isolation exist.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-zinc-500">Preview URL</p>
+                <p className="break-all text-zinc-200">
+                  {project.sandbox.previewUrl || `/build/${id}/preview`}
+                </p>
+              </div>
+              <div>
+                <p className="text-zinc-500">Production URL</p>
+                <p className="text-zinc-200">
+                  {project.sandbox.productionUrl || "NOT DEPLOYED"}
+                </p>
+              </div>
+              <div>
+                <p className="text-zinc-500">Deployment status</p>
+                <p className="text-white">{project.sandbox.deploymentStatus}</p>
+              </div>
+              <div>
+                <p className="text-zinc-500">Platform</p>
+                <p className="text-white">https://jiy.app</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" disabled={busy} onClick={() => deployAction("preview")}>
+                Deploy preview
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => deployAction("production")}
+              >
+                DEPLOY MY BUSINESS
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link href={`/build/${id}/preview`}>Open preview</Link>
+              </Button>
+            </div>
+            <p className="text-xs text-zinc-500">
+              AI GENERATED STARTER · Approval required before production attempt ·
+              Mollie not auto-connected · Domain DNS never auto-modified
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {workspaceTab === "Cost" && (
         <Card className="mt-6">
           <CardHeader>
@@ -844,7 +942,7 @@ export default function FactoryProjectPage() {
                 <Link href={`/build/${id}/command`}>Grow business</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link href={`/build/${id}/sell`}>List on SITEFLIP</Link>
+                <Link href={`/build/${id}/sell`}>List on JIY.APP</Link>
               </Button>
               <Button variant="ghost" asChild>
                 <Link href={`/build/${id}/rent`}>Rent my business</Link>

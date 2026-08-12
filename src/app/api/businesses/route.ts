@@ -112,7 +112,7 @@ export async function POST(request: Request) {
       business_id: business.id,
       event_type: "created",
       title: "Business created",
-      description: "Created via SITEFLIP dashboard",
+      description: "Created via JIY.APP dashboard",
       created_by: user.id,
     });
 

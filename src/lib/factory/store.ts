@@ -136,9 +136,9 @@ export function createFactoryProject(
         at: now,
         agent: "Orchestrator",
         message:
-          pipelineVersion === "v3"
-            ? "Factory V3 project created (LOCAL / DEMO / NOT PERSISTED). Mini-SaaS pipeline ready."
-            : "Factory project created (LOCAL / DEMO / NOT PERSISTED). Waiting to run pipeline.",
+          pipelineVersion === "v2"
+            ? "Factory project created (LOCAL / DEMO / NOT PERSISTED). Waiting to run pipeline."
+            : "JIY.APP Factory project created (LOCAL / DEMO / NOT PERSISTED). Mini-SaaS pipeline ready.",
         level: "info",
       },
     ],

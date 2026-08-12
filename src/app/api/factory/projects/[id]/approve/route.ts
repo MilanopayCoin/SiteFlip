@@ -5,10 +5,7 @@ import {
   saveFactoryProject,
 } from "@/lib/factory/store";
 import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
-import {
-  BusinessFactoryOrchestratorV3,
-  runFactoryPipeline,
-} from "@/lib/factory/orchestrator-v3";
+import { runFactoryPipeline } from "@/lib/factory/orchestrator-v3";
 import { z } from "zod";
 import type { FactoryProject } from "@/lib/factory/types";
 
@@ -65,13 +62,30 @@ export async function POST(request: Request, ctx: Ctx) {
 
   // APPROVE
   if (approval.action === "production_deploy") {
-    if (project.pipelineVersion === "v3") {
-      const live = new BusinessFactoryOrchestratorV3(id).approveProduction();
+    // Mark approved — actual deploy happens via DEPLOY MY BUSINESS (isolation gate)
+    approval.status = "APPROVED";
+    approval.resolvedAt = new Date().toISOString();
+    appendActivity(
+      project,
+      "User",
+      "Production deployment approved — click DEPLOY MY BUSINESS to attempt deploy (isolation may still block)",
+      "success"
+    );
+    saveFactoryProject(project);
+
+    if (project.pipelineVersion === "v2") {
+      const orch = new BusinessFactoryOrchestrator(id);
+      const live = orch.approveProduction();
       return NextResponse.json({ project: live, approval });
     }
-    const orch = new BusinessFactoryOrchestrator(id);
-    const live = orch.approveProduction();
-    return NextResponse.json({ project: live, approval });
+
+    // V3/V4: approval only — deploy endpoint performs isolation-gated deploy
+    return NextResponse.json({
+      project: getFactoryProject(id),
+      approval,
+      next: "POST /api/factory/projects/:id/deploy with action=production",
+      note: "PRODUCTION ISOLATION REQUIRED may still block LIVE",
+    });
   }
 
   if (approval.action === "cost_threshold") {

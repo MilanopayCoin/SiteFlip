@@ -1,6 +1,6 @@
 /** AI Business Factory — core types (V2 landing + V3 mini-SaaS) */
 
-export type PipelineVersion = "v2" | "v3";
+export type PipelineVersion = "v2" | "v3" | "v4";
 
 export type FactoryProjectState =
   | "IDEA"
@@ -162,7 +162,9 @@ export interface FactoryApproval {
     | "change_request"
     | "landing_page_finalize"
     | "marketplace_listing"
-    | "publish_listing";
+    | "publish_listing"
+    | "rollback"
+    | "connect_domain";
   title: string;
   explanation: string;
   services: string[];
@@ -265,12 +267,12 @@ export interface BusinessPassport {
   revenueModel: string;
   aiScore: number | null;
   factoryStatus: FactoryProjectState;
-  lifecycle: "BUILDING" | "READY" | "LISTED" | "GROWING" | "SOLD";
+  lifecycle: "BUILDING" | "READY" | "LIVE" | "GROWING" | "LISTED" | "RENTED" | "SOLD" | "REVIVED";
   owner: string;
   timeline: Array<{ at: string; label: string }>;
   persistenceMode: FactoryPersistenceMode;
   persistenceNote: string;
-  /** V3 — generated application metadata */
+  /** V3/V4 — generated application metadata */
   pipelineVersion?: PipelineVersion;
   applicationVersion?: string;
   features?: string[];
@@ -278,6 +280,12 @@ export interface BusinessPassport {
   testStatus?: string;
   securityStatus?: string;
   previewUrl?: string | null;
+  /** V4 deployment */
+  productionUrl?: string | null;
+  deploymentStatus?: string;
+  deploymentVersion?: string | null;
+  lastDeploymentAt?: string | null;
+  runtimeStatus?: string;
 }
 
 export interface FactoryProject {
@@ -357,7 +365,7 @@ export const V3_PIPELINE_STEPS: Array<{
 ];
 
 export function getPipelineSteps(version: PipelineVersion = "v3") {
-  return version === "v3" ? V3_PIPELINE_STEPS : PIPELINE_STEPS;
+  return version === "v2" ? PIPELINE_STEPS : V3_PIPELINE_STEPS;
 }
 
 /** MVP orchestrator agent order (V1) */
