@@ -216,6 +216,19 @@ export default function FactoryProjectPage() {
     if (res.ok && data.project) {
       cacheFactoryProject(data.project);
       setProject(data.project);
+      // Cloudflare Free: /run may exhaust subrequests — persist in a fresh request
+      if (data.persistDeferred || data.persistOk === false) {
+        const put = await fetch(`/api/factory/projects/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: data.project }),
+        });
+        const putData = await put.json().catch(() => ({}));
+        if (put.ok && putData.project) {
+          cacheFactoryProject(putData.project);
+          setProject(putData.project);
+        }
+      }
     } else {
       setError(
         data.error ||

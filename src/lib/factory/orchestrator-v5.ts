@@ -459,14 +459,8 @@ export class BusinessFactoryOrchestratorV5 {
       activity: "AI GENERATE complete — ready for SANDBOX → BUILD",
     });
     this.finish("DeveloperAgent", "GENERATE", out.id, true);
-
-    // Checkpoint so concurrent GET/reload cannot lose PlannerAgent outputs
-    try {
-      const { persistFactoryProject } = await import("./supabase-store");
-      await persistFactoryProject(project);
-    } catch {
-      // Memory pin still holds outputs for this isolate
-    }
+    // Do not persist mid-pipeline on Cloudflare Free — each Supabase call
+    // counts toward the Worker subrequest limit and broke final persist.
   }
 
   private async runSandbox() {

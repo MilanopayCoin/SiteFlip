@@ -72,18 +72,33 @@ export async function POST(request: Request, ctx: Ctx) {
   try {
     const result = await runFactoryPipeline(id);
     const persisted = await persistFactoryProject(result);
-    if (status.productionPersistence && !persisted.ok) {
-      return NextResponse.json(
-        {
-          error: "Pipeline finished but persist failed",
-          details: persisted.error,
-          project: result,
-        },
-        { status: 503 }
-      );
-    }
     if (persisted.mode === "supabase") {
       result.persistenceMode = "SUPABASE";
+    }
+    // Cloudflare Free may exhaust subrequests during a long V5 run.
+    // Still return the completed project so the client can PUT-persist in a
+    // fresh Worker invocation (new subrequest budget).
+    if (status.productionPersistence && !persisted.ok) {
+      const subrequestExhausted = /too many subrequests/i.test(
+        persisted.error || ""
+      );
+      return NextResponse.json({
+        project: result,
+        message:
+          result.state === "APPROVAL_REQUIRED"
+            ? "Pipeline reached approval gate"
+            : result.state === "FAILED"
+              ? "Pipeline failed"
+              : "Pipeline complete",
+        persistenceMode: result.persistenceMode,
+        schemaReady: status.schemaReady,
+        persistOk: false,
+        persistDeferred: subrequestExhausted,
+        persistError: persisted.error,
+        note: subrequestExhausted
+          ? "Pipeline finished in-memory — client should PUT project to persist (Worker Free subrequest limit)"
+          : "Pipeline finished but persist failed",
+      });
     }
     return NextResponse.json({
       project: result,
@@ -95,6 +110,7 @@ export async function POST(request: Request, ctx: Ctx) {
             : "Pipeline complete",
       persistenceMode: result.persistenceMode,
       schemaReady: status.schemaReady,
+      persistOk: true,
     });
   } catch (error) {
     console.error("[factory/run]", error);

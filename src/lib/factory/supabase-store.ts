@@ -63,6 +63,9 @@ function toDbProject(project: FactoryProject) {
       changes: project.changes,
       memory: project.memory,
       activityLog: project.activityLog.slice(0, 50),
+      // Cloudflare Free: embed outputs so a single project upsert survives
+      // when factory_outputs writes exhaust Worker subrequest budget.
+      outputsEmbedded: project.outputs,
     },
     usage: project.usage,
     live_at: project.liveAt,
@@ -79,6 +82,10 @@ function fromDbProject(
   const appState =
     (sandbox.appState as FactoryProject["state"] | undefined) ||
     (row.state as FactoryProject["state"]);
+  const embedded = Array.isArray(sandbox.outputsEmbedded)
+    ? (sandbox.outputsEmbedded as FactoryOutput[])
+    : [];
+  const resolvedOutputs = outputs.length ? outputs : embedded;
   return {
     id: String(row.id),
     ownerId: String(row.owner_id),
@@ -90,7 +97,7 @@ function fromDbProject(
     brief: (row.brief || {}) as FactoryProject["brief"],
     currentStep: (row.current_step as FactoryProject["currentStep"]) ?? null,
     tasks: (sandbox.tasks as FactoryProject["tasks"]) || [],
-    outputs,
+    outputs: resolvedOutputs,
     approvals: (sandbox.approvals as FactoryProject["approvals"]) || [],
     changes: (sandbox.changes as FactoryProject["changes"]) || [],
     memory: (sandbox.memory as FactoryProject["memory"]) || [],
@@ -184,54 +191,55 @@ export async function persistFactoryProject(
     return { ok: false, mode: "demo", error: error.message };
   }
 
-  // Upsert outputs (UUID ids). Never delete-before-insert — a failed insert
-  // after delete left factory_outputs empty and broke BUILD on reload.
+  // Best-effort outputs table sync. Project row already embeds outputsEmbedded
+  // for Free-tier recovery when this call is skipped due to subrequest limits.
   if (project.outputs.length) {
-    const rows = project.outputs.map((o) => {
-      const id =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          o.id
-        )
-          ? o.id
-          : crypto.randomUUID();
-      if (id !== o.id) o.id = id;
+    try {
+      const rows = project.outputs.map((o) => {
+        const id =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            o.id
+          )
+            ? o.id
+            : crypto.randomUUID();
+        if (id !== o.id) o.id = id;
+        return {
+          id,
+          project_id: project.id,
+          agent: o.agent,
+          schema_name: o.schemaName,
+          data: o.data,
+          labeled_assumptions: o.labeledAssumptions,
+          source: o.source,
+          implementation_status: o.implementationStatus,
+          created_at: o.createdAt,
+        };
+      });
+      const { error: outErr } = await supabase
+        .from("factory_outputs")
+        .upsert(rows, { onConflict: "id" });
+      if (outErr) {
+        // Project embed still saved — treat as ok for Free Worker limits
+        project.persistenceMode = "SUPABASE";
+        saveMemoryProject(project);
+        return {
+          ok: true,
+          mode: "supabase",
+          error: `outputs table sync skipped: ${outErr.message}`,
+        };
+      }
+    } catch (e) {
+      project.persistenceMode = "SUPABASE";
+      saveMemoryProject(project);
       return {
-        id,
-        project_id: project.id,
-        agent: o.agent,
-        schema_name: o.schemaName,
-        data: o.data,
-        labeled_assumptions: o.labeledAssumptions,
-        source: o.source,
-        implementation_status: o.implementationStatus,
-        created_at: o.createdAt,
+        ok: true,
+        mode: "supabase",
+        error: `outputs table sync skipped: ${
+          e instanceof Error ? e.message : "unknown"
+        }`,
       };
-    });
-    const { error: outErr } = await supabase
-      .from("factory_outputs")
-      .upsert(rows, { onConflict: "id" });
-    if (outErr) {
-      return { ok: false, mode: "demo", error: outErr.message };
-    }
-    const keepIds = new Set(rows.map((r) => r.id));
-    const { data: existingOuts } = await supabase
-      .from("factory_outputs")
-      .select("id")
-      .eq("project_id", project.id);
-    const orphans = (existingOuts || [])
-      .map((r) => String(r.id))
-      .filter((oid) => !keepIds.has(oid));
-    if (orphans.length) {
-      await supabase.from("factory_outputs").delete().in("id", orphans);
     }
   }
-
-  // Record a run snapshot
-  await supabase.from("factory_runs").insert({
-    project_id: project.id,
-    status: project.state,
-    finished_at: new Date().toISOString(),
-  });
 
   project.persistenceMode = "SUPABASE";
   saveMemoryProject(project);

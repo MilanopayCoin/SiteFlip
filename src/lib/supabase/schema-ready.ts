@@ -40,7 +40,7 @@ export type SchemaStatus = {
 };
 
 let cached: { at: number; value: SchemaStatus } | null = null;
-const TTL_MS = 15_000;
+const TTL_MS = 60_000;
 
 async function tableExists(
   client: Awaited<ReturnType<typeof createClient>>,
