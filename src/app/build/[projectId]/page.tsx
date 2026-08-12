@@ -439,7 +439,7 @@ export default function FactoryProjectPage() {
     setBusy(false);
   }
 
-  if (error || loadState === "missing") {
+  if (loadState === "missing") {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <p className="text-rose-400">

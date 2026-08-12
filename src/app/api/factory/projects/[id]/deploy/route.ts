@@ -16,23 +16,46 @@ import type { CodeArtifact } from "@/lib/factory/schemas";
 import type { FactoryProject } from "@/lib/factory/types";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { z } from "zod";
+import { resolveFactoryProject } from "@/lib/factory/supabase-store";
+import { ensureCloudflareEnv } from "@/lib/supabase/env";
+import { resolveRequestUser } from "@/lib/api/request-user";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function hydrate(id: string, body: { project?: FactoryProject }) {
-  let project = getFactoryProject(id);
+async function hydrate(
+  id: string,
+  body: { project?: FactoryProject },
+  userId?: string | null
+) {
+  let project = await resolveFactoryProject(id);
   const incoming = body?.project;
-  if (!project && incoming && incoming.id === id && incoming.persistenceMode !== "SUPABASE") {
+  if (
+    !project &&
+    incoming &&
+    incoming.id === id &&
+    (!userId || incoming.ownerId === userId)
+  ) {
     project = saveFactoryProject(incoming);
   }
-  return project;
+  return project ?? getFactoryProject(id) ?? null;
 }
 
 export async function GET(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
-  const project = getFactoryProject(id);
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const project = await hydrate(id, {}, user?.id);
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (user && project.ownerId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const code = getOutputByAgent(project, "DeveloperAgent")?.data as
@@ -52,7 +75,7 @@ export async function GET(request: Request, ctx: Ctx) {
     productionGate: gate,
     previewUrl: project.sandbox.previewUrl,
     productionUrl: project.sandbox.productionUrl,
-    deploymentStatus: deployments[0]?.status ?? "NOT_DEPLOYED",
+    deploymentStatus: deployments[0]?.status ?? project.sandbox.deploymentStatus ?? "NOT_DEPLOYED",
     label: "AI GENERATED STARTER",
     notes: [
       "Generated apps are NOT deployed into the main JIY.APP production Worker",
@@ -69,17 +92,27 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const ip = clientIp(request);
   const rl = rateLimit(`factory:deploy:${ip}`, 5, 60_000);
   if (!rl.success) {
     return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   }
 
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
   const { id } = await ctx.params;
   const raw = await request.json().catch(() => ({}));
-  const project = hydrate(id, raw as { project?: FactoryProject });
+  const project = await hydrate(id, raw as { project?: FactoryProject }, user?.id);
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (user && project.ownerId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const parsed = bodySchema.safeParse(raw);

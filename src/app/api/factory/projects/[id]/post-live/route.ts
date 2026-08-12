@@ -9,39 +9,59 @@ import {
   getV5PostLiveSnapshot,
 } from "@/lib/factory/v5-post-live";
 import type { FactoryProject } from "@/lib/factory/types";
-import { persistFactoryProject } from "@/lib/factory/supabase-store";
+import {
+  persistFactoryProject,
+  resolveFactoryProject,
+} from "@/lib/factory/supabase-store";
+import { ensureCloudflareEnv } from "@/lib/supabase/env";
+import { resolveRequestUser } from "@/lib/api/request-user";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function hydrate(id: string, body: { project?: FactoryProject }) {
-  let project = getFactoryProject(id);
+async function loadProject(
+  id: string,
+  body?: { project?: FactoryProject },
+  userId?: string | null
+) {
+  let project = await resolveFactoryProject(id);
   const incoming = body?.project;
   if (
     !project &&
     incoming &&
     incoming.id === id &&
-    incoming.persistenceMode !== "SUPABASE"
+    (!userId || incoming.ownerId === userId)
   ) {
     project = saveFactoryProject(incoming);
   }
-  return project;
+  return project ?? getFactoryProject(id) ?? null;
 }
 
 export async function GET(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
-  const url = new URL(request.url);
-  // Allow client to hydrate LOCAL projects via query is not needed — use body on POST
-  let project = getFactoryProject(id);
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const project = await loadProject(id, undefined, user?.id);
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  if (user && project.ownerId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   if (project.pipelineVersion !== "v5") {
     return NextResponse.json(
-      { error: "Post-live roadmap is V5-only", pipelineVersion: project.pipelineVersion },
+      {
+        error: "Post-live roadmap is V5-only",
+        pipelineVersion: project.pipelineVersion,
+      },
       { status: 400 }
     );
   }
-  void url;
   return NextResponse.json({
     snapshot: getV5PostLiveSnapshot(project),
     youAreHere: "GENERATED APP LIVE",
@@ -61,11 +81,21 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
   const raw = await request.json().catch(() => ({}));
-  const project = hydrate(id, raw as { project?: FactoryProject });
+  const project = await loadProject(id, raw as { project?: FactoryProject }, user?.id);
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (user && project.ownerId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (project.pipelineVersion !== "v5") {
     return NextResponse.json(

@@ -3,11 +3,16 @@ import {
   appendActivity,
   getFactoryProject,
   saveFactoryProject,
+  updateTask,
 } from "@/lib/factory/store";
 import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
 import { runFactoryPipeline } from "@/lib/factory/orchestrator-v3";
 import { z } from "zod";
 import type { FactoryProject } from "@/lib/factory/types";
+import { resolveFactoryProject, persistFactoryProject } from "@/lib/factory/supabase-store";
+import { ensureCloudflareEnv } from "@/lib/supabase/env";
+import { resolveRequestUser } from "@/lib/api/request-user";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,18 +20,35 @@ const bodySchema = z.object({
   approvalId: z.string(),
   decision: z.enum(["APPROVE", "EDIT", "CANCEL"]),
   editNote: z.string().optional(),
+  project: z.any().optional(),
 });
 
 export async function POST(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
   const raw = await request.json().catch(() => ({}));
   const incoming = (raw as { project?: FactoryProject })?.project;
-  let project = getFactoryProject(id);
-  if (!project && incoming && incoming.id === id && incoming.persistenceMode !== "SUPABASE") {
+  let project = await resolveFactoryProject(id);
+  if (
+    !project &&
+    incoming &&
+    incoming.id === id &&
+    (!user || incoming.ownerId === user.id)
+  ) {
     project = saveFactoryProject(incoming);
   }
+  if (!project) project = getFactoryProject(id) ?? null;
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (user && project.ownerId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const parsed = bodySchema.safeParse(raw);
@@ -44,6 +66,7 @@ export async function POST(request: Request, ctx: Ctx) {
     approval.resolvedAt = new Date().toISOString();
     appendActivity(project, "User", `Cancelled: ${approval.title}`, "warning");
     saveFactoryProject(project);
+    await persistFactoryProject(project).catch(() => null);
     return NextResponse.json({ project, approval });
   }
 
@@ -57,6 +80,7 @@ export async function POST(request: Request, ctx: Ctx) {
       "info"
     );
     saveFactoryProject(project);
+    await persistFactoryProject(project).catch(() => null);
     return NextResponse.json({ project, approval });
   }
 
@@ -64,6 +88,12 @@ export async function POST(request: Request, ctx: Ctx) {
   if (approval.action === "generated_app_live") {
     approval.status = "APPROVED";
     approval.resolvedAt = new Date().toISOString();
+    updateTask(project, "APPROVAL", {
+      status: "COMPLETED",
+      progress: 100,
+      activity: "APPROVAL completed — GENERATED APP LIVE publishing",
+      completedAt: new Date().toISOString(),
+    });
     appendActivity(
       project,
       "User",
@@ -86,7 +116,6 @@ export async function POST(request: Request, ctx: Ctx) {
     const { goGeneratedAppLive } = await import("@/lib/factory/orchestrator-v5");
     const live = await goGeneratedAppLive(id);
     try {
-      const { persistFactoryProject } = await import("@/lib/factory/supabase-store");
       await persistFactoryProject(live);
     } catch {
       // persistence must not block LIVE transition

@@ -13,14 +13,44 @@ import {
 import type { FactoryProject } from "@/lib/factory/types";
 import { z } from "zod";
 import { BRAND } from "@/lib/brand";
+import { resolveFactoryProject } from "@/lib/factory/supabase-store";
+import { ensureCloudflareEnv } from "@/lib/supabase/env";
+import { resolveRequestUser } from "@/lib/api/request-user";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, ctx: Ctx) {
+async function loadProject(
+  id: string,
+  incoming?: FactoryProject,
+  userId?: string | null
+) {
+  let project = await resolveFactoryProject(id);
+  if (
+    !project &&
+    incoming &&
+    incoming.id === id &&
+    (!userId || incoming.ownerId === userId)
+  ) {
+    project = saveFactoryProject(incoming);
+  }
+  return project ?? getFactoryProject(id) ?? null;
+}
+
+export async function GET(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
-  const project = getFactoryProject(id);
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  const project = await loadProject(id, undefined, user?.id);
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (user && project.ownerId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   return NextResponse.json({
@@ -42,15 +72,21 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request, ctx: Ctx) {
+  await ensureCloudflareEnv();
   const { id } = await ctx.params;
-  const raw = await request.json().catch(() => ({}));
-  let project = getFactoryProject(id);
-  const incoming = (raw as { project?: FactoryProject })?.project;
-  if (!project && incoming && incoming.id === id && incoming.persistenceMode !== "SUPABASE") {
-    project = saveFactoryProject(incoming);
+  const status = await getSchemaStatus();
+  const user = await resolveRequestUser(request);
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
+  const raw = await request.json().catch(() => ({}));
+  const incoming = (raw as { project?: FactoryProject })?.project;
+  const project = await loadProject(id, incoming, user?.id);
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (user && project.ownerId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const parsed = bodySchema.safeParse(raw);

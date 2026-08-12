@@ -51,17 +51,74 @@ function buildLandingFromProject(project: FactoryProject): PreviewPayload["landi
     ?.data as BrandPlan | undefined;
   const code = project.outputs.find((o) => o.agent === "DeveloperAgent")
     ?.data as CodeArtifact | undefined;
-  if (!content) return null;
+  if (content) {
+    return {
+      brandName: brand?.brandName,
+      colors: brand?.colorDirection,
+      hero: content.hero,
+      features: content.features,
+      howItWorks: content.howItWorks,
+      pricingCopy: content.pricingCopy,
+      faq: content.faq,
+      footer: content.footer,
+      completeness: code?.completeness ?? "landing_page_only",
+    };
+  }
+
+  // V5 has no ContentAgent — synthesize from Planner/Product/Developer
+  const plan = project.outputs.find((o) => o.agent === "PlannerAgent")?.data as
+    | {
+        businessName?: string;
+        summary?: string;
+        problem?: string;
+        mvpPages?: string[];
+        coreWorkflows?: string[];
+        revenueModel?: string;
+      }
+    | undefined;
+  const product = project.outputs.find((o) => o.agent === "ProductAgent")
+    ?.data as { pages?: string[] } | undefined;
+  if (!plan && !code) return null;
+  const name = plan?.businessName || project.name;
+  const pages = product?.pages?.length
+    ? product.pages
+    : plan?.mvpPages?.length
+      ? plan.mvpPages
+      : ["Landing", "Dashboard", "Settings"];
   return {
-    brandName: brand?.brandName,
-    colors: brand?.colorDirection,
-    hero: content.hero,
-    features: content.features,
-    howItWorks: content.howItWorks,
-    pricingCopy: content.pricingCopy,
-    faq: content.faq,
-    footer: content.footer,
-    completeness: code?.completeness ?? "landing_page_only",
+    brandName: name,
+    colors: {
+      primary: "#8b5cf6",
+      secondary: "#6366f1",
+      accent: "#a78bfa",
+      background: "#07070c",
+    },
+    hero: {
+      headline: plan?.summary?.slice(0, 120) || `${name} — AI generated starter`,
+      subheadline:
+        plan?.problem?.slice(0, 220) ||
+        "SANDBOX PREVIEW — DEVELOPMENT ISOLATION · not production-ready SaaS",
+      cta: "Open dashboard",
+    },
+    features: pages.slice(0, 6).map((p) => ({
+      title: p,
+      body: `Starter ${p} screen from V5 BUILD scaffold.`,
+    })),
+    howItWorks: (plan?.coreWorkflows || []).slice(0, 4).map((step, i) => ({
+      step: `${i + 1}`,
+      detail: step,
+    })),
+    pricingCopy:
+      plan?.revenueModel ||
+      "Starter pricing is a labeled assumption — not a live Mollie product.",
+    faq: [
+      {
+        q: "Is this production?",
+        a: "No. GENERATED APP LIVE under SANDBOX: DEVELOPMENT ISOLATION on Cloudflare Free.",
+      },
+    ],
+    footer: `${name} · JIY.APP Factory V5 · AI GENERATED STARTER`,
+    completeness: code?.completeness ?? "starter_mvp_scaffold",
   };
 }
 
@@ -69,7 +126,10 @@ function buildPreviewFromProject(project: FactoryProject): PreviewPayload {
   return {
     previewReady: Boolean(
       project.outputs.find((o) => o.agent === "DeveloperAgent") &&
-        project.sandbox.deploymentStatus !== "NOT_STARTED"
+        (project.sandbox.deploymentStatus !== "NOT_STARTED" ||
+          project.state === "LIVE" ||
+          project.state === "APPROVAL_REQUIRED" ||
+          project.state === "PREVIEW")
     ),
     url: `/build/${project.id}/preview`,
     buildStatus: project.sandbox.deploymentStatus,
@@ -80,7 +140,7 @@ function buildPreviewFromProject(project: FactoryProject): PreviewPayload {
     limitations: [
       "SANDBOX PREVIEW — not production",
       project.sandbox.isolationLabel || "SANDBOX: DEVELOPMENT ISOLATION",
-      "PRODUCTION ISOLATION REQUIRED for LIVE deploy",
+      "PRODUCTION ISOLATION REQUIRED for separate production Worker",
       "Generated app DB uses DEMO adapter — not JIY production database",
       "Not production persistence",
     ],

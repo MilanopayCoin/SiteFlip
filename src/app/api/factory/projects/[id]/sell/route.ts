@@ -17,11 +17,13 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const body = await request.json().catch(() => ({}));
-  let project = getFactoryProject(id);
+  const { resolveFactoryProject } = await import("@/lib/factory/supabase-store");
+  let project = await resolveFactoryProject(id);
   const incoming = (body as { project?: FactoryProject })?.project;
-  if (!project && incoming && incoming.id === id && incoming.persistenceMode !== "SUPABASE") {
+  if (!project && incoming && incoming.id === id) {
     project = saveFactoryProject(incoming);
   }
+  if (!project) project = getFactoryProject(id) ?? null;
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

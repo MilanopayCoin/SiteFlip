@@ -866,6 +866,12 @@ export async function goGeneratedAppLive(
     refreshed.sandbox.previewUrl || previewPathFor(refreshed.id);
   refreshed.sandbox.isolationLabel = "SANDBOX: DEVELOPMENT ISOLATION";
   refreshed.sandbox.productionUrl = null; // honest — not production isolation
+  updateTask(refreshed, "APPROVAL", {
+    status: "COMPLETED",
+    progress: 100,
+    activity: "APPROVAL completed",
+    completedAt: new Date().toISOString(),
+  });
   updateTask(refreshed, "LIVE", {
     status: "COMPLETED",
     progress: 100,

@@ -297,6 +297,18 @@ export async function loadFactoryProject(
 
   const project = fromDbProject(data as Record<string, unknown>, mappedOutputs);
 
+  // Repair: LIVE reached but APPROVAL task left REQUIRES_APPROVAL
+  if (project.state === "LIVE") {
+    const approvalTask = project.tasks.find((t) => t.stepId === "APPROVAL");
+    if (approvalTask && approvalTask.status === "REQUIRES_APPROVAL") {
+      approvalTask.status = "COMPLETED";
+      approvalTask.progress = 100;
+      approvalTask.activity = "APPROVAL completed";
+      approvalTask.completedAt =
+        approvalTask.completedAt || project.liveAt || new Date().toISOString();
+    }
+  }
+
   // Concurrent GET/list during /run must not clobber an in-flight pipeline
   // (Worker isolates share memory — that wipe caused BUILD plan=undefined).
   if (mem && memoryIsAhead(mem, project)) {
@@ -305,6 +317,13 @@ export async function loadFactoryProject(
 
   saveMemoryProject(project);
   return { project, mode: "supabase" };
+}
+
+export async function resolveFactoryProject(
+  id: string
+): Promise<FactoryProject | null> {
+  const loaded = await loadFactoryProject(id);
+  return loaded.project ?? getMemoryProject(id) ?? null;
 }
 
 export async function listPersistedFactoryProjects(ownerId?: string): Promise<{
