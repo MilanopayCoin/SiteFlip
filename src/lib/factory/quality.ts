@@ -7,7 +7,10 @@ import type { ArchitectureSpec, BusinessPlan, MarketAnalysis } from "./schemas";
  * Never fabricates external market statistics.
  */
 export function computeFactoryQuality(project: FactoryProject): FactoryQualityScore {
-  const isV3 = project.pipelineVersion === "v3";
+  const isV3 =
+    project.pipelineVersion === "v3" ||
+    project.pipelineVersion === "v4" ||
+    project.pipelineVersion === "v5";
   const planAgent = isV3 ? "PlannerAgent" : "BusinessAgent";
   const has = (agent: string) => Boolean(getOutputByAgent(project, agent));
   const plan = getOutputByAgent(project, planAgent)?.data as

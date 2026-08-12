@@ -61,6 +61,46 @@ export async function POST(request: Request, ctx: Ctx) {
   }
 
   // APPROVE
+  if (approval.action === "generated_app_live") {
+    approval.status = "APPROVED";
+    approval.resolvedAt = new Date().toISOString();
+    appendActivity(
+      project,
+      "User",
+      "Approved GENERATED APP LIVE — running DEPLOY → LIVE (platform preview)",
+      "success"
+    );
+    saveFactoryProject(project);
+
+    if (project.pipelineVersion !== "v5") {
+      return NextResponse.json(
+        {
+          error: "generated_app_live is V5-only",
+          project: getFactoryProject(id),
+          approval,
+        },
+        { status: 400 }
+      );
+    }
+
+    const { goGeneratedAppLive } = await import("@/lib/factory/orchestrator-v5");
+    const live = await goGeneratedAppLive(id);
+    try {
+      const { persistFactoryProject } = await import("@/lib/factory/supabase-store");
+      await persistFactoryProject(live);
+    } catch {
+      // persistence must not block LIVE transition
+    }
+    return NextResponse.json({
+      project: live,
+      approval,
+      note:
+        live.state === "LIVE"
+          ? "GENERATED APP LIVE — platform preview under DEVELOPMENT ISOLATION (not production Worker isolation)"
+          : "DEPLOY failed — see project activity",
+    });
+  }
+
   if (approval.action === "production_deploy") {
     // Mark approved — actual deploy happens via DEPLOY MY BUSINESS (isolation gate)
     approval.status = "APPROVED";

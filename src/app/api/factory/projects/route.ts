@@ -70,9 +70,11 @@ export async function POST(request: Request) {
     const pipelineVersion: PipelineVersion =
       body?.pipelineVersion === "v2"
         ? "v2"
-        : body?.pipelineVersion === "v4"
-          ? "v4"
-          : "v3";
+        : body?.pipelineVersion === "v5"
+          ? "v5"
+          : body?.pipelineVersion === "v4"
+            ? "v4"
+            : "v3";
     const cost =
       pipelineVersion === "v2"
         ? estimateFullPipelineCost()

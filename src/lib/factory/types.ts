@@ -1,6 +1,6 @@
 /** AI Business Factory — core types (V2 landing + V3 mini-SaaS) */
 
-export type PipelineVersion = "v2" | "v3" | "v4";
+export type PipelineVersion = "v2" | "v3" | "v4" | "v5";
 
 export type FactoryProjectState =
   | "IDEA"
@@ -86,7 +86,25 @@ export type V3PipelineStepId =
   | "AI_SCORE"
   | "READY";
 
-export type PipelineStepId = V2PipelineStepId | V3PipelineStepId;
+/**
+ * V5 — user-facing end-to-end factory flow:
+ * USER IDEA → AI PLAN → GENERATE → SANDBOX → BUILD → TEST → SECURITY →
+ * PREVIEW → APPROVAL → DEPLOY → GENERATED APP LIVE
+ */
+export type V5PipelineStepId =
+  | "IDEA"
+  | "PLAN"
+  | "GENERATE"
+  | "SANDBOX"
+  | "BUILD"
+  | "TEST"
+  | "SECURITY"
+  | "PREVIEW"
+  | "APPROVAL"
+  | "DEPLOY"
+  | "LIVE";
+
+export type PipelineStepId = V2PipelineStepId | V3PipelineStepId | V5PipelineStepId;
 
 export type ClaimClass = "VERIFIED" | "USER_PROVIDED" | "AI_HYPOTHESIS";
 
@@ -164,7 +182,8 @@ export interface FactoryApproval {
     | "marketplace_listing"
     | "publish_listing"
     | "rollback"
-    | "connect_domain";
+    | "connect_domain"
+    | "generated_app_live";
   title: string;
   explanation: string;
   services: string[];
@@ -372,8 +391,31 @@ export const V3_PIPELINE_STEPS: Array<{
   { id: "READY", number: "13", label: "READY", agent: "DeploymentAgent", mvp: true },
 ];
 
+/** V5 pipeline — IDEA → GENERATED APP LIVE (platform preview; not production isolation) */
+export const V5_PIPELINE_STEPS: Array<{
+  id: V5PipelineStepId;
+  number: string;
+  label: string;
+  agent: FactoryAgentName;
+  mvp: boolean;
+}> = [
+  { id: "IDEA", number: "01", label: "USER IDEA", agent: "BusinessAgent", mvp: true },
+  { id: "PLAN", number: "02", label: "AI PLAN", agent: "PlannerAgent", mvp: true },
+  { id: "GENERATE", number: "03", label: "GENERATE", agent: "DeveloperAgent", mvp: true },
+  { id: "SANDBOX", number: "04", label: "SANDBOX", agent: "DeploymentAgent", mvp: true },
+  { id: "BUILD", number: "05", label: "BUILD", agent: "DeveloperAgent", mvp: true },
+  { id: "TEST", number: "06", label: "TEST", agent: "TestingAgent", mvp: true },
+  { id: "SECURITY", number: "07", label: "SECURITY", agent: "SecurityAgent", mvp: true },
+  { id: "PREVIEW", number: "08", label: "PREVIEW", agent: "DeploymentAgent", mvp: true },
+  { id: "APPROVAL", number: "09", label: "APPROVAL", agent: "DeploymentAgent", mvp: true },
+  { id: "DEPLOY", number: "10", label: "DEPLOY", agent: "DeploymentAgent", mvp: true },
+  { id: "LIVE", number: "11", label: "GENERATED APP LIVE", agent: "DeploymentAgent", mvp: true },
+];
+
 export function getPipelineSteps(version: PipelineVersion = "v3") {
-  return version === "v2" ? PIPELINE_STEPS : V3_PIPELINE_STEPS;
+  if (version === "v2") return PIPELINE_STEPS;
+  if (version === "v5") return V5_PIPELINE_STEPS;
+  return V3_PIPELINE_STEPS;
 }
 
 /** MVP orchestrator agent order (V1) */

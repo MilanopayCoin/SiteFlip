@@ -40,6 +40,20 @@ interface Portfolio {
   }>;
 }
 
+const PIPELINE_PREVIEW_V5 = [
+  "USER IDEA",
+  "AI PLAN",
+  "GENERATE",
+  "SANDBOX",
+  "BUILD",
+  "TEST",
+  "SECURITY",
+  "PREVIEW",
+  "APPROVAL",
+  "DEPLOY",
+  "GENERATED APP LIVE",
+];
+
 const PIPELINE_PREVIEW_V3 = [
   "PLAN",
   "PRODUCT SPEC",
@@ -79,7 +93,7 @@ export default function BuildFactoryPage() {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pipelineMode, setPipelineMode] = useState<"v3" | "v2">("v3");
+  const [pipelineMode, setPipelineMode] = useState<"v5" | "v3" | "v2">("v5");
   const [costNote, setCostNote] = useState<string | null>(null);
 
   useEffect(() => {
@@ -178,18 +192,26 @@ export default function BuildFactoryPage() {
             Turn ideas into businesses.
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-400">
-            Describe an idea in natural language. JIY.APP runs modular agents to
-            generate a working starter mini-SaaS — plan, product spec, database spec,
-            code scaffold, tests, security scan, and preview. Production deploy and
-            payments always require your approval.
+            Describe an idea in natural language. JIY.APP runs the V5 factory:
+            Idea → Plan → Generate → Sandbox → Build → Test → Security → Preview →
+            Approval → Deploy → Generated App Live. Production Worker isolation and
+            Mollie payments always require separate approval.
           </p>
         </div>
         <Badge variant="outline" className="gap-1">
-          <Factory className="h-3.5 w-3.5" /> Factory V4
+          <Factory className="h-3.5 w-3.5" /> Factory V5
         </Badge>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={pipelineMode === "v5" ? "default" : "outline"}
+          onClick={() => setPipelineMode("v5")}
+        >
+          V5 — Idea → Live
+        </Button>
         <Button
           type="button"
           size="sm"
@@ -213,7 +235,12 @@ export default function BuildFactoryPage() {
         animate={{ opacity: 1, y: 0 }}
         className="mt-8 flex flex-wrap items-center justify-center gap-2"
       >
-        {(pipelineMode === "v3" ? PIPELINE_PREVIEW_V3 : PIPELINE_PREVIEW_V2).map(
+        {(pipelineMode === "v5"
+          ? PIPELINE_PREVIEW_V5
+          : pipelineMode === "v3"
+            ? PIPELINE_PREVIEW_V3
+            : PIPELINE_PREVIEW_V2
+        ).map(
           (s, i, arr) => (
           <div key={s} className="flex items-center gap-2">
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">

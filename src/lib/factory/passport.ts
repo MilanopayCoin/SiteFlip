@@ -11,7 +11,9 @@ import { listDeploymentsForProject } from "./deployment/cloudflare-provider";
 
 export function buildBusinessPassport(project: FactoryProject): BusinessPassport {
   const isV3Plus =
-    project.pipelineVersion === "v3" || project.pipelineVersion === "v4";
+    project.pipelineVersion === "v3" ||
+    project.pipelineVersion === "v4" ||
+    project.pipelineVersion === "v5";
   const planSpec = isV3Plus
     ? (getOutputByAgent(project, "PlannerAgent")?.data as PlanSpec | undefined)
     : undefined;
@@ -106,11 +108,13 @@ export function buildBusinessPassport(project: FactoryProject): BusinessPassport
     pipelineVersion: project.pipelineVersion,
     applicationVersion:
       latest?.version ||
-      (project.pipelineVersion === "v4"
-        ? "v4-starter"
-        : project.pipelineVersion === "v3"
-          ? "v3-starter-mvp"
-          : "v2-landing"),
+      (project.pipelineVersion === "v5"
+        ? "v5-starter"
+        : project.pipelineVersion === "v4"
+          ? "v4-starter"
+          : project.pipelineVersion === "v3"
+            ? "v3-starter-mvp"
+            : "v2-landing"),
     features: product?.mvpFeatures ?? planSpec?.mvpPages ?? [],
     buildStatus: project.sandbox.deploymentStatus,
     testStatus,

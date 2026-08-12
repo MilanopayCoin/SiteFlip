@@ -854,7 +854,10 @@ export async function runFactoryPipeline(projectId: string): Promise<FactoryProj
   const project = getFactoryProject(projectId);
   if (!project) throw new Error("Factory project not found");
   let result: FactoryProject;
-  if (project.pipelineVersion === "v3" || project.pipelineVersion === "v4") {
+  if (project.pipelineVersion === "v5") {
+    const { BusinessFactoryOrchestratorV5 } = await import("./orchestrator-v5");
+    result = await new BusinessFactoryOrchestratorV5(projectId).runPipeline();
+  } else if (project.pipelineVersion === "v3" || project.pipelineVersion === "v4") {
     result = await new BusinessFactoryOrchestratorV3(projectId).runPipeline();
   } else {
     const { BusinessFactoryOrchestrator } = await import("./orchestrator");
@@ -875,6 +878,9 @@ export async function runFactoryPipeline(projectId: string): Promise<FactoryProj
 }
 
 export function getFactoryOrchestrator(project: FactoryProject) {
+  if (project.pipelineVersion === "v5") {
+    return null; // V5 uses BusinessFactoryOrchestratorV5 via runFactoryPipeline
+  }
   if (project.pipelineVersion === "v3" || project.pipelineVersion === "v4") {
     return new BusinessFactoryOrchestratorV3(project.id);
   }
