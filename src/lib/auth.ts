@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { createBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
 export { isSupabaseConfigured };
@@ -28,7 +28,8 @@ export class AuthRequiredError extends Error {
 }
 
 export async function getBrowserUser() {
-  const supabase = createBrowserClient();
+  const { createBrowserClient } = await import("@/lib/supabase/browser");
+  const supabase = await createBrowserClient();
   if (!supabase) return null;
   const { data } = await supabase.auth.getUser();
   return data.user ?? null;

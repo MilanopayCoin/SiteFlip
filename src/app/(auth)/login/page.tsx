@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import {
+  createBrowserClient,
+  getPublicSupabaseConfig,
+} from "@/lib/supabase/browser";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,24 +18,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const configured = isSupabaseConfigured();
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    getPublicSupabaseConfig()
+      .then((c) => setConfigured(Boolean(c.configured)))
+      .catch(() => setConfigured(false));
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
 
-    if (!configured) {
-      setMessage(
-        "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY. Demo mode: use Dashboard without auth."
-      );
-      setLoading(false);
-      return;
-    }
-
-    const supabase = createBrowserClient();
+    const supabase = await createBrowserClient();
     if (!supabase) {
-      setMessage("Could not create Supabase client.");
+      setMessage(
+        "Supabase is not configured. Demo mode: use Dashboard without auth."
+      );
       setLoading(false);
       return;
     }
@@ -50,6 +53,11 @@ export default function LoginPage() {
           <CardTitle>Sign in to SITEFLIP</CardTitle>
         </CardHeader>
         <CardContent>
+          {configured === false && (
+            <p className="mb-4 text-sm text-amber-300/90">
+              Live Supabase Auth is unavailable — demo dashboard still works.
+            </p>
+          )}
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
               <Label htmlFor="email">Email</Label>

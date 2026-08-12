@@ -30,7 +30,7 @@ export default async function ExplorePage({ searchParams }: Props) {
     minRevenue: params.minRevenue ? Number(params.minRevenue) : undefined,
     minProfit: params.minProfit ? Number(params.minProfit) : undefined,
   };
-  const { listings, total, pageSize, mode } = await fetchMarketplaceListings(
+  const { listings, total, pageSize, mode, error } = await fetchMarketplaceListings(
     filters,
     { page, pageSize: 24 }
   );
@@ -44,6 +44,8 @@ export default async function ExplorePage({ searchParams }: Props) {
             Explore Digital Businesses
           </h1>
           {mode === "demo" && <Badge variant="warning">DEMO DATA</Badge>}
+          {mode === "supabase" && <Badge variant="success">LIVE</Badge>}
+          {error && <Badge variant="warning">SCHEMA PENDING</Badge>}
         </div>
         <p className="mt-2 text-zinc-400">
           Buy, rent, or revive — unified marketplace for digital assets.

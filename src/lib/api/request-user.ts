@@ -14,11 +14,18 @@ export type RequestUser = {
 /**
  * Resolve the acting user.
  * - Supabase session when configured + logged in
- * - Optional demo header/cookie fallback only when Supabase is NOT configured
+ * - Demo fallback only when Supabase is NOT configured
  */
 export async function resolveRequestUser(
   request?: Request
 ): Promise<RequestUser | null> {
+  try {
+    const { ensureCloudflareEnv } = await import("@/lib/supabase/env");
+    await ensureCloudflareEnv();
+  } catch {
+    // ignore
+  }
+
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
     if (!supabase) return null;
@@ -33,9 +40,7 @@ export async function resolveRequestUser(
   }
 
   // DEMO mode only — never impersonate when Supabase is live
-  const demoId =
-    request?.headers.get("x-siteflip-demo-user") ||
-    "demo-user";
+  const demoId = request?.headers.get("x-siteflip-demo-user") || "demo-user";
   const profile = memoryStore.ensureDemoUser(demoId);
   return { id: profile.id, email: profile.email, mode: "demo" };
 }

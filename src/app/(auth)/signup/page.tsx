@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { createBrowserClient } from "@/lib/supabase/browser";
 
 export default function SignupPage() {
+  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,31 +22,40 @@ export default function SignupPage() {
     setLoading(true);
     setMessage(null);
 
-    if (!isSupabaseConfigured()) {
+    const supabase = await createBrowserClient();
+    if (!supabase) {
       setMessage(
-        "Supabase Auth is not configured. Add env vars to enable signup. Demo dashboard is available without auth."
+        "Supabase Auth is not configured. Demo dashboard is available without auth."
       );
       setLoading(false);
       return;
     }
 
-    const supabase = createBrowserClient();
-    if (!supabase) {
-      setMessage("Could not create Supabase client.");
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          display_name: fullName,
+        },
+      },
+    });
+
+    if (error) {
+      setMessage(error.message);
       setLoading(false);
       return;
     }
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } },
-    });
-    setMessage(
-      error
-        ? error.message
-        : "Check your email to confirm (if confirmations enabled)."
-    );
+    if (data.session) {
+      setMessage("Account created. Redirecting…");
+      router.push("/dashboard");
+    } else {
+      setMessage(
+        "Account created. Check your email to confirm if confirmations are enabled, then sign in."
+      );
+    }
     setLoading(false);
   }
 

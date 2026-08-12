@@ -9,8 +9,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy && npm run cf:secrets || true",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "cf:secrets": "bash scripts/cf-put-secrets.sh",
+    "db:migrate": "node scripts/apply-migrations.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",
