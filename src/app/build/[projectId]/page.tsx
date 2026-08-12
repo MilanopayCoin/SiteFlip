@@ -131,6 +131,8 @@ export default function FactoryProjectPage() {
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
+      // Do not poll-overwrite UI or rehydrate while pipeline is running
+      if (busy) return;
       const cached = readCachedFactoryProject(id);
       if (cached && !cancelled) {
         setProject(cached);
@@ -147,7 +149,7 @@ export default function FactoryProjectPage() {
         });
         data = await res.json();
       }
-      if (cancelled) return;
+      if (cancelled || busy) return;
       if (!res.ok) {
         if (!cached) {
           setError(
@@ -185,24 +187,31 @@ export default function FactoryProjectPage() {
       clearInterval(t);
       window.clearTimeout(failSafe);
     };
-  }, [id]);
+  }, [id, busy]);
 
   async function runAgain() {
     setBusy(true);
     setError(null);
     const cached = readCachedFactoryProject(id);
-    if (cached) {
+    // Only hydrate isolate when project is missing (404). Never PUT a stale
+    // client cache over a live Supabase project — that wiped GENERATE outputs.
+    let res = await fetch(`/api/factory/projects/${id}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: cached ?? project }),
+    });
+    if (res.status === 404 && cached) {
       await fetch(`/api/factory/projects/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project: cached }),
       });
+      res = await fetch(`/api/factory/projects/${id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: cached }),
+      });
     }
-    const res = await fetch(`/api/factory/projects/${id}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project: cached ?? project }),
-    });
     const data = await res.json();
     if (res.ok && data.project) {
       cacheFactoryProject(data.project);
@@ -527,7 +536,24 @@ export default function FactoryProjectPage() {
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {pipeline.map((step, i) => {
               const task = project.tasks.find((t) => t.stepId === step.id);
-              const status = task?.status ?? "WAITING";
+              let status = task?.status ?? "WAITING";
+              // Honest Free-tier display: never green-check isolation/runtime as done
+              if (
+                (step.id === "PRODUCTION_ISOLATION" ||
+                  step.id === "SEPARATE_RUNTIME") &&
+                status === "COMPLETED" &&
+                !project.sandbox.isProductionGrade
+              ) {
+                status = "FAILED";
+              }
+              const activity =
+                step.id === "PRODUCTION_ISOLATION" &&
+                (status === "WAITING" || status === "FAILED")
+                  ? "BLOCKED on Cloudflare Free — SANDBOX: DEVELOPMENT ISOLATION only"
+                  : step.id === "SEPARATE_RUNTIME" &&
+                      (status === "WAITING" || status === "FAILED")
+                    ? "LOCKED until real production isolation"
+                    : task?.activity;
               return (
                 <motion.div
                   key={step.id}
@@ -538,17 +564,31 @@ export default function FactoryProjectPage() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-zinc-500">{step.number}</span>
-                    <StatusIcon status={status} />
+                    <StatusIcon
+                      status={
+                        step.id === "PRODUCTION_ISOLATION" &&
+                        status !== "COMPLETED"
+                          ? "BLOCKED"
+                          : step.id === "SEPARATE_RUNTIME" &&
+                              status !== "COMPLETED"
+                            ? "LOCKED"
+                            : status
+                      }
+                    />
                   </div>
                   <p className="mt-1 text-sm font-medium text-white">{step.label}</p>
                   <p className="text-[11px] text-zinc-500">{step.agent}</p>
                   <Progress value={task?.progress ?? 0} className="mt-2 h-1" />
                   <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                    {status}
+                    {step.id === "PRODUCTION_ISOLATION" && status !== "COMPLETED"
+                      ? "BLOCKED"
+                      : step.id === "SEPARATE_RUNTIME" && status !== "COMPLETED"
+                        ? "LOCKED"
+                        : status}
                   </p>
-                  {task?.activity && (
+                  {activity && (
                     <p className="mt-0.5 truncate text-[10px] text-zinc-500">
-                      {task.activity}
+                      {activity}
                     </p>
                   )}
                 </motion.div>
@@ -1044,6 +1084,18 @@ export default function FactoryProjectPage() {
               <p className="text-zinc-500">Threshold</p>
               <p className="text-white">€{project.usage.costThresholdEur}</p>
             </div>
+            <div>
+              <p className="text-zinc-500">Budget remaining</p>
+              <p className="text-white">
+                {project.usage.budgetLimitEur == null
+                  ? "N/A — no budget set"
+                  : `€${Math.max(
+                      0,
+                      project.usage.budgetLimitEur -
+                        project.usage.aiCostEurEstimated
+                    ).toFixed(2)}`}
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1303,6 +1355,16 @@ export default function FactoryProjectPage() {
           <div>
             <p className="text-zinc-500">Threshold</p>
             <p className="text-white">€{project.usage.costThresholdEur}</p>
+            <p className="text-zinc-500">Budget remaining</p>
+            <p className="text-white">
+              {project.usage.budgetLimitEur == null
+                ? "N/A — no budget set"
+                : `€${Math.max(
+                    0,
+                    project.usage.budgetLimitEur -
+                      project.usage.aiCostEurEstimated
+                  ).toFixed(2)}`}
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -1389,6 +1451,8 @@ function StatusIcon({ status }: { status: string }) {
     return <Loader2 className="h-4 w-4 animate-spin text-violet-400" />;
   if (status === "FAILED") return <XCircle className="h-4 w-4 text-rose-400" />;
   if (status === "REQUIRES_APPROVAL")
+    return <AlertTriangle className="h-4 w-4 text-amber-400" />;
+  if (status === "BLOCKED" || status === "LOCKED")
     return <AlertTriangle className="h-4 w-4 text-amber-400" />;
   return <Circle className="h-4 w-4 text-zinc-600" />;
 }

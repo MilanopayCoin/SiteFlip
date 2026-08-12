@@ -184,23 +184,45 @@ export async function persistFactoryProject(
     return { ok: false, mode: "demo", error: error.message };
   }
 
-  // Replace outputs for this project (simple strategy)
-  await supabase.from("factory_outputs").delete().eq("project_id", project.id);
+  // Upsert outputs (UUID ids). Never delete-before-insert — a failed insert
+  // after delete left factory_outputs empty and broke BUILD on reload.
   if (project.outputs.length) {
-    const rows = project.outputs.map((o) => ({
-      id: /^[0-9a-f-]{36}$/i.test(o.id) ? o.id : undefined,
-      project_id: project.id,
-      agent: o.agent,
-      schema_name: o.schemaName,
-      data: o.data,
-      labeled_assumptions: o.labeledAssumptions,
-      source: o.source,
-      implementation_status: o.implementationStatus,
-      created_at: o.createdAt,
-    }));
-    const { error: outErr } = await supabase.from("factory_outputs").insert(rows);
+    const rows = project.outputs.map((o) => {
+      const id =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          o.id
+        )
+          ? o.id
+          : crypto.randomUUID();
+      if (id !== o.id) o.id = id;
+      return {
+        id,
+        project_id: project.id,
+        agent: o.agent,
+        schema_name: o.schemaName,
+        data: o.data,
+        labeled_assumptions: o.labeledAssumptions,
+        source: o.source,
+        implementation_status: o.implementationStatus,
+        created_at: o.createdAt,
+      };
+    });
+    const { error: outErr } = await supabase
+      .from("factory_outputs")
+      .upsert(rows, { onConflict: "id" });
     if (outErr) {
       return { ok: false, mode: "demo", error: outErr.message };
+    }
+    const keepIds = new Set(rows.map((r) => r.id));
+    const { data: existingOuts } = await supabase
+      .from("factory_outputs")
+      .select("id")
+      .eq("project_id", project.id);
+    const orphans = (existingOuts || [])
+      .map((r) => String(r.id))
+      .filter((oid) => !keepIds.has(oid));
+    if (orphans.length) {
+      await supabase.from("factory_outputs").delete().in("id", orphans);
     }
   }
 
@@ -214,6 +236,15 @@ export async function persistFactoryProject(
   project.persistenceMode = "SUPABASE";
   saveMemoryProject(project);
   return { ok: true, mode: "supabase" };
+}
+
+function memoryIsAhead(mem: FactoryProject, db: FactoryProject): boolean {
+  if (mem.tasks.some((t) => t.status === "RUNNING")) return true;
+  if (mem.outputs.length > db.outputs.length) return true;
+  const memTs = Date.parse(mem.updatedAt) || 0;
+  const dbTs = Date.parse(db.updatedAt) || 0;
+  if (memTs > dbTs && mem.outputs.length >= db.outputs.length) return true;
+  return false;
 }
 
 export async function loadFactoryProject(
@@ -257,6 +288,13 @@ export async function loadFactoryProject(
   }));
 
   const project = fromDbProject(data as Record<string, unknown>, mappedOutputs);
+
+  // Concurrent GET/list during /run must not clobber an in-flight pipeline
+  // (Worker isolates share memory — that wipe caused BUILD plan=undefined).
+  if (mem && memoryIsAhead(mem, project)) {
+    return { project: mem, mode: "supabase" };
+  }
+
   saveMemoryProject(project);
   return { project, mode: "supabase" };
 }
@@ -285,6 +323,15 @@ export async function listPersistedFactoryProjects(ownerId?: string): Promise<{
   const projects = data.map((row) =>
     fromDbProject(row as Record<string, unknown>)
   );
-  for (const p of projects) saveMemoryProject(p);
+  // Do not overwrite in-memory projects that are mid-pipeline or have richer outputs.
+  for (const p of projects) {
+    const mem = getMemoryProject(p.id);
+    if (mem && memoryIsAhead(mem, p)) continue;
+    // Preserve outputs already in memory when list query omits factory_outputs
+    if (mem?.outputs?.length && !p.outputs.length) {
+      p.outputs = mem.outputs;
+    }
+    saveMemoryProject(p);
+  }
   return { projects, mode: "supabase" };
 }

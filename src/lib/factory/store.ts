@@ -165,9 +165,14 @@ export function addOutput(
   project: FactoryProject,
   output: Omit<FactoryOutput, "id" | "createdAt">
 ): FactoryOutput {
+  // UUID required for factory_outputs.id (Supabase). Never use out_* ids.
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${nanoid(8)}-${nanoid(4)}-4${nanoid(3)}-a${nanoid(3)}-${nanoid(12)}`;
   const full: FactoryOutput = {
     ...output,
-    id: `out_${nanoid(10)}`,
+    id,
     createdAt: new Date().toISOString(),
   };
   project.outputs.push(full);

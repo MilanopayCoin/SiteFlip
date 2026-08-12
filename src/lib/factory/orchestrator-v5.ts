@@ -89,12 +89,19 @@ const V5_AGENTS_COST: FactoryAgentName[] = [
 ];
 
 export class BusinessFactoryOrchestratorV5 {
-  constructor(private projectId: string) {}
+  /** Pinned reference — concurrent loadFactoryProject must not orphan pipeline mutations. */
+  private pinned: FactoryProject;
+
+  constructor(private projectId: string) {
+    const p = getFactoryProject(projectId);
+    if (!p) throw new Error("Factory project not found");
+    this.pinned = p;
+  }
 
   get project(): FactoryProject {
-    const p = getFactoryProject(this.projectId);
-    if (!p) throw new Error("Factory project not found");
-    return p;
+    // Re-assert pin into the isolate Map so GET/list cannot replace our object mid-run.
+    saveFactoryProject(this.pinned);
+    return this.pinned;
   }
 
   async runPipeline(): Promise<FactoryProject> {
@@ -452,6 +459,14 @@ export class BusinessFactoryOrchestratorV5 {
       activity: "AI GENERATE complete — ready for SANDBOX → BUILD",
     });
     this.finish("DeveloperAgent", "GENERATE", out.id, true);
+
+    // Checkpoint so concurrent GET/reload cannot lose PlannerAgent outputs
+    try {
+      const { persistFactoryProject } = await import("./supabase-store");
+      await persistFactoryProject(project);
+    } catch {
+      // Memory pin still holds outputs for this isolate
+    }
   }
 
   private async runSandbox() {
@@ -481,14 +496,93 @@ export class BusinessFactoryOrchestratorV5 {
     assertSandboxBoundary(project);
     await runSandboxPhase(project, "BUILDING", "V5 BUILD phase");
 
-    const plan = getOutputByAgent(project, "PlannerAgent")
-      ?.data as unknown as PlanSpec;
-    const product = getOutputByAgent(project, "ProductAgent")
-      ?.data as unknown as ProductSpec;
-    const architecture = getOutputByAgent(project, "ArchitectureAgent")
-      ?.data as unknown as ArchitectureSpec;
-    const database = getOutputByAgent(project, "DatabaseAgent")
-      ?.data as unknown as DatabaseSpec;
+    let plan = getOutputByAgent(project, "PlannerAgent")
+      ?.data as unknown as PlanSpec | undefined;
+    let product = getOutputByAgent(project, "ProductAgent")
+      ?.data as unknown as ProductSpec | undefined;
+    let architecture = getOutputByAgent(project, "ArchitectureAgent")
+      ?.data as unknown as ArchitectureSpec | undefined;
+    let database = getOutputByAgent(project, "DatabaseAgent")
+      ?.data as unknown as DatabaseSpec | undefined;
+
+    // Recover from memory wipe / empty factory_outputs
+    if (!plan?.businessName) {
+      const memPlan = project.memory
+        .slice()
+        .reverse()
+        .find((m) => m.key === "plan_spec")?.value as PlanSpec | undefined;
+      if (memPlan?.businessName) {
+        plan = memPlan;
+        addOutput(project, {
+          projectId: project.id,
+          agent: "PlannerAgent",
+          schemaName: "PlanSpecSchema",
+          data: memPlan as unknown as Record<string, unknown>,
+          labeledAssumptions: ["Recovered from factory memory after output gap"],
+          source: "heuristic",
+          implementationStatus: "ai_generated",
+        });
+      } else {
+        const planResult = await runPlannerAgent(project.brief);
+        plan = planResult.data;
+        addOutput(project, {
+          projectId: project.id,
+          agent: "PlannerAgent",
+          schemaName: "PlanSpecSchema",
+          data: planResult.data as unknown as Record<string, unknown>,
+          labeledAssumptions: [
+            ...planResult.assumptions,
+            "Rebuilt during BUILD — GENERATE outputs were missing",
+          ],
+          source: planResult.source,
+          implementationStatus: "ai_generated",
+        });
+        project.name = plan.businessName;
+      }
+    }
+
+    if (!product || !architecture || !database) {
+      const businessPlan = planToBusinessPlan(plan);
+      if (!product) {
+        const productResult = await runProductAgent(project.brief, businessPlan);
+        product = productResult.data;
+        addOutput(project, {
+          projectId: project.id,
+          agent: "ProductAgent",
+          schemaName: "ProductSpecSchema",
+          data: productResult.data as unknown as Record<string, unknown>,
+          labeledAssumptions: productResult.assumptions,
+          source: productResult.source,
+          implementationStatus: "ai_generated",
+        });
+      }
+      if (!database) {
+        const dbResult = await runDatabaseAgent(product);
+        database = dbResult.data;
+        addOutput(project, {
+          projectId: project.id,
+          agent: "DatabaseAgent",
+          schemaName: "DatabaseSpecSchema",
+          data: dbResult.data as unknown as Record<string, unknown>,
+          labeledAssumptions: dbResult.assumptions,
+          source: dbResult.source,
+          implementationStatus: "requires_human_action",
+        });
+      }
+      if (!architecture) {
+        const archResult = await runArchitectureAgent(project.brief, product);
+        architecture = archResult.data;
+        addOutput(project, {
+          projectId: project.id,
+          agent: "ArchitectureAgent",
+          schemaName: "ArchitectureSchema",
+          data: archResult.data as unknown as Record<string, unknown>,
+          labeledAssumptions: archResult.assumptions,
+          source: archResult.source,
+          implementationStatus: "ai_generated",
+        });
+      }
+    }
 
     const provider = createSandboxProvider(project.id);
     const result = await runDeveloperAgentV3({

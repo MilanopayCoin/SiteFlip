@@ -53,8 +53,18 @@ function heuristicMvpScaffold(input: {
   database: DatabaseSpec;
 }): CodeArtifact {
   const { plan, product } = input;
+  if (!plan?.businessName) {
+    throw new Error(
+      "DeveloperAgent requires PlanSpec.businessName — GENERATE outputs missing"
+    );
+  }
   const name = plan.businessName;
-  const pages = product.pages.length ? product.pages : plan.mvpPages;
+  const pages =
+    product?.pages?.length
+      ? product.pages
+      : plan.mvpPages?.length
+        ? plan.mvpPages
+        : ["Landing", "Dashboard", "Settings"];
   const primary = "#7c3aed";
   const bg = "#09090b";
 

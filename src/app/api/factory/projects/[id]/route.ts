@@ -72,6 +72,23 @@ export async function PUT(request: Request, ctx: Ctx) {
     if (existing.project && existing.project.ownerId !== user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    // Never let a stale browser cache wipe richer server/memory state
+    if (existing.project) {
+      const server = existing.project;
+      const serverRunning = server.tasks.some((t) => t.status === "RUNNING");
+      const serverRicher =
+        server.outputs.length > (incoming.outputs?.length ?? 0) ||
+        (Date.parse(server.updatedAt) || 0) > (Date.parse(incoming.updatedAt) || 0);
+      if (serverRunning || serverRicher) {
+        return NextResponse.json({
+          project: server,
+          pipeline: getPipelineSteps(server.pipelineVersion ?? "v2"),
+          pendingApprovals: server.approvals.filter((a) => a.status === "PENDING"),
+          persistenceMode: server.persistenceMode,
+          note: "Server state kept — stale client cache was not applied",
+        });
+      }
+    }
     const saved = saveFactoryProject(incoming);
     const persisted = await persistFactoryProject(saved);
     if (!persisted.ok) {
