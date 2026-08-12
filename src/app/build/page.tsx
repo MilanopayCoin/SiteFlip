@@ -11,6 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  cacheFactoryProject,
+  listCachedFactoryProjects,
+} from "@/lib/factory/client-cache";
+import type { FactoryProject } from "@/lib/factory/types";
 
 interface Portfolio {
   activeBuilds: number;
@@ -51,6 +56,9 @@ const PIPELINE_PREVIEW = [
 export default function BuildFactoryPage() {
   const router = useRouter();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const [cachedProjects] = useState<FactoryProject[]>(() =>
+    typeof window === "undefined" ? [] : listCachedFactoryProjects()
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [costNote, setCostNote] = useState<string | null>(null);
@@ -84,23 +92,22 @@ export default function BuildFactoryPage() {
           riskLevel: fd.get("riskLevel") || undefined,
           businessModel: fd.get("businessModel") || undefined,
           workloadPreference: fd.get("workloadPreference") || undefined,
+          // Pipeline starts on the project page after hydrate (Worker isolate-safe)
+          run: false,
         }),
       });
       const data = await create.json();
       if (!create.ok) throw new Error(data.error || "Failed to create project");
 
+      if (data.fullProject) {
+        cacheFactoryProject(data.fullProject);
+      }
+
       setCostNote(
         `Estimated AI cost €${data.estimatedCost.aiCostEur} · infra €${data.estimatedCost.infrastructureMonthlyEur}/mo`
       );
 
-      // Start pipeline immediately (real agent run)
-      const run = await fetch(`/api/factory/projects/${data.project.id}/run`, {
-        method: "POST",
-      });
-      const runData = await run.json();
-      if (!run.ok) throw new Error(runData.error || "Pipeline failed");
-
-      router.push(`/build/${data.project.id}`);
+      router.push(`/build/${data.project.id}?autostart=1`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
       setLoading(false);
@@ -319,10 +326,22 @@ export default function BuildFactoryPage() {
               <CardTitle>Your projects</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {(portfolio?.projects?.length ?? 0) === 0 && (
+              {(portfolio?.projects?.length ?? 0) === 0 &&
+                cachedProjects.length === 0 && (
                 <p className="text-sm text-zinc-500">No factory projects yet.</p>
               )}
-              {portfolio?.projects?.map((p) => (
+              {[
+                ...cachedProjects.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  state: p.state,
+                  updatedAt: p.updatedAt,
+                  quality: p.quality,
+                })),
+                ...(portfolio?.projects ?? []).filter(
+                  (p) => !cachedProjects.some((c) => c.id === p.id)
+                ),
+              ].map((p) => (
                 <Link
                   key={p.id}
                   href={`/build/${p.id}`}

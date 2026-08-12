@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -17,43 +17,83 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { FactoryProject } from "@/lib/factory/types";
 import { PIPELINE_STEPS } from "@/lib/factory/types";
+import {
+  cacheFactoryProject,
+  readCachedFactoryProject,
+} from "@/lib/factory/client-cache";
 
 export default function FactoryProjectPage() {
   const params = useParams<{ projectId: string }>();
+  const searchParams = useSearchParams();
   const id = params.projectId;
   const [project, setProject] = useState<FactoryProject | null>(null);
   const [pipeline, setPipeline] = useState(PIPELINE_STEPS);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const autoStarted = useRef(false);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/factory/projects/${id}`);
-    const data = await res.json();
+    const cached = readCachedFactoryProject(id);
+    if (cached) setProject(cached);
+
+    let res = await fetch(`/api/factory/projects/${id}`);
+    let data = await res.json();
+
+    // Rehydrate LOCAL project into the current Worker isolate
+    if (!res.ok && cached) {
+      res = await fetch(`/api/factory/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: cached }),
+      });
+      data = await res.json();
+    }
+
     if (!res.ok) {
+      if (cached) {
+        setError(null);
+        return;
+      }
       setError(data.error || "Not found");
       return;
     }
     setProject(data.project);
+    cacheFactoryProject(data.project);
     setPipeline(data.pipeline ?? PIPELINE_STEPS);
   }, [id]);
 
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const res = await fetch(`/api/factory/projects/${id}`);
-      const data = await res.json();
+      const cached = readCachedFactoryProject(id);
+      if (cached && !cancelled) {
+        setProject(cached);
+        setError(null);
+      }
+      let res = await fetch(`/api/factory/projects/${id}`);
+      let data = await res.json();
+      if (!res.ok && cached) {
+        res = await fetch(`/api/factory/projects/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: cached }),
+        });
+        data = await res.json();
+      }
       if (cancelled) return;
       if (!res.ok) {
-        setError(data.error || "Not found");
+        if (!cached) setError(data.error || "Not found");
         return;
       }
+      setError(null);
       setProject(data.project);
+      cacheFactoryProject(data.project);
       setPipeline(data.pipeline ?? PIPELINE_STEPS);
     };
     void tick();
     const t = setInterval(() => {
       void tick();
-    }, 2500);
+    }, 4000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -62,18 +102,64 @@ export default function FactoryProjectPage() {
 
   async function runAgain() {
     setBusy(true);
-    await fetch(`/api/factory/projects/${id}/run`, { method: "POST" });
+    setError(null);
+    const cached = readCachedFactoryProject(id);
+    if (cached) {
+      await fetch(`/api/factory/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: cached }),
+      });
+    }
+    const res = await fetch(`/api/factory/projects/${id}/run`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok && data.project) {
+      cacheFactoryProject(data.project);
+      setProject(data.project);
+    } else {
+      setError(
+        data.error ||
+          "Pipeline failed — re-create from /build (LOCAL memory is isolate-scoped)"
+      );
+    }
     await load();
     setBusy(false);
   }
 
+  // Auto-start pipeline once after create (?autostart=1)
+  useEffect(() => {
+    if (autoStarted.current) return;
+    if (searchParams.get("autostart") !== "1") return;
+    if (!project || project.outputs.length > 0) return;
+    if (project.state !== "IDEA") return;
+    autoStarted.current = true;
+    const t = window.setTimeout(() => {
+      void runAgain();
+    }, 0);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, searchParams]);
+
   async function decide(approvalId: string, decision: "APPROVE" | "EDIT" | "CANCEL") {
     setBusy(true);
-    await fetch(`/api/factory/projects/${id}/approve`, {
+    const cached = readCachedFactoryProject(id);
+    if (cached) {
+      await fetch(`/api/factory/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: cached }),
+      });
+    }
+    const res = await fetch(`/api/factory/projects/${id}/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approvalId, decision }),
     });
+    const data = await res.json();
+    if (res.ok && data.project) {
+      cacheFactoryProject(data.project);
+      setProject(data.project);
+    }
     await load();
     setBusy(false);
   }

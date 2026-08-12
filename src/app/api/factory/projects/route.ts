@@ -37,8 +37,21 @@ export async function POST(request: Request) {
     const cost = estimateFullPipelineCost();
     const project = createFactoryProject(parsed.data, "demo-user");
 
+    let result = project;
+    if (body?.run === true || body?.startPipeline === true) {
+      const { BusinessFactoryOrchestrator } = await import(
+        "@/lib/factory/orchestrator"
+      );
+      const { ensureCloudflareEnv } = await import("@/lib/supabase/env");
+      await ensureCloudflareEnv();
+      const orch = new BusinessFactoryOrchestrator(project.id);
+      result = await orch.runPipeline();
+    }
+
     return NextResponse.json({
-      project: summarize(project),
+      project: summarize(result),
+      // Always include full project for client session cache (LOCAL isolate bridge)
+      fullProject: result,
       estimatedCost: {
         aiCostEur: cost.aiCostEur,
         infrastructureMonthlyEur: cost.infraMonthlyEur,
@@ -53,7 +66,7 @@ export async function POST(request: Request) {
         "LOCAL / DEMO / NOT PERSISTED until Supabase factory schema is available",
         "No real-time market data unless an external API is connected",
       ],
-      persistenceMode: project.persistenceMode,
+      persistenceMode: result.persistenceMode,
     });
   } catch (error) {
     console.error("[factory/projects]", error);
