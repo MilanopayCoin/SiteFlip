@@ -200,34 +200,45 @@ async function withSql<T>(
   databaseUrl: string,
   fn: (sql: postgres.Sql) => Promise<T>
 ): Promise<{ result: T; viaHost: string }> {
-  const candidates = buildDbUrlCandidates(databaseUrl);
+  // Prefer Session pooler candidate first. Keep attempts minimal on Workers
+  // Free plan (50 subrequest limit).
+  const candidates = buildDbUrlCandidates(databaseUrl).slice(0, 1);
   const errors: string[] = [];
   for (const url of candidates) {
-    let host = "unknown";
+    let hostLabel = "unknown";
+    let sql: postgres.Sql | null = null;
     try {
-      host = new URL(url).hostname + ":" + (new URL(url).port || "5432");
-    } catch {
-      /* ignore */
-    }
-    const sql = postgres(url, {
-      ssl: "require",
-      max: 1,
-      idle_timeout: 5,
-      connect_timeout: 15,
-      prepare: false, // required for transaction pooler / pgbouncer
-      onnotice: () => {},
-    });
-    try {
+      const u = new URL(url);
+      hostLabel = `${u.hostname}:${u.port || "5432"}`;
+      sql = postgres({
+        host: u.hostname,
+        port: Number(u.port || 5432),
+        database: (u.pathname || "/postgres").replace(/^\//, "") || "postgres",
+        username: decodeURIComponent(u.username),
+        password: decodeURIComponent(u.password),
+        ssl: "require",
+        max: 1,
+        idle_timeout: 2,
+        connect_timeout: 10,
+        max_lifetime: 30,
+        fetch_types: false,
+        prepare: false,
+        connection: { application_name: "jiy-migrate" },
+        onnotice: () => {},
+        backoff: () => 1e9,
+      });
       await sql`select 1 as ok`;
       const result = await fn(sql);
       await sql.end({ timeout: 5 });
-      return { result, viaHost: host };
+      return { result, viaHost: hostLabel };
     } catch (err) {
-      errors.push(`${host}: ${safeDbError(err)}`);
-      try {
-        await sql.end({ timeout: 2 });
-      } catch {
-        /* ignore */
+      errors.push(`${hostLabel}: ${safeDbError(err)}`);
+      if (sql) {
+        try {
+          await sql.end({ timeout: 1 });
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
