@@ -107,7 +107,7 @@ export async function verifyDomainDns(
 
 /** Interfaces prepared for future integrations — not implemented as fake verifies */
 export interface RevenueVerifier {
-  provider: "stripe" | "shopify" | "paypal";
+  provider: "mollie" | "shopify" | "paypal";
   connect(userId: string): Promise<{ authUrl: string }>;
   fetchRevenue(connectionId: string, periodDays: number): Promise<{
     revenue: number;

@@ -52,7 +52,7 @@ export default function AdminPage() {
             <CardTitle>Platform revenue</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-zinc-400">
-            <p>Subscriptions · listing fees · success fees — Stripe integration pending.</p>
+            <p>Subscriptions · listing fees · success fees — Mollie integration pending.</p>
             <p className="mt-2 text-white">{formatCurrency(0)} MTD (demo)</p>
           </CardContent>
         </Card>
@@ -65,7 +65,7 @@ export default function AdminPage() {
             <Badge variant="success">Zod validation</Badge>
             <Badge variant="success">Rate limit architecture</Badge>
             <Badge variant="warning">No fake verification</Badge>
-            <Badge variant="info">Stripe ≠ escrow</Badge>
+            <Badge variant="info">Mollie ≠ escrow</Badge>
           </CardContent>
         </Card>
       </div>

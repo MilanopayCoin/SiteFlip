@@ -36,7 +36,11 @@ export default function FactoryPassportPage() {
       }
       if (cancelled) return;
       if (!res.ok) {
-        if (!cached) setError("Not found");
+        if (!cached) {
+          setError(
+            "Passport not found. LOCAL / DEMO projects are session-scoped — create or re-run from /build."
+          );
+        }
         return;
       }
       const data = await res.json();
@@ -45,8 +49,19 @@ export default function FactoryPassportPage() {
       setError(null);
     }
     void load();
+    const failSafe = window.setTimeout(() => {
+      if (cancelled) return;
+      setProject((current) => {
+        if (current) return current;
+        setError(
+          "Could not load Business Passport. Project may be LOCAL / DEMO / NOT PERSISTED."
+        );
+        return current;
+      });
+    }, 8000);
     return () => {
       cancelled = true;
+      window.clearTimeout(failSafe);
     };
   }, [id]);
 
@@ -54,6 +69,9 @@ export default function FactoryPassportPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <p className="text-rose-400">{error}</p>
+        <p className="mt-2 text-sm text-zinc-500">
+          LOCAL / DEMO / NOT PERSISTED
+        </p>
         <Button className="mt-4" asChild>
           <Link href="/build">Back to Factory</Link>
         </Button>

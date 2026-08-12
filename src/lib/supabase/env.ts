@@ -68,8 +68,7 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "AI_FALLBACK_PROVIDER",
       "OPENAI_API_KEY",
       "GEMINI_API_KEY",
-      "STRIPE_SECRET_KEY",
-      "STRIPE_WEBHOOK_SECRET",
+      "GROQ_MODEL",
     ]) {
       const val = env[key];
       if (typeof val === "string" && val && !process.env[key]) {

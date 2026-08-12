@@ -117,7 +117,11 @@ export default function FactoryPreviewPage() {
       }
       if (cancelled) return;
       if (!res.ok) {
-        if (!cached) setError("Preview not found — re-run pipeline from /build");
+        if (!cached) {
+          setError(
+            "Preview not found. LOCAL / DEMO projects are session-scoped — re-run the pipeline from /build."
+          );
+        }
         return;
       }
       const payload = (await res.json()) as PreviewPayload;
@@ -126,8 +130,19 @@ export default function FactoryPreviewPage() {
       setError(null);
     }
     void load();
+    const failSafe = window.setTimeout(() => {
+      if (cancelled) return;
+      setData((current) => {
+        if (current) return current;
+        setError(
+          "Could not load preview. Project may be LOCAL / DEMO / NOT PERSISTED and unavailable in this session."
+        );
+        return current;
+      });
+    }, 8000);
     return () => {
       cancelled = true;
+      window.clearTimeout(failSafe);
     };
   }, [params.projectId]);
 
@@ -135,6 +150,9 @@ export default function FactoryPreviewPage() {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <p className="text-rose-400">{error}</p>
+        <p className="mt-2 text-sm text-zinc-500">
+          LOCAL / DEMO / NOT PERSISTED
+        </p>
         <Button className="mt-4" asChild>
           <Link href={`/build/${params.projectId}`}>Back to project</Link>
         </Button>

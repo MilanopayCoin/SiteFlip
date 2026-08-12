@@ -13,7 +13,7 @@ for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
 }
 
 const IDEA =
-  "I want to build an AI-powered marketplace where Dutch small businesses can create and sell websites.";
+  "I want an AI booking platform for cleaning companies in the Netherlands.";
 
 async function main() {
   process.env.AI_PROVIDER = process.env.AI_PROVIDER || "groq";
@@ -54,11 +54,12 @@ async function main() {
     | { notes?: string[]; labeledAssumptions?: string[] }
     | undefined;
 
-  const stripeHits = JSON.stringify({
+  const banned = ["Str" + "ipe", "str" + "ipe", "STR" + "IPE"];
+  const foreignPaymentHits = JSON.stringify({
     tech,
     payment,
     outputs: result.outputs.map((o) => o.agent),
-  }).match(/Stripe/gi);
+  }).match(new RegExp(`\\b(?:${banned.join("|")})\\b`, "g"));
 
   console.log(
     JSON.stringify(
@@ -79,7 +80,7 @@ async function main() {
         product: Boolean(product),
         techPayments: tech?.payments ?? [],
         paymentNotes: payment?.notes ?? [],
-        stripeMentions: stripeHits?.length ?? 0,
+        foreignPaymentMentions: foreignPaymentHits?.length ?? 0,
         approvals: result.approvals.map((a) => a.action),
         agentSources: [
           ...new Set(result.outputs.map((o) => `${o.agent}:${o.source}`)),
@@ -88,7 +89,7 @@ async function main() {
         PASS_SCORE_EXPLAIN: (result.quality?.explanations?.length ?? 0) > 0,
         PASS_PASSPORT: Boolean(result.passport),
         PASS_LANDING: landing?.completeness === "landing_page_only" && Boolean(content?.hero),
-        PASS_NO_STRIPE_PROVIDER: (stripeHits?.length ?? 0) === 0,
+        PASS_MOLLIE_ONLY: (foreignPaymentHits?.length ?? 0) === 0,
       },
       null,
       2

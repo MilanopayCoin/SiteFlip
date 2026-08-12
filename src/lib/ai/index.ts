@@ -76,7 +76,7 @@ function normalizeBlueprint(parsed: Record<string, unknown>): BusinessBlueprint 
       : ["SEO", "Content", "Communities"],
     technologyStack: Array.isArray(parsed.technologyStack)
       ? parsed.technologyStack.map(String)
-      : ["Next.js", "Supabase", "Stripe"],
+      : ["Next.js", "Supabase", "Mollie"],
     growthStrategy: Array.isArray(parsed.growthStrategy)
       ? parsed.growthStrategy.map(String)
       : ["Launch", "Iterate", "Expand channels"],
@@ -113,7 +113,7 @@ function heuristicBlueprint(input: BuildWizardInput): BusinessBlueprint {
       "Community outreach in target niches",
       "Email waitlist nurture",
     ],
-    technologyStack: ["Next.js", "TypeScript", "Supabase", "Stripe", "Vercel"],
+    technologyStack: ["Next.js", "TypeScript", "Supabase", "Mollie", "Cloudflare Workers"],
     growthStrategy: [
       "Validate with 20 interviews",
       "Ship MVP landing + waitlist",

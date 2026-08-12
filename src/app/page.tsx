@@ -234,12 +234,12 @@ export default function HomePage() {
               <p className="mt-2 max-w-2xl text-zinc-400">
                 SITEFLIP never fakes verification, revenue, or transactions.
                 Domain ownership verification ships in MVP. Revenue and traffic
-                verification interfaces are prepared for Stripe, Shopify, Google
+                verification interfaces are prepared for Mollie, Shopify, Google
                 Analytics, Search Console, PayPal, and Cloudflare.
               </p>
               <p className="mt-4 text-sm text-zinc-500">
                 AI valuation is informational only and is not financial,
-                investment, legal or tax advice. Ordinary Stripe payments are
+                investment, legal or tax advice. Ordinary Mollie payments are
                 not escrow.
               </p>
             </div>

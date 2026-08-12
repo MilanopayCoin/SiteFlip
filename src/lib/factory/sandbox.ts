@@ -38,7 +38,7 @@ export function assertSandboxBoundary(project: FactoryProject): void {
 
 /** Blocklist for generated code / commands */
 export const FORBIDDEN_PATTERNS = [
-  /process\.env\.(SUPABASE_SERVICE_ROLE|STRIPE_SECRET|MOLLIE_API|OPENAI_API|GROQ_API)/i,
+  /process\.env\.(SUPABASE_SERVICE_ROLE|MOLLIE_API|OPENAI_API|GROQ_API)/i,
   /DROP\s+TABLE/i,
   /DROP\s+DATABASE/i,
   /rm\s+-rf\s+\//,

@@ -168,7 +168,7 @@ export function BusinessForm({
             <Input
               id="technology"
               name="technology"
-              placeholder="Next.js, Supabase, Stripe"
+              placeholder="Next.js, Supabase, Mollie"
               className="mt-1.5"
             />
           </div>

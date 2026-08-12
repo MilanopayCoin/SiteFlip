@@ -112,7 +112,7 @@ export default function SellPage() {
             <Field label="Monthly traffic" name="traffic" type="number" required defaultValue="31000" />
             <Field label="Growth rate (%)" name="growth" type="number" required defaultValue="12" />
             <Field label="Asking price (€)" name="askingPrice" type="number" required defaultValue="12500" />
-            <Field label="Technology" name="technology" placeholder="Next.js, Stripe…" className="sm:col-span-2" />
+            <Field label="Technology" name="technology" placeholder="Next.js, Mollie…" className="sm:col-span-2" />
             <div className="sm:col-span-2">
               <Label htmlFor="reasonForSelling">Reason for selling</Label>
               <Textarea

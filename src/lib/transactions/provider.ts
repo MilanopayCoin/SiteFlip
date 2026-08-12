@@ -1,7 +1,7 @@
 /**
  * TransactionProvider architecture
  *
- * Ordinary Stripe (or similar) payments are NOT escrow.
+ * Ordinary Mollie payments are NOT escrow.
  * Regulated third-party escrow can be plugged in via escrow_provider.
  */
 
@@ -11,7 +11,8 @@ export interface PaymentIntentResult {
   provider: string;
   paymentRef: string;
   clientSecret?: string;
-  /** Always false for standard Stripe Checkout / PaymentIntents */
+  checkoutUrl?: string;
+  /** Always false for standard Mollie Checkout payments */
   isEscrow: false;
 }
 
@@ -68,57 +69,13 @@ export function canTransition(
   return TRANSACTION_STATUS_FLOW[from]?.includes(to) ?? false;
 }
 
-/** Stripe provider stub — payments only, NOT escrow */
-export class StripePaymentProvider implements TransactionProvider {
-  name = "stripe";
-
-  async createPaymentIntent(params: {
-    amount: number;
-    currency: string;
-    metadata: Record<string, string>;
-  }): Promise<PaymentIntentResult> {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return {
-        provider: "stripe",
-        paymentRef: `demo_pi_${Date.now()}`,
-        isEscrow: false,
-      };
-    }
-
-    const Stripe = (await import("stripe")).default;
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    const intent = await stripe.paymentIntents.create({
-      amount: Math.round(params.amount * 100),
-      currency: params.currency.toLowerCase(),
-      metadata: params.metadata,
-    });
-
-    return {
-      provider: "stripe",
-      paymentRef: intent.id,
-      clientSecret: intent.client_secret ?? undefined,
-      isEscrow: false,
-    };
-  }
-
-  async confirmPayment(paymentRef: string) {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return { status: "succeeded" };
-    }
-    const Stripe = (await import("stripe")).default;
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    const intent = await stripe.paymentIntents.retrieve(paymentRef);
-    return { status: intent.status };
-  }
-}
-
 /** Placeholder for future regulated escrow integration */
 export class PlaceholderEscrowProvider implements EscrowProvider {
   name = "placeholder_escrow";
 
   async createEscrow(): Promise<EscrowIntentResult> {
     throw new Error(
-      "No regulated escrow provider configured. Do not treat Stripe payments as escrow."
+      "No regulated escrow provider configured. Do not treat Mollie payments as escrow."
     );
   }
 
@@ -142,15 +99,8 @@ export function getTransactionLabel(type: TransactionType): string {
   return labels[type];
 }
 
+/** SITEFLIP uses Mollie as the active payment provider */
 export async function getActivePaymentProvider(): Promise<TransactionProvider> {
-  const { isMollieConfigured, MolliePaymentProvider } = await import(
-    "@/lib/payments/mollie"
-  );
-  if (isMollieConfigured()) {
-    return new MolliePaymentProvider();
-  }
-  if (process.env.STRIPE_SECRET_KEY) {
-    return new StripePaymentProvider();
-  }
-  return new MolliePaymentProvider(); // demo stub when neither configured
+  const { MolliePaymentProvider } = await import("@/lib/payments/mollie");
+  return new MolliePaymentProvider();
 }

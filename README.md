@@ -13,7 +13,7 @@ CREATE → GROW → RENT → BUY → REVIVE → SELL → REINVEST → BUILD AGAI
 - Next.js 16 (App Router) · TypeScript · Tailwind CSS 4
 - Supabase (Auth, PostgreSQL, RLS)
 - OpenAI API (with heuristic fallbacks)
-- Stripe (payments — **not** escrow)
+- Mollie (payments — **not** escrow)
 - Framer Motion · Recharts · Zod · React Hook Form
 
 ## Features (MVP)
@@ -35,7 +35,7 @@ CREATE → GROW → RENT → BUY → REVIVE → SELL → REINVEST → BUILD AGAI
 | Offers / messaging / watchlist architecture | ✅ |
 | AI Command Center | ✅ |
 | Domain verification (DNS TXT) | ✅ |
-| TransactionProvider (Stripe ≠ escrow) | ✅ |
+| TransactionProvider (Mollie ≠ escrow) | ✅ |
 | Admin shell | ✅ |
 | Supabase schema + RLS migrations | ✅ |
 | Demo data mode (no env required) | ✅ |
@@ -109,9 +109,10 @@ See `.env.example`:
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only admin operations |
 | `OPENAI_API_KEY` | AI build / revive / command |
 | `OPENAI_MODEL` | Default `gpt-4o-mini` |
-| `STRIPE_SECRET_KEY` | Payment intents (not escrow) |
-| `STRIPE_WEBHOOK_SECRET` | Webhook verification |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Client Stripe |
+| `MOLLIE_API_KEY` | Mollie payments (not escrow) |
+| `MOLLIE_WEBHOOK_URL` | Mollie webhook URL |
+| `GROQ_API_KEY` | Primary AI provider |
+| `GROQ_MODEL` | Default `llama-3.1-8b-instant` |
 
 ## Deployment
 
@@ -138,16 +139,16 @@ Worker name is configured as `siteflip` in `wrangler.jsonc`.
 
 - **AI valuation** is informational only — not financial, investment, legal, or tax advice.
 - **No fake verification**, revenue, or transactions.
-- **Stripe payments are not escrow** — use `TransactionProvider` + future regulated escrow.
+- **Mollie payments are not escrow** — use `TransactionProvider` + future regulated escrow.
 - **Rent-to-own** is a flexible contract architecture — not automatic legally binding ownership transfer.
 - **BUILD** produces blueprints/starter assets — not a pretend full production SaaS.
 
 ## Remaining integrations
 
 - Persist listings/offers/messages to Supabase (replace demo stores)
-- Stripe Checkout + Connect for marketplace payouts
+- Mollie Checkout for marketplace payments
 - Regulated escrow provider
-- Revenue verification: Stripe / Shopify / PayPal OAuth
+- Revenue verification: Mollie / Shopify / PayPal OAuth
 - Traffic verification: GA / GSC / Cloudflare OAuth
 - External AI coding/building service for START BUILDING
 - Upstash Redis rate limiting
@@ -157,14 +158,14 @@ Worker name is configured as `siteflip` in `wrangler.jsonc`.
 ## Production security checklist
 
 - [ ] Enable Supabase RLS (included in migration)
-- [ ] Never expose `SUPABASE_SERVICE_ROLE_KEY` or `STRIPE_SECRET_KEY` client-side
+- [ ] Never expose `SUPABASE_SERVICE_ROLE_KEY` or `MOLLIE_API_KEY` client-side
 - [ ] Secure cookies / HTTPS only
 - [ ] Rotate keys; use Vercel env secrets
 - [ ] Rate-limit AI & auth endpoints (architecture included; add Redis in prod)
 - [ ] Zod validate all mutating inputs
 - [ ] Server-side authorization on offers, messages, transactions
 - [ ] Do not mark seller claims as verified
-- [ ] Webhook signature verification for Stripe
+- [ ] Mollie webhook re-fetch verification (server-side)
 - [ ] CSP / security headers on Vercel
 - [ ] Audit admin actions table
 

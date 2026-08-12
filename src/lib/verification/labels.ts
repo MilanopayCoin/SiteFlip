@@ -9,7 +9,7 @@ export const VERIFICATION_BADGE_LABELS: Record<VerificationType, string> = {
 };
 
 export const PENDING_INTEGRATIONS = [
-  "stripe",
+  "mollie",
   "shopify",
   "google_analytics",
   "google_search_console",

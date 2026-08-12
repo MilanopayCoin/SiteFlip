@@ -92,7 +92,7 @@ export type VerificationStatus =
 
 export type VerificationProvider =
   | "dns_txt"
-  | "stripe"
+  | "mollie"
   | "shopify"
   | "google_analytics"
   | "google_search_console"
@@ -424,7 +424,7 @@ export interface Subscription {
   user_id: string;
   plan: "free" | "pro" | "business" | "enterprise";
   status: "active" | "cancelled" | "past_due" | "trialing";
-  stripe_subscription_id: string | null;
+  mollie_subscription_id: string | null;
   current_period_end: string | null;
   created_at: string;
 }

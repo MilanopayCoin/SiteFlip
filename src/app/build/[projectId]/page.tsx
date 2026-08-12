@@ -30,11 +30,17 @@ export default function FactoryProjectPage() {
   const [pipeline, setPipeline] = useState(PIPELINE_STEPS);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "missing">(
+    "loading"
+  );
   const autoStarted = useRef(false);
 
   const load = useCallback(async () => {
     const cached = readCachedFactoryProject(id);
-    if (cached) setProject(cached);
+    if (cached) {
+      setProject(cached);
+      setLoadState("ready");
+    }
 
     let res = await fetch(`/api/factory/projects/${id}`);
     let data = await res.json();
@@ -52,14 +58,21 @@ export default function FactoryProjectPage() {
     if (!res.ok) {
       if (cached) {
         setError(null);
+        setLoadState("ready");
         return;
       }
-      setError(data.error || "Not found");
+      setError(
+        data.error ||
+          "Project not found. LOCAL / DEMO projects only exist in this browser session — create a new one from /build."
+      );
+      setLoadState("missing");
       return;
     }
     setProject(data.project);
     cacheFactoryProject(data.project);
     setPipeline(data.pipeline ?? PIPELINE_STEPS);
+    setError(null);
+    setLoadState("ready");
   }, [id]);
 
   useEffect(() => {
@@ -69,6 +82,7 @@ export default function FactoryProjectPage() {
       if (cached && !cancelled) {
         setProject(cached);
         setError(null);
+        setLoadState("ready");
       }
       let res = await fetch(`/api/factory/projects/${id}`);
       let data = await res.json();
@@ -82,21 +96,41 @@ export default function FactoryProjectPage() {
       }
       if (cancelled) return;
       if (!res.ok) {
-        if (!cached) setError(data.error || "Not found");
+        if (!cached) {
+          setError(
+            data.error ||
+              "Project not found. LOCAL / DEMO projects only exist in this browser session — create a new one from /build."
+          );
+          setLoadState("missing");
+        }
         return;
       }
       setError(null);
       setProject(data.project);
       cacheFactoryProject(data.project);
       setPipeline(data.pipeline ?? PIPELINE_STEPS);
+      setLoadState("ready");
     };
     void tick();
+    const failSafe = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoadState((s) => {
+        if (s === "loading") {
+          setError(
+            "Could not load this factory project. It may be LOCAL / DEMO / NOT PERSISTED and unavailable in this session."
+          );
+          return "missing";
+        }
+        return s;
+      });
+    }, 8000);
     const t = setInterval(() => {
       void tick();
     }, 4000);
     return () => {
       cancelled = true;
       clearInterval(t);
+      window.clearTimeout(failSafe);
     };
   }, [id]);
 
@@ -172,10 +206,15 @@ export default function FactoryProjectPage() {
     setBusy(false);
   }
 
-  if (error) {
+  if (error || loadState === "missing") {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <p className="text-rose-400">{error}</p>
+        <p className="text-rose-400">
+          {error || "Factory project not found."}
+        </p>
+        <p className="mt-2 text-sm text-zinc-500">
+          LOCAL / DEMO / NOT PERSISTED — projects are not stored in Supabase yet.
+        </p>
         <Button className="mt-4" asChild>
           <Link href="/build">Back to Factory</Link>
         </Button>
@@ -183,7 +222,7 @@ export default function FactoryProjectPage() {
     );
   }
 
-  if (!project) {
+  if (!project || loadState === "loading") {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-zinc-500">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading factory project…

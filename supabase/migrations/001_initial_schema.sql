@@ -40,7 +40,7 @@ CREATE TYPE verification_status AS ENUM (
 );
 
 CREATE TYPE verification_provider AS ENUM (
-  'dns_txt', 'stripe', 'shopify', 'google_analytics',
+  'dns_txt', 'mollie', 'shopify', 'google_analytics',
   'google_search_console', 'paypal', 'cloudflare', 'manual'
 );
 
@@ -402,7 +402,7 @@ CREATE TABLE subscriptions (
   user_id UUID NOT NULL REFERENCES profiles(id),
   plan TEXT NOT NULL CHECK (plan IN ('free', 'pro', 'business', 'enterprise')),
   status TEXT NOT NULL CHECK (status IN ('active', 'cancelled', 'past_due', 'trialing')),
-  stripe_subscription_id TEXT,
+  mollie_subscription_id TEXT,
   current_period_end TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
