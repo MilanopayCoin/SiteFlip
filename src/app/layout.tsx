@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteFooter, SiteHeader } from "@/components/layout/site-header";
+import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -42,8 +43,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased sf-glow`}
       >
         <SiteHeader />
-        <main className="min-h-[calc(100vh-8rem)]">{children}</main>
+        <main className="min-h-[calc(100vh-8rem)] pb-20 md:pb-0">{children}</main>
         <SiteFooter />
+        <MobileBottomNav />
       </body>
     </html>
   );
