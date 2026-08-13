@@ -44,6 +44,7 @@ import type {
   PlanSpec,
   ProductSpec,
 } from "./schemas";
+import { withAiRuntimeOverride } from "@/lib/ai/runtime";
 
 const STATE_FOR_STEP: Partial<Record<V5PipelineStepId, FactoryProjectState>> = {
   IDEA: "IDEA",
@@ -119,10 +120,16 @@ export class BusinessFactoryOrchestratorV5Fast {
   }
 
   async runPipeline(): Promise<FactoryProject> {
+    // Heuristic-first via runtime override (Workers-safe; do not rely on process.env)
+    return withAiRuntimeOverride({ forceHeuristic: true }, () =>
+      this.runPipelineInner()
+    );
+  }
+
+  private async runPipelineInner(): Promise<FactoryProject> {
     let project = this.project;
     assertSandboxBoundary(project);
 
-    // Heuristic-first: avoids Groq round-trips that blow Free Worker CPU (1102)
     this.prevAiProvider = process.env.AI_PROVIDER;
     process.env.AI_PROVIDER = "heuristic";
 

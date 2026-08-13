@@ -5,6 +5,7 @@
 
 import OpenAI from "openai";
 import { z } from "zod";
+import { getAiRuntimeOverride } from "@/lib/ai/runtime";
 
 export type AiProviderName = "openai" | "gemini" | "groq" | "ollama" | "heuristic";
 
@@ -22,6 +23,8 @@ export interface AiJsonResult<T> {
 }
 
 function primaryProvider(): AiProviderName {
+  // Fast Create / Free-safe paths set this without relying on process.env mutation
+  if (getAiRuntimeOverride().forceHeuristic) return "heuristic";
   const p = (process.env.AI_PROVIDER || "").toLowerCase();
   if (p === "gemini" || p === "groq" || p === "ollama" || p === "openai" || p === "heuristic") {
     return p;

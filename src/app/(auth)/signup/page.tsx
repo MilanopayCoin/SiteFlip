@@ -14,7 +14,7 @@ import {
 import { createBrowserClient } from "@/lib/supabase/browser";
 
 function safeNextPath(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/profile";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/build";
   return raw;
 }
 

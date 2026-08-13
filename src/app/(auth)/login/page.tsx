@@ -17,7 +17,8 @@ import {
 } from "@/lib/profile/client-cache";
 
 function safeNextPath(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  // Factory-first: avoid broken /dashboard SSR on Free Workers after login
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/build";
   return raw;
 }
 
@@ -66,7 +67,7 @@ function LoginForm() {
       const data = await res.json().catch(() => ({}));
       if (data.profile) cacheProfile(data.profile);
       setMessage("Signed in (DEMO local). Profile is NOT PERSISTED.");
-      router.push(nextPath === "/dashboard" ? "/profile" : nextPath);
+      router.push(nextPath);
       setLoading(false);
       return;
     }
@@ -121,7 +122,7 @@ function LoginForm() {
             Live Supabase Auth is unavailable — demo dashboard still works.
           </p>
         )}
-        {nextPath !== "/dashboard" && (
+        {nextPath !== "/build" && (
           <p className="mb-4 text-sm text-zinc-400">
             After sign in you will return to{" "}
             <span className="text-zinc-200">{nextPath}</span>.
