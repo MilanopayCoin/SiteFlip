@@ -6,6 +6,7 @@ import {
 import {
   loadFactoryProject,
   persistFactoryProject,
+  persistGeneratedAppArtifact,
 } from "@/lib/factory/supabase-store";
 import { runFactoryPipeline } from "@/lib/factory/orchestrator-v3";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
@@ -82,6 +83,9 @@ export async function POST(request: Request, ctx: Ctx) {
         project.sandbox?.createMode !== "full");
     const result = await runFactoryPipeline(id, { fastCreate });
     const persisted = await persistFactoryProject(result);
+    if (result.sandbox?.generatedArtifact) {
+      await persistGeneratedAppArtifact(result).catch(() => null);
+    }
     if (persisted.mode === "supabase") {
       result.persistenceMode = "SUPABASE";
     }

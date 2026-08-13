@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { getFactoryProject, getOutputByAgent } from "@/lib/factory/store";
-import { resolveFactoryProject } from "@/lib/factory/supabase-store";
+import { loadFactoryProject } from "@/lib/factory/supabase-store";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { resolveRequestUser } from "@/lib/api/request-user";
-import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 import type {
   CodeArtifact,
   ContentPack,
@@ -78,24 +77,16 @@ function v5LandingFromSpecs(project: FactoryProject) {
 export async function GET(request: Request, ctx: Ctx) {
   await ensureCloudflareEnv();
   const { id } = await ctx.params;
-  const status = await getSchemaStatus();
   const user = await resolveRequestUser(request);
 
-  let project = await resolveFactoryProject(id);
-  if (!project) project = getFactoryProject(id) ?? null;
+  const loaded = await loadFactoryProject(id, { preferDatabase: true });
+  const project = loaded.project ?? getFactoryProject(id) ?? null;
   if (!project) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "PROJECT NOT FOUND" }, { status: 404 });
   }
 
-  if (
-    (status.productionPersistence || user) &&
-    user &&
-    project.ownerId !== user.id
-  ) {
+  if (user && project.ownerId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  if (status.productionPersistence && !user) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
   const code = getOutputByAgent(project, "DeveloperAgent")?.data as
@@ -131,7 +122,7 @@ export async function GET(request: Request, ctx: Ctx) {
           project.state === "APPROVAL_REQUIRED" ||
           project.state === "PREVIEW")
     ),
-    url: `/build/${id}/preview`,
+    url: `/preview/${id}`,
     label:
       project.state === "LIVE"
         ? "GENERATED APP LIVE (platform preview)"
