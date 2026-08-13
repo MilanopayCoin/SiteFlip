@@ -276,6 +276,30 @@ export interface FactorySandbox {
    * "full" = complete TEST/SECURITY/GROWTH path (may exceed Worker limits).
    */
   createMode?: "fast" | "full";
+  /** Deterministic generated-app artifact persisted on the factory project row */
+  generatedArtifact?: {
+    projectId: string;
+    businessId: string;
+    version: string;
+    buildId: string;
+    entrypoint: string;
+    pages: string[];
+    app: {
+      name: string;
+      summary: string;
+      problem: string;
+      solution: string;
+      targetCustomer: string;
+      country: string;
+      workflows: string[];
+      pricing: string;
+    };
+    createdAt: string;
+  } | null;
+  runtimeError?: {
+    stage: string;
+    message: string;
+  } | null;
 }
 
 export interface FactoryQualityScore {

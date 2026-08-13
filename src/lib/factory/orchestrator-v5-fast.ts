@@ -45,6 +45,7 @@ import type {
   ProductSpec,
 } from "./schemas";
 import { withAiRuntimeOverride } from "@/lib/ai/runtime";
+import { attachGeneratedAppArtifact } from "./generated-app-runtime";
 
 const STATE_FOR_STEP: Partial<Record<V5PipelineStepId, FactoryProjectState>> = {
   IDEA: "IDEA",
@@ -388,6 +389,7 @@ export class BusinessFactoryOrchestratorV5Fast {
     });
     project.sandbox.previewUrl = previewPathFor(project.id);
     project.sandbox.deploymentStatus = "READY";
+    attachGeneratedAppArtifact(project);
     this.finish("DeploymentAgent", "PREVIEW", out.id, true);
   }
 

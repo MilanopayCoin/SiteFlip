@@ -9,7 +9,7 @@ import { BusinessFactoryOrchestrator } from "@/lib/factory/orchestrator";
 import { runFactoryPipeline } from "@/lib/factory/orchestrator-v3";
 import { z } from "zod";
 import type { FactoryProject } from "@/lib/factory/types";
-import { resolveFactoryProject, persistFactoryProject } from "@/lib/factory/supabase-store";
+import { resolveFactoryProject, persistFactoryProject, persistGeneratedAppArtifact } from "@/lib/factory/supabase-store";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { resolveRequestUser } from "@/lib/api/request-user";
 import { getSchemaStatus } from "@/lib/supabase/schema-ready";
@@ -117,8 +117,9 @@ export async function POST(request: Request, ctx: Ctx) {
     const live = await goGeneratedAppLive(id);
     try {
       await persistFactoryProject(live);
+      await persistGeneratedAppArtifact(live);
     } catch {
-      // persistence must not block LIVE transition
+      // persist after LIVE; runtime already required persist before HTTP verify
     }
     return NextResponse.json({
       project: live,

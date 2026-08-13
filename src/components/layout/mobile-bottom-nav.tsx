@@ -13,7 +13,7 @@ function readLastProjectId(): string | null {
   if (typeof window === "undefined") return null;
   try {
     const fromPath = window.location.pathname.match(
-      /^\/build\/([0-9a-f-]{36})/i
+      /^\/(?:build|preview)\/([0-9a-f-]{36})/i
     )?.[1];
     if (fromPath) {
       sessionStorage.setItem(LAST_PROJECT_KEY, fromPath);
@@ -42,7 +42,7 @@ export function MobileBottomNav() {
   }, [pathname]);
 
   const projectHref = projectId ? `/build/${projectId}` : "/build";
-  const previewHref = projectId ? `/build/${projectId}/preview` : "/build";
+  const previewHref = projectId ? `/preview/${projectId}` : "/build";
 
   const items = [
     {
@@ -68,7 +68,10 @@ export function MobileBottomNav() {
       href: previewHref,
       label: "Preview",
       icon: Eye,
-      active: Boolean(projectId) && pathname.includes("/preview"),
+      active:
+        Boolean(projectId) &&
+        (pathname.startsWith(`/preview/${projectId}`) ||
+          pathname.includes("/preview")),
     },
     {
       href: "/profile",

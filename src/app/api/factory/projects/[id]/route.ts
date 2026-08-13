@@ -21,23 +21,14 @@ export async function GET(request: Request, ctx: Ctx) {
   const status = await getSchemaStatus();
   const user = await resolveRequestUser(request);
 
-  // Auth before load messaging — avoid false "Not found" when cookies are missing
-  if (status.productionPersistence && !user) {
-    return NextResponse.json(
-      {
-        error: "Authentication required",
-        code: "AUTH_REQUIRED",
-        loginUrl: `/login?next=/build/${id}`,
-      },
-      { status: 401 }
-    );
-  }
-
-  const loaded = await loadFactoryProject(id);
+  const loaded = await loadFactoryProject(id, { preferDatabase: true });
   const project = loaded.project ?? getFactoryProject(id) ?? null;
 
   if (!project) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "PROJECT NOT FOUND", code: "PROJECT_NOT_FOUND" },
+      { status: 404 }
+    );
   }
 
   if (user && project.ownerId !== user.id) {

@@ -9,6 +9,7 @@ import {
 import {
   listPersistedFactoryProjects,
   persistFactoryProject,
+  persistGeneratedAppArtifact,
 } from "@/lib/factory/supabase-store";
 import { estimateFullPipelineCost, estimateV3PipelineCost } from "@/lib/factory/quality";
 import type { PipelineVersion } from "@/lib/factory/types";
@@ -161,6 +162,9 @@ export async function POST(request: Request) {
     }
 
     const persisted = await persistFactoryProject(result);
+    if (result.sandbox?.generatedArtifact) {
+      await persistGeneratedAppArtifact(result).catch(() => null);
+    }
     const persistOk = persisted.ok && persisted.mode === "supabase";
     let persistDeferred = false;
     if (persistOk) {

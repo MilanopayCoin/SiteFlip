@@ -131,6 +131,13 @@ function fromDbProject(
         (sandbox.isolationLabel as string | undefined) ||
         "SANDBOX: DEVELOPMENT ISOLATION",
       isProductionGrade: Boolean(sandbox.isProductionGrade),
+      createMode: sandbox.createMode as FactoryProject["sandbox"]["createMode"],
+      generatedArtifact:
+        (sandbox.generatedArtifact as FactoryProject["sandbox"]["generatedArtifact"]) ??
+        null,
+      runtimeError:
+        (sandbox.runtimeError as FactoryProject["sandbox"]["runtimeError"]) ??
+        null,
     },
     usage: (row.usage || {
       projectId: String(row.id),
@@ -261,7 +268,8 @@ function memoryIsAhead(mem: FactoryProject, db: FactoryProject): boolean {
 }
 
 export async function loadFactoryProject(
-  id: string
+  id: string,
+  opts?: { preferDatabase?: boolean }
 ): Promise<{ project: FactoryProject | null; mode: "supabase" | "demo" }> {
   const mem = getMemoryProject(id);
   const status = await getSchemaStatus();
@@ -316,6 +324,12 @@ export async function loadFactoryProject(
     }
   }
 
+  // Preview/runtime: database is the source of truth (refresh + new session).
+  if (opts?.preferDatabase) {
+    saveMemoryProject(project);
+    return { project, mode: "supabase" };
+  }
+
   // Concurrent GET/list during /run must not clobber an in-flight pipeline
   // (Worker isolates share memory — that wipe caused BUILD plan=undefined).
   if (mem && memoryIsAhead(mem, project)) {
@@ -368,4 +382,34 @@ export async function listPersistedFactoryProjects(ownerId?: string): Promise<{
     saveMemoryProject(p);
   }
   return { projects, mode: "supabase" };
+}
+
+/**
+ * Persist project row (including generatedArtifact in sandbox JSON).
+ * Skips factory_outputs to stay within Cloudflare Free subrequest budget.
+ */
+export async function persistGeneratedAppArtifact(
+  project: FactoryProject
+): Promise<{ ok: boolean; error?: string }> {
+  saveMemoryProject(project);
+  const status = await getSchemaStatus();
+  if (!status.productionPersistence) {
+    return { ok: true };
+  }
+  const supabase = await factoryClient();
+  if (!supabase) return { ok: false, error: "Supabase client unavailable" };
+  const uuidOk =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      project.id
+    );
+  if (!uuidOk) {
+    return { ok: false, error: "Factory project id must be UUID" };
+  }
+  const { error } = await supabase
+    .from("factory_projects")
+    .upsert(toDbProject(project), { onConflict: "id" });
+  if (error) return { ok: false, error: error.message };
+  project.persistenceMode = "SUPABASE";
+  saveMemoryProject(project);
+  return { ok: true };
 }

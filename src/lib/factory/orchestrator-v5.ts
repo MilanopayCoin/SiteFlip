@@ -39,6 +39,14 @@ import {
 import { computeFactoryQuality, estimateAgentCost } from "./quality";
 import { buildBusinessPassport } from "./passport";
 import {
+  allowInProcessLiveVerify,
+  attachGeneratedAppArtifact,
+  hasApplicationEntrypoint,
+  isValidGeneratedAppHtml,
+  renderGeneratedAppHtml,
+  verifyGeneratedAppHttp,
+} from "./generated-app-runtime";
+import {
   runArchitectureAgent,
   runDatabaseAgent,
   runDeploymentAgent,
@@ -52,6 +60,7 @@ import { runTestingAgentV3 } from "./agents/testing-v3";
 import { runSecurityScanAgent } from "./agents/security-scan";
 import { deployPreview } from "./deployment";
 import { unlockV5PostLiveRoadmap } from "./v5-post-live";
+import { persistGeneratedAppArtifact } from "./supabase-store";
 import type {
   ArchitectureSpec,
   CodeArtifact,
@@ -709,6 +718,7 @@ export class BusinessFactoryOrchestratorV5 {
       implementationStatus: "ai_generated",
     });
     project.sandbox.previewUrl = previewPathFor(project.id);
+    attachGeneratedAppArtifact(project);
     this.finish("DeploymentAgent", "PREVIEW", out.id, true);
   }
 
@@ -810,6 +820,7 @@ export class BusinessFactoryOrchestratorV5 {
 /**
  * After user approves `generated_app_live`:
  * verified platform preview → GENERATED APP LIVE, then unlock post-live roadmap.
+ * LIVE only when preview HTML returns 200, entrypoint exists, and HTML is valid.
  */
 export async function goGeneratedAppLive(
   projectId: string
@@ -820,12 +831,26 @@ export async function goGeneratedAppLive(
     throw new Error("goGeneratedAppLive is V5-only");
   }
 
+  const failLive = (stage: string, msg: string): FactoryProject => {
+    project.sandbox.runtimeError = { stage, message: msg };
+    updateTask(project, "LIVE", {
+      status: "FAILED",
+      progress: 100,
+      activity: `Live publish failed: ${msg}`,
+      completedAt: new Date().toISOString(),
+      error: msg,
+    });
+    project.state = "FAILED";
+    appendActivity(project, "DeploymentAgent", `${stage}: ${msg}`, "error");
+    return saveFactoryProject(project);
+  };
+
   project.state = "DEPLOYING";
   project.currentStep = "LIVE";
   updateTask(project, "LIVE", {
     status: "RUNNING",
     progress: 20,
-    activity: "Publishing verified platform preview…",
+    activity: "Publishing verified generated app…",
     startedAt: new Date().toISOString(),
     error: null,
   });
@@ -837,51 +862,67 @@ export async function goGeneratedAppLive(
   );
   saveFactoryProject(project);
 
+  try {
+    attachGeneratedAppArtifact(project);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Artifact missing";
+    return failLive("artifact", msg);
+  }
+
+  const artifact = project.sandbox.generatedArtifact ?? null;
+  if (!hasApplicationEntrypoint(artifact)) {
+    return failLive("entrypoint", "Generated application entrypoint is missing");
+  }
+
+  let html = "";
+  try {
+    html = renderGeneratedAppHtml(project, []).html;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "HTML render failed";
+    return failLive("html_render", msg);
+  }
+  if (!isValidGeneratedAppHtml(html)) {
+    return failLive("html_render", "Rendered HTML is not a generated application");
+  }
+
+  await persistGeneratedAppArtifact(project).catch(() => null);
+
+  if (!allowInProcessLiveVerify()) {
+    const http = await verifyGeneratedAppHttp(project.id);
+    if (!http.ok) {
+      return failLive(
+        "http_verify",
+        http.detail || "Preview URL did not return HTTP 200 HTML"
+      );
+    }
+  }
+
   let result: Awaited<ReturnType<typeof deployPreview>>;
   try {
     result = await deployPreview(projectId);
   } catch (error) {
     const msg =
       error instanceof Error ? error.message : "Preview deploy crashed";
-    updateTask(project, "LIVE", {
-      status: "FAILED",
-      progress: 100,
-      activity: `Live publish failed: ${msg}`,
-      completedAt: new Date().toISOString(),
-      error: msg,
-    });
-    project.state = "FAILED";
-    appendActivity(project, "DeploymentAgent", msg, "error");
-    return saveFactoryProject(project);
+    return failLive("http_verify", msg);
   }
   const refreshed = getFactoryProject(projectId)!;
 
   if (result.deployment.status !== "LIVE") {
-    updateTask(refreshed, "LIVE", {
-      status: "FAILED",
-      progress: 100,
-      activity: `Live publish failed: ${result.deployment.status}`,
-      completedAt: new Date().toISOString(),
-      error: result.deployment.error || result.deployment.status,
-    });
-    refreshed.state = "FAILED";
-    appendActivity(
-      refreshed,
-      "DeploymentAgent",
-      result.deployment.error || "Preview deploy failed",
-      "error"
+    return failLive(
+      "http_verify",
+      result.deployment.error || result.deployment.status
     );
-    return saveFactoryProject(refreshed);
   }
 
   refreshed.state = "LIVE";
   refreshed.currentStep = "LIVE";
   refreshed.liveAt = new Date().toISOString();
   refreshed.sandbox.deploymentStatus = "LIVE";
+  refreshed.sandbox.runtimeError = null;
   refreshed.sandbox.previewUrl =
     refreshed.sandbox.previewUrl || previewPathFor(refreshed.id);
   refreshed.sandbox.isolationLabel = "SANDBOX: DEVELOPMENT ISOLATION";
-  refreshed.sandbox.productionUrl = null; // honest — not production isolation
+  refreshed.sandbox.productionUrl = null;
   updateTask(refreshed, "APPROVAL", {
     status: "COMPLETED",
     progress: 100,
@@ -892,7 +933,7 @@ export async function goGeneratedAppLive(
     status: "COMPLETED",
     progress: 100,
     activity:
-      "GENERATED APP LIVE (platform preview — DEVELOPMENT ISOLATION). NEXT: REAL PRODUCTION ISOLATION",
+      "GENERATED APP LIVE after HTTP 200 HTML + entrypoint. NEXT: REAL PRODUCTION ISOLATION",
     completedAt: new Date().toISOString(),
   });
   if (refreshed.passport) {

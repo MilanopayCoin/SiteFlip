@@ -126,5 +126,5 @@ export function scanGeneratedContent(content: string | null | undefined): {
 }
 
 export function previewPathFor(projectId: string): string {
-  return `/build/${projectId}/preview`;
+  return `/preview/${projectId}`;
 }

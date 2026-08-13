@@ -28,8 +28,8 @@ const LIFECYCLE = [
 const HOW = [
   {
     icon: Bot,
-    title: "Build with AI",
-    body: "Generate a business blueprint, brand concept, and starter assets — then take it live.",
+    title: "Idea → working URL",
+    body: "One sentence becomes a public generated-app URL. It opens, refreshes, and works in a new session — that is the JIY.APP unique feature.",
   },
   {
     icon: Store,
@@ -79,17 +79,18 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-base text-zinc-400 sm:text-lg">
-              Build with AI, grow, buy, rent, revive, and sell digital businesses —
-              across the full lifecycle on jiy.app.
+              JIY.APP unique feature: write one sentence, get a working app URL.
+              Refresh it. Open it in a new browser. Open it on your phone.
+              Same generated application — not a loading screen.
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
               <Button size="xl" asChild>
-                <Link href="/explore">
-                  Explore Businesses <ArrowRight className="h-4 w-4" />
+                <Link href="/build">
+                  Write an idea <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
               <Button size="xl" variant="secondary" asChild>
-                <Link href="/build">Build with AI</Link>
+                <Link href="/explore">Explore Businesses</Link>
               </Button>
               <Button size="xl" variant="outline" asChild>
                 <Link href="/revive">Revive a Project</Link>
