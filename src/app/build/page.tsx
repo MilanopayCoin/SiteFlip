@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { FastCreateLoader } from "@/components/factory/fast-create-loader";
 import {
   cacheFactoryProject,
   listCachedFactoryProjects,
@@ -44,6 +45,17 @@ interface Portfolio {
   authenticated?: boolean;
   note?: string;
 }
+
+/** Default Free-safe path — no TEST/SECURITY/GROWTH in the create Worker call */
+const PIPELINE_PREVIEW_V5_FAST = [
+  "IDEA",
+  "AI GENERATE",
+  "SANDBOX",
+  "BUILD",
+  "PREVIEW",
+  "APPROVAL",
+  "GENERATED APP LIVE",
+];
 
 const PIPELINE_PREVIEW_V5 = [
   "IDEA",
@@ -103,6 +115,8 @@ export default function BuildFactoryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pipelineMode, setPipelineMode] = useState<"v5" | "v3" | "v2">("v5");
+  /** Fast Create is the default on Cloudflare Free (avoids Error 1102). */
+  const [createMode, setCreateMode] = useState<"fast" | "full">("fast");
   const [costNote, setCostNote] = useState<string | null>(null);
 
   const persistenceReady = Boolean(portfolio?.productionPersistence);
@@ -188,7 +202,10 @@ export default function BuildFactoryPage() {
                 note: "Profile preferences are AI context only — explicit idea overrides them",
               }
             : undefined,
+          // Fast Create by default — short Worker path for mobile + Free plan
           run: true,
+          fastCreate: pipelineMode === "v5" ? createMode === "fast" : false,
+          createMode: pipelineMode === "v5" ? createMode : undefined,
         }),
       });
       const data = await create.json();
@@ -243,6 +260,15 @@ export default function BuildFactoryPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+      {loading && (
+        <FastCreateLoader
+          label={
+            pipelineMode === "v5" && createMode === "fast"
+              ? "Fast Create in progress"
+              : "Building your app"
+          }
+        />
+      )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-violet-400">
@@ -252,14 +278,18 @@ export default function BuildFactoryPage() {
             Turn ideas into businesses.
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-400">
-            Describe an idea in natural language. V5 runs:
-            Idea → AI Generate → Sandbox → Build → Test → Security → Preview →
-            Approval → Generated App Live, then the production roadmap
-            (isolation → separate runtime → domain → Mollie → growth).
+            {pipelineMode === "v5" && createMode === "fast"
+              ? "Fast Create (default): Idea → Generate → Build → Preview → Approval → Live. Built for mobile and Cloudflare Free — skips heavy Test/Security loops that can hit Worker limits."
+              : pipelineMode === "v5"
+                ? "Full V5: Idea → Generate → Sandbox → Build → Test → Security → Preview → Approval → Live, then the production roadmap (isolation → separate runtime → domain → Mollie → growth). May exceed Free Worker limits."
+                : "Describe an idea in natural language. Approve preview before production deploy, domain, or Mollie."}
           </p>
         </div>
         <Badge variant="outline" className="gap-1">
-          <Factory className="h-3.5 w-3.5" /> Factory V5
+          <Factory className="h-3.5 w-3.5" />{" "}
+          {pipelineMode === "v5" && createMode === "fast"
+            ? "Factory V5 Fast"
+            : "Factory V5"}
         </Badge>
       </div>
 
@@ -290,13 +320,36 @@ export default function BuildFactoryPage() {
         </Button>
       </div>
 
+      {pipelineMode === "v5" && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={createMode === "fast" ? "default" : "outline"}
+            onClick={() => setCreateMode("fast")}
+          >
+            Fast Create (recommended)
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={createMode === "full" ? "default" : "outline"}
+            onClick={() => setCreateMode("full")}
+          >
+            Full V5 (may hit Free limits)
+          </Button>
+        </div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         className="mt-8 flex flex-wrap items-center justify-center gap-2"
       >
         {(pipelineMode === "v5"
-          ? PIPELINE_PREVIEW_V5
+          ? createMode === "fast"
+            ? PIPELINE_PREVIEW_V5_FAST
+            : PIPELINE_PREVIEW_V5
           : pipelineMode === "v3"
             ? PIPELINE_PREVIEW_V3
             : PIPELINE_PREVIEW_V2
@@ -520,9 +573,10 @@ export default function BuildFactoryPage() {
                 ) : persistenceReady ? (
                   <>
                     Factory V5 persists projects to Supabase when you are signed
-                    in. Flow: Idea → AI Generate → Sandbox → Build → Test →
-                    Security → Preview → Approval → Generated App Live. Production
-                    isolation, custom domain, and Mollie stay approval-gated.
+                    in. Default is Fast Create (Idea → Generate → Build →
+                    Preview → Approval → Live) so mobile create stays within
+                    Cloudflare Free limits. Production isolation, custom domain,
+                    and Mollie stay approval-gated.
                   </>
                 ) : (
                   <>
@@ -548,8 +602,12 @@ export default function BuildFactoryPage() {
               ) : (
                 <Button type="submit" size="lg" disabled={loading}>
                   {loading
-                    ? "Building your app… 1–2 min, keep this screen open"
-                    : "Start Business Factory"}
+                    ? pipelineMode === "v5" && createMode === "fast"
+                      ? "Fast Create running…"
+                      : "Building your app… keep this screen open"
+                    : pipelineMode === "v5" && createMode === "fast"
+                      ? "Start Fast Create"
+                      : "Start Business Factory"}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               )}

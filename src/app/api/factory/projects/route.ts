@@ -140,7 +140,14 @@ export async function POST(request: Request) {
     let result = project;
     if (body?.run === true || body?.startPipeline === true) {
       const { runFactoryPipeline } = await import("@/lib/factory/orchestrator-v3");
-      result = await runFactoryPipeline(project.id);
+      // Default Fast Create on Cloudflare Free — avoids Error 1102 (CPU/subrequest
+      // limits) from full V5 TEST/SECURITY/GROWTH in one Worker invocation.
+      // Pass fastCreate:false explicitly for the long path (not recommended on Free).
+      const fastCreate =
+        body?.fastCreate !== false &&
+        body?.mode !== "full" &&
+        body?.createMode !== "full";
+      result = await runFactoryPipeline(project.id, { fastCreate });
     }
 
     const persisted = await persistFactoryProject(result);

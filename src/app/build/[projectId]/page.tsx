@@ -212,13 +212,22 @@ export default function FactoryProjectPage() {
     setBusy(true);
     setError(null);
     const cached = readCachedFactoryProject(id);
+    const source = cached ?? project;
+    // Default Fast Create on Free — full V5 only if project already opted in
+    const createMode =
+      source?.sandbox?.createMode === "full" ? "full" : "fast";
+    const runBody = {
+      project: source,
+      fastCreate: createMode === "fast",
+      createMode,
+    };
     const controller = new AbortController();
     const kill = window.setTimeout(() => controller.abort(), 180_000);
     try {
       let res = await fetch(`/api/factory/projects/${id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: cached ?? project }),
+        body: JSON.stringify(runBody),
         signal: controller.signal,
       });
       if (res.status === 404 && cached) {
@@ -230,7 +239,7 @@ export default function FactoryProjectPage() {
         res = await fetch(`/api/factory/projects/${id}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project: cached }),
+          body: JSON.stringify(runBody),
           signal: controller.signal,
         });
       }

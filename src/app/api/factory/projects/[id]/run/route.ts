@@ -70,7 +70,17 @@ export async function POST(request: Request, ctx: Ctx) {
   }
 
   try {
-    const result = await runFactoryPipeline(id);
+    const fastCreate =
+      body?.fastCreate === true ||
+      body?.mode === "fast" ||
+      body?.createMode === "fast" ||
+      project.sandbox?.createMode === "fast" ||
+      // Default Fast Create when client does not opt into full V5
+      (body?.fastCreate !== false &&
+        body?.mode !== "full" &&
+        body?.createMode !== "full" &&
+        project.sandbox?.createMode !== "full");
+    const result = await runFactoryPipeline(id, { fastCreate });
     const persisted = await persistFactoryProject(result);
     if (persisted.mode === "supabase") {
       result.persistenceMode = "SUPABASE";

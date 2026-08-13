@@ -271,6 +271,11 @@ export interface FactorySandbox {
   lifecycle?: string | null;
   isolationLabel?: string | null;
   isProductionGrade?: boolean;
+  /**
+   * V5 create path: "fast" = Free-safe short pipeline (default),
+   * "full" = complete TEST/SECURITY/GROWTH path (may exceed Worker limits).
+   */
+  createMode?: "fast" | "full";
 }
 
 export interface FactoryQualityScore {

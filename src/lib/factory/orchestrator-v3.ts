@@ -850,11 +850,22 @@ export class BusinessFactoryOrchestratorV3 {
 }
 
 /** Dispatch factory pipeline by version */
-export async function runFactoryPipeline(projectId: string): Promise<FactoryProject> {
+export async function runFactoryPipeline(
+  projectId: string,
+  opts?: { fastCreate?: boolean }
+): Promise<FactoryProject> {
   const project = getFactoryProject(projectId);
   if (!project) throw new Error("Factory project not found");
   let result: FactoryProject;
-  if (project.pipelineVersion === "v5") {
+  const wantFast =
+    opts?.fastCreate === true || project.sandbox?.createMode === "fast";
+
+  if (project.pipelineVersion === "v5" && wantFast) {
+    const { BusinessFactoryOrchestratorV5Fast } = await import(
+      "./orchestrator-v5-fast"
+    );
+    result = await new BusinessFactoryOrchestratorV5Fast(projectId).runPipeline();
+  } else if (project.pipelineVersion === "v5") {
     const { BusinessFactoryOrchestratorV5 } = await import("./orchestrator-v5");
     result = await new BusinessFactoryOrchestratorV5(projectId).runPipeline();
   } else if (project.pipelineVersion === "v3" || project.pipelineVersion === "v4") {
