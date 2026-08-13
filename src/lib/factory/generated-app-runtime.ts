@@ -570,7 +570,38 @@ export async function verifyGeneratedAppHttp(
   html: string;
   detail: string;
 }> {
-  const url = platformPreviewUrl(projectId);
+  const urls = [platformPreviewUrl(projectId)];
+  const localOrigin =
+    process.env.JIY_PREVIEW_ORIGIN?.trim() ||
+    (process.env.NODE_ENV !== "production"
+      ? `http://127.0.0.1:${process.env.PORT || "3000"}`
+      : "");
+  if (localOrigin) {
+    const localUrl = `${localOrigin.replace(/\/$/, "")}${generatedAppPreviewPath(projectId)}`;
+    if (!urls.includes(localUrl)) urls.push(localUrl);
+  }
+
+  let last = {
+    ok: false,
+    status: 0,
+    contentType: "",
+    html: "",
+    detail: "HTTP health not attempted",
+  };
+  for (const url of urls) {
+    last = await fetchPreviewUrl(url);
+    if (last.ok) return last;
+  }
+  return last;
+}
+
+async function fetchPreviewUrl(url: string): Promise<{
+  ok: boolean;
+  status: number;
+  contentType: string;
+  html: string;
+  detail: string;
+}> {
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -600,7 +631,7 @@ export async function verifyGeneratedAppHttp(
       status: 0,
       contentType: "",
       html: "",
-      detail: `HTTP failed: ${error instanceof Error ? error.message : "error"}`,
+      detail: `HTTP failed ${url}: ${error instanceof Error ? error.message : "error"}`,
     };
   }
 }
