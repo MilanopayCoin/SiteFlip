@@ -110,13 +110,15 @@ export const FORBIDDEN_PATTERNS = [
   /https?:\/\/.*\.workers\.dev\/(?!preview)/i,
 ];
 
-export function scanGeneratedContent(content: string): {
+export function scanGeneratedContent(content: string | null | undefined): {
   safe: boolean;
   findings: string[];
 } {
   const findings: string[] = [];
+  const text = typeof content === "string" ? content : "";
+  if (!text) return { safe: true, findings };
   for (const pattern of FORBIDDEN_PATTERNS) {
-    if (pattern.test(content)) {
+    if (pattern.test(text)) {
       findings.push(`Blocked pattern: ${pattern.source}`);
     }
   }

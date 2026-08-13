@@ -837,7 +837,23 @@ export async function goGeneratedAppLive(
   );
   saveFactoryProject(project);
 
-  const result = await deployPreview(projectId);
+  let result: Awaited<ReturnType<typeof deployPreview>>;
+  try {
+    result = await deployPreview(projectId);
+  } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : "Preview deploy crashed";
+    updateTask(project, "LIVE", {
+      status: "FAILED",
+      progress: 100,
+      activity: `Live publish failed: ${msg}`,
+      completedAt: new Date().toISOString(),
+      error: msg,
+    });
+    project.state = "FAILED";
+    appendActivity(project, "DeploymentAgent", msg, "error");
+    return saveFactoryProject(project);
+  }
   const refreshed = getFactoryProject(projectId)!;
 
   if (result.deployment.status !== "LIVE") {

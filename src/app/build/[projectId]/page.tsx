@@ -1301,7 +1301,12 @@ export default function FactoryProjectPage() {
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-3">
               {code.files
-                .filter((f) => f.path.includes("/app/") && f.path.endsWith("page.tsx"))
+                .filter(
+                  (f) =>
+                    typeof f.path === "string" &&
+                    f.path.includes("/app/") &&
+                    f.path.endsWith("page.tsx")
+                )
                 .map((f) => (
                   <div
                     key={f.path}

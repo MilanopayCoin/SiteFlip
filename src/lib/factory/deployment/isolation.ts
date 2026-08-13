@@ -54,15 +54,17 @@ export class DevelopmentIsolationProvider implements RuntimeIsolationProvider {
   checkSecrets(input: IsolationCheckInput): IsolationCheckResult["checks"] {
     let secretLeak = false;
     const findings: string[] = [];
-    if (input.code) {
+    if (input.code?.files?.length) {
       for (const f of input.code.files) {
-        const scan = scanGeneratedContent(f.content);
+        const content = typeof f.content === "string" ? f.content : "";
+        if (!content) continue;
+        const scan = scanGeneratedContent(content);
         if (!scan.safe) {
           secretLeak = true;
           findings.push(...scan.findings.map((x) => `${f.path}: ${x}`));
         }
         for (const key of FORBIDDEN_PRODUCTION_SECRET_KEYS) {
-          if (f.content.includes(key)) {
+          if (content.includes(key)) {
             secretLeak = true;
             findings.push(`${f.path}: references ${key}`);
           }

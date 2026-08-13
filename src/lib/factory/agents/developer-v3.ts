@@ -364,7 +364,10 @@ This is a starter MVP scaffold — NOT a production-ready SaaS.
     {
       path: "sandbox/spec/database.sql",
       language: "sql",
-      content: input.database.migrationSql,
+      content:
+        (typeof input.database?.migrationSql === "string" &&
+          input.database.migrationSql.trim()) ||
+        `-- Schema stub for ${name}\n-- DEMO adapter only — not applied to production\n`,
       purpose: "Database specification (not applied)",
     },
   ];

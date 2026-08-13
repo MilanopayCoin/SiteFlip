@@ -284,6 +284,8 @@ export class BusinessFactoryOrchestratorV5Fast {
       data: {
         strategy: "demo_adapter",
         tables: ["users", "customers", "bookings"],
+        migrationSql:
+          "-- Fast Create stub schema (demo adapter — not production)\n-- tables: users, customers, bookings\n",
         notes: ["FAST CREATE stub — not a production schema"],
       },
       labeledAssumptions: ["FAST CREATE stub database spec"],
@@ -296,6 +298,7 @@ export class BusinessFactoryOrchestratorV5Fast {
       schemaName: "ArchitectureSchema",
       data: {
         stack: ["Next.js", "Supabase", "Mollie"],
+        techStack: ["Next.js", "Supabase", "Mollie"],
         hosting: "JIY.APP sandbox preview",
         notes: ["FAST CREATE stub architecture"],
       },
