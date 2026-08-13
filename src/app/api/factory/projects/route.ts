@@ -258,6 +258,7 @@ function summarize(p: ReturnType<typeof createFactoryProject>) {
       previewUrl: p.sandbox.previewUrl,
       productionUrl: p.sandbox.productionUrl,
       deploymentStatus: p.sandbox.deploymentStatus,
+      createMode: p.sandbox.createMode,
     },
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
