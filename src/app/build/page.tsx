@@ -50,8 +50,6 @@ interface Portfolio {
 const PIPELINE_PREVIEW_V5_FAST = [
   "IDEA",
   "AI GENERATE",
-  "SANDBOX",
-  "BUILD",
   "PREVIEW",
   "APPROVAL",
   "GENERATED APP LIVE",
@@ -292,7 +290,7 @@ export default function BuildFactoryPage() {
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-400">
             {pipelineMode === "v5" && createMode === "fast"
-              ? "Fast Create (default): Idea → Generate → Build → Preview → Approval → Live. Built for mobile and Cloudflare Free — skips heavy Test/Security loops that can hit Worker limits."
+              ? "One sentence in. A working app URL out. Idea → Generate → Preview → Approval → Live. BUILD stays internal — you never wait on a stuck build step."
               : pipelineMode === "v5"
                 ? "Full V5: Idea → Generate → Sandbox → Build → Test → Security → Preview → Approval → Live, then the production roadmap (isolation → separate runtime → domain → Mollie → growth). May exceed Free Worker limits."
                 : "Describe an idea in natural language. Approve preview before production deploy, domain, or Mollie."}
@@ -586,10 +584,10 @@ export default function BuildFactoryPage() {
                 ) : persistenceReady ? (
                   <>
                     Factory V5 persists projects to Supabase when you are signed
-                    in. Default is Fast Create (Idea → Generate → Build →
-                    Preview → Approval → Live) so mobile create stays within
-                    Cloudflare Free limits. Production isolation, custom domain,
-                    and Mollie stay approval-gated.
+                    in. Default is Fast Create (Idea → Generate → Preview →
+                    Approval → Live). BUILD runs in the background and is not a
+                    user step. The unique outcome is a public app URL that
+                    works after refresh.
                   </>
                 ) : (
                   <>
