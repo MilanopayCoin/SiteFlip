@@ -202,8 +202,8 @@ export default function BuildFactoryPage() {
                 note: "Profile preferences are AI context only — explicit idea overrides them",
               }
             : undefined,
-          // Fast Create by default — short Worker path for mobile + Free plan
-          run: true,
+          // Instant create + run on project page (faster mobile UX, fresh Worker budget)
+          run: pipelineMode === "v5" && createMode === "fast" ? false : true,
           fastCreate: pipelineMode === "v5" ? createMode === "fast" : false,
           createMode: pipelineMode === "v5" ? createMode : undefined,
         }),
@@ -234,23 +234,36 @@ export default function BuildFactoryPage() {
       }
 
       if (full) {
+        // Mark intended create mode before autostart /run
+        if (pipelineMode === "v5" && createMode === "fast") {
+          full = {
+            ...full,
+            sandbox: { ...full.sandbox, createMode: "fast" },
+          };
+        }
         cacheFactoryProject(full);
       }
 
-      setCostNote(
-        `Estimated AI cost €${data.estimatedCost.aiCostEur} · infra €${data.estimatedCost.infrastructureMonthlyEur}/mo`
-      );
+      if (data.estimatedCost) {
+        setCostNote(
+          `Estimated AI cost €${data.estimatedCost.aiCostEur} · infra €${data.estimatedCost.infrastructureMonthlyEur}/mo`
+        );
+      }
 
-      // Pipeline already ran on create when possible — open project ready
+      const projectId = data.project?.id;
+      if (!projectId) throw new Error("Create succeeded without project id");
+
+      // Fast Create: jump immediately, run pipeline on project page
       const needsAutostart =
-        !full ||
-        full.state === "IDEA" ||
-        !(full.outputs && full.outputs.length > 0);
-      router.push(
-        needsAutostart
-          ? `/build/${data.project.id}?autostart=1`
-          : `/build/${data.project.id}`
-      );
+        pipelineMode === "v5" && createMode === "fast"
+          ? true
+          : !full ||
+            full.state === "IDEA" ||
+            !(full.outputs && full.outputs.length > 0);
+      window.location.href = needsAutostart
+        ? `/build/${projectId}?autostart=1`
+        : `/build/${projectId}`;
+      return;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {
@@ -689,7 +702,6 @@ function Field({
       <Input
         id={name}
         name={name}
-        required
         className="mt-1.5"
         defaultValue={defaultValue}
       />

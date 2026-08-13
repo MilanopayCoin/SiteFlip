@@ -127,6 +127,20 @@ export async function POST(request: Request) {
 
     const project = createFactoryProject(parsed.data, ownerId, pipelineVersion);
 
+    // Stamp create mode before persist so later /run uses Fast Create by default
+    const wantFast =
+      pipelineVersion === "v5" &&
+      body?.fastCreate !== false &&
+      body?.mode !== "full" &&
+      body?.createMode !== "full";
+    if (wantFast) {
+      project.sandbox.createMode = "fast";
+      saveFactoryProject(project);
+    } else if (pipelineVersion === "v5" && body?.createMode === "full") {
+      project.sandbox.createMode = "full";
+      saveFactoryProject(project);
+    }
+
     if (body?.profileContext && typeof body.profileContext === "object") {
       appendActivity(
         project,
@@ -143,11 +157,7 @@ export async function POST(request: Request) {
       // Default Fast Create on Cloudflare Free — avoids Error 1102 (CPU/subrequest
       // limits) from full V5 TEST/SECURITY/GROWTH in one Worker invocation.
       // Pass fastCreate:false explicitly for the long path (not recommended on Free).
-      const fastCreate =
-        body?.fastCreate !== false &&
-        body?.mode !== "full" &&
-        body?.createMode !== "full";
-      result = await runFactoryPipeline(project.id, { fastCreate });
+      result = await runFactoryPipeline(project.id, { fastCreate: wantFast });
     }
 
     const persisted = await persistFactoryProject(result);

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { FastCreateLoader } from "@/components/factory/fast-create-loader";
 import type { FactoryProject } from "@/lib/factory/types";
 import { getPipelineSteps } from "@/lib/factory/types";
 import {
@@ -570,20 +571,25 @@ export default function FactoryProjectPage() {
         </div>
       </div>
 
+      {busy && project.sandbox?.createMode !== "full" && (
+        <FastCreateLoader label="Fast Create in progress" />
+      )}
+
       {(busy ||
         (project.state === "IDEA" && project.outputs.length === 0)) && (
         <div className="mt-4 rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
           {busy ? (
             <p className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Pipeline running — usually 1–2 minutes. Keep this tab open; progress
-              refreshes automatically.
+              {project.sandbox?.createMode === "fast"
+                ? "Fast Create running — usually under a minute. Keep this tab open."
+                : "Pipeline running — keep this tab open; progress refreshes automatically."}
             </p>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p>Pipeline not started yet — no agent outputs.</p>
               <Button size="sm" disabled={busy} onClick={runAgain}>
-                Start pipeline
+                Start Fast Create
               </Button>
             </div>
           )}
