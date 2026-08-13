@@ -15,14 +15,14 @@ export function FastCreateLoader({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#07060c]/92 px-4 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[#07060c]/92 px-4 backdrop-blur-md"
       role="status"
       aria-live="polite"
       aria-label="Creating your app"
     >
-      <div className="relative w-full max-w-sm text-center">
+      <div className="relative w-full max-w-sm overflow-hidden text-center">
         <div
-          className="mx-auto mb-10 h-44 w-44"
+          className="mx-auto mb-10 h-44 w-44 overflow-hidden"
           style={{ perspective: "720px" }}
         >
           <motion.div

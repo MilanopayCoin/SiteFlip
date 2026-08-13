@@ -161,7 +161,7 @@ export async function POST(request: Request) {
     }
 
     const persisted = await persistFactoryProject(result);
-    let persistOk = persisted.ok && persisted.mode === "supabase";
+    const persistOk = persisted.ok && persisted.mode === "supabase";
     let persistDeferred = false;
     if (persistOk) {
       result.persistenceMode = "SUPABASE";

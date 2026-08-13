@@ -41,6 +41,21 @@ import type { CodeArtifact, SecurityScan, TestReport } from "@/lib/factory/schem
 
 type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
 
+async function fetchProjectJson(id: string, ms = 12_000) {
+  const controller = new AbortController();
+  const kill = window.setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(`/api/factory/projects/${id}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  } finally {
+    window.clearTimeout(kill);
+  }
+}
+
 export default function FactoryProjectPage() {
   const params = useParams<{ projectId: string }>();
   const searchParams = useSearchParams();
@@ -90,16 +105,20 @@ export default function FactoryProjectPage() {
   const autoStarted = useRef(false);
 
   const load = useCallback(async () => {
+    if (!id) return;
     const cached = readCachedFactoryProject(id);
     if (cached) {
       setProject(cached);
+      setPipeline(getPipelineSteps(cached.pipelineVersion ?? "v5"));
       setLoadState("ready");
     }
 
-    let res = await fetch(`/api/factory/projects/${id}`);
-    let data = await res.json();
+    try {
+    let { res, data } = await fetchProjectJson(id);
 
     if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+      setError("Sign in required to load this factory project.");
+      setLoadState(cached ? "ready" : "missing");
       window.location.href = data.loginUrl || `/login?next=/build/${id}`;
       return;
     }
@@ -111,8 +130,10 @@ export default function FactoryProjectPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project: cached }),
       });
-      data = await res.json();
+      data = await res.json().catch(() => ({}));
       if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+        setError("Sign in required to load this factory project.");
+        setLoadState("ready");
         window.location.href = data.loginUrl || `/login?next=/build/${id}`;
         return;
       }
@@ -132,82 +153,100 @@ export default function FactoryProjectPage() {
       setLoadState("missing");
       return;
     }
+    if (!data.project) {
+      setError("Project not found.");
+      setLoadState(cached ? "ready" : "missing");
+      return;
+    }
     setProject(data.project);
     cacheFactoryProject(data.project);
     setPipeline(data.pipeline ?? getPipelineSteps(data.project?.pipelineVersion ?? "v3"));
     setError(null);
     setLoadState("ready");
+    } catch {
+      if (!cached) {
+        setError("Could not load this factory project.");
+        setLoadState("missing");
+      }
+    }
   }, [id]);
 
   useEffect(() => {
     let cancelled = false;
-    const tick = async () => {
-      // Always refresh UI from server — even while /run is in flight.
-      let res = await fetch(`/api/factory/projects/${id}`);
-      let data = await res.json();
-      if (cancelled) return;
-
-      if (res.status === 401 || data.code === "AUTH_REQUIRED") {
-        window.location.href = data.loginUrl || `/login?next=/build/${id}`;
-        return;
-      }
-
-      const cached = readCachedFactoryProject(id);
-      if (!res.ok && cached && !busy && res.status !== 403) {
-        res = await fetch(`/api/factory/projects/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project: cached }),
-        });
-        data = await res.json();
-        if (cancelled) return;
-        if (res.status === 401 || data.code === "AUTH_REQUIRED") {
-          window.location.href = data.loginUrl || `/login?next=/build/${id}`;
-          return;
-        }
-      }
-      if (!res.ok) {
-        if (!cached) {
-          setError(
-            res.status === 403
-              ? "This factory project belongs to another account."
-              : data.error || "Project not found."
-          );
-          setLoadState("missing");
-        }
-        return;
-      }
-      setError(null);
-      setProject(data.project);
-      cacheFactoryProject(data.project);
-      setPipeline(
-        data.pipeline ??
-          getPipelineSteps(data.project?.pipelineVersion ?? "v3")
-      );
-      setLoadState("ready");
-    };
-    void tick();
     const failSafe = window.setTimeout(() => {
       if (cancelled) return;
-      setLoadState((s) => {
-        if (s === "loading") {
-          setError(
-            "Could not load this factory project. Sign in again if your session expired."
-          );
-          return "missing";
+      setLoadState((s) => (s === "loading" ? "missing" : s));
+      setError((e) =>
+        e ||
+        "Could not load this factory project. Sign in again if your session expired."
+      );
+    }, 10_000);
+
+    const start = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    const tick = async () => {
+      if (!id) return;
+      try {
+        let { res, data } = await fetchProjectJson(id);
+        if (cancelled) return;
+
+        if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+          setError("Sign in required to load this factory project.");
+          setLoadState((s) => (s === "loading" ? "missing" : s));
+          return;
         }
-        return s;
-      });
-    }, 8000);
-    const t = setInterval(() => {
+
+        const cached = readCachedFactoryProject(id);
+        if (!res.ok && cached && res.status !== 403) {
+          const put = await fetch(`/api/factory/projects/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project: cached }),
+          });
+          data = await put.json().catch(() => ({}));
+          res = put;
+          if (cancelled) return;
+          if (res.status === 401 || data.code === "AUTH_REQUIRED") {
+            return;
+          }
+        }
+        if (!res.ok) {
+          if (!cached && !cancelled) {
+            setError(
+              res.status === 403
+                ? "This factory project belongs to another account."
+                : data.error || "Project not found."
+            );
+            setLoadState("missing");
+          }
+          return;
+        }
+        if (!data.project) return;
+        setError(null);
+        setProject(data.project);
+        cacheFactoryProject(data.project);
+        setPipeline(
+          data.pipeline ??
+            getPipelineSteps(data.project?.pipelineVersion ?? "v3")
+        );
+        setLoadState("ready");
+      } catch {
+        // Timeout / network — keep cached project; failSafe handles empty load
+      }
+    };
+
+    const t = window.setInterval(() => {
       void tick();
     }, 3000);
     return () => {
       cancelled = true;
       clearInterval(t);
       window.clearTimeout(failSafe);
+      window.clearTimeout(start);
     };
-  }, [id, busy]);
+  }, [id, load]);
 
   async function runAgain() {
     setBusy(true);
@@ -493,8 +532,13 @@ export default function FactoryProjectPage() {
 
   if (!project || loadState === "loading") {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-zinc-500">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading factory project…
+      <div className="mx-auto flex min-h-[50vh] w-full max-w-full flex-col items-center justify-center px-4 text-center">
+        <p className="flex items-center justify-center text-zinc-400">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading factory project…
+        </p>
+        <p className="mt-3 max-w-sm text-xs text-zinc-600">
+          If this stays here, pull to refresh or sign in again.
+        </p>
       </div>
     );
   }
@@ -519,9 +563,9 @@ export default function FactoryProjectPage() {
           : "V2";
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+    <div className="mx-auto w-full min-w-0 max-w-7xl overflow-x-hidden px-4 py-8 sm:px-6">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 max-w-full">
           <p className="text-xs uppercase tracking-[0.2em] text-violet-400">
             Business Factory {versionLabel}
           </p>
@@ -572,7 +616,17 @@ export default function FactoryProjectPage() {
       </div>
 
       {busy && project.sandbox?.createMode !== "full" && (
-        <FastCreateLoader label="Fast Create in progress" />
+        <div className="mt-4 rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-100 md:hidden">
+          <p className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            Fast Create running — keep this tab open.
+          </p>
+        </div>
+      )}
+      {busy && project.sandbox?.createMode !== "full" && (
+        <div className="hidden md:block">
+          <FastCreateLoader label="Fast Create in progress" />
+        </div>
       )}
 
       {(busy ||
@@ -602,15 +656,15 @@ export default function FactoryProjectPage() {
         </div>
       )}
 
-      {/* V3 workspace tabs — mobile-first horizontal scroll */}
-      <div className="mt-6 -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        <div className="flex min-w-max gap-1 rounded-xl border border-white/10 bg-white/[0.02] p-1">
+      {/* V3 workspace tabs — scroll inside viewport, never expand page width */}
+      <div className="mt-6 w-full min-w-0 max-w-full">
+        <div className="flex gap-1 overflow-x-auto overscroll-x-contain rounded-xl border border-white/10 bg-white/[0.02] p-1 [-webkit-overflow-scrolling:touch]">
           {WORKSPACE_TABS.map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setWorkspaceTab(tab)}
-              className={`rounded-lg px-3 py-2 text-xs font-medium whitespace-nowrap transition ${
+              className={`shrink-0 rounded-lg px-3 py-2 text-xs font-medium whitespace-nowrap transition ${
                 workspaceTab === tab
                   ? "bg-violet-600 text-white"
                   : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
@@ -629,7 +683,7 @@ export default function FactoryProjectPage() {
           <CardTitle>Factory pipeline</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
             {pipeline.map((step, i) => {
               const task = project.tasks.find((t) => t.stepId === step.id);
               let status = task?.status ?? "WAITING";
@@ -656,7 +710,7 @@ export default function FactoryProjectPage() {
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
-                  className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
+                  className="min-w-0 rounded-xl border border-white/10 bg-white/[0.03] p-3"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-zinc-500">{step.number}</span>
@@ -683,7 +737,7 @@ export default function FactoryProjectPage() {
                         : status}
                   </p>
                   {activity && (
-                    <p className="mt-0.5 truncate text-[10px] text-zinc-500">
+                    <p className="mt-0.5 break-words text-[10px] text-zinc-500">
                       {activity}
                     </p>
                   )}
@@ -726,8 +780,40 @@ export default function FactoryProjectPage() {
       )}
 
       {(workspaceTab === "Overview" || workspaceTab === "Generated App") && (
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
+      <div className="mt-6 grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="min-w-0 lg:order-2 lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Agent outputs</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {project.outputs.length === 0 && (
+              <p className="text-sm text-zinc-500">No outputs yet.</p>
+            )}
+            {[...project.outputs].reverse().map((o) => (
+              <details
+                key={o.id}
+                className="min-w-0 rounded-xl border border-white/10 bg-white/[0.02] p-3"
+              >
+                <summary className="cursor-pointer break-words text-sm font-medium text-white">
+                  {o.agent} · {o.schemaName} · {o.implementationStatus}
+                  {o.source === "heuristic" ? " · HEURISTIC / AI FALLBACK" : ` · ${o.source}`}
+                </summary>
+                <pre className="mt-3 max-h-48 max-w-full overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-[11px] text-zinc-400">
+                  {JSON.stringify(o.data, null, 2)}
+                </pre>
+                {o.labeledAssumptions.length > 0 && (
+                  <ul className="mt-2 list-disc pl-4 text-xs text-amber-200/80">
+                    {o.labeledAssumptions.map((a) => (
+                      <li key={a} className="break-words">{a}</li>
+                    ))}
+                  </ul>
+                )}
+              </details>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="min-w-0 lg:order-1 lg:col-span-1">
           <CardHeader>
             <CardTitle>Activity log</CardTitle>
           </CardHeader>
@@ -740,49 +826,17 @@ export default function FactoryProjectPage() {
                 <p
                   className={
                     a.level === "error"
-                      ? "text-rose-300"
+                      ? "break-words text-rose-300"
                       : a.level === "success"
-                        ? "text-emerald-300"
+                        ? "break-words text-emerald-300"
                         : a.level === "warning"
-                          ? "text-amber-300"
-                          : "text-zinc-300"
+                          ? "break-words text-amber-300"
+                          : "break-words text-zinc-300"
                   }
                 >
                   {a.message}
                 </p>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Agent outputs</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {project.outputs.length === 0 && (
-              <p className="text-sm text-zinc-500">No outputs yet.</p>
-            )}
-            {[...project.outputs].reverse().map((o) => (
-              <details
-                key={o.id}
-                className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
-              >
-                <summary className="cursor-pointer text-sm font-medium text-white">
-                  {o.agent} · {o.schemaName} · {o.implementationStatus}
-                  {o.source === "heuristic" ? " · HEURISTIC / AI FALLBACK" : ` · ${o.source}`}
-                </summary>
-                <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-black/40 p-3 text-[11px] text-zinc-400">
-                  {JSON.stringify(o.data, null, 2)}
-                </pre>
-                {o.labeledAssumptions.length > 0 && (
-                  <ul className="mt-2 list-disc pl-4 text-xs text-amber-200/80">
-                    {o.labeledAssumptions.map((a) => (
-                      <li key={a}>{a}</li>
-                    ))}
-                  </ul>
-                )}
-              </details>
             ))}
           </CardContent>
         </Card>
@@ -803,7 +857,7 @@ export default function FactoryProjectPage() {
                 key={f.path}
                 className="rounded-lg border border-white/10 bg-white/[0.02] p-3 text-sm"
               >
-                <p className="font-mono text-violet-300">{f.path}</p>
+                <p className="break-all font-mono text-violet-300">{f.path}</p>
                 <p className="text-xs text-zinc-500">{f.purpose} · {f.language}</p>
               </div>
             ))}
@@ -1091,7 +1145,7 @@ export default function FactoryProjectPage() {
               </p>
               <div className="flex flex-wrap gap-2">
                 <input
-                  className="min-w-[200px] flex-1 rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100"
+                  className="min-w-0 w-full flex-1 rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100"
                   placeholder="custom.example.com"
                   value={domainInput}
                   onChange={(e) => setDomainInput(e.target.value)}
@@ -1299,7 +1353,7 @@ export default function FactoryProjectPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {code.files
                 .filter(
                   (f) =>

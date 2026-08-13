@@ -238,7 +238,7 @@ export default function FactoryPreviewPage() {
   const primary = landing?.colors?.primary ?? "#8b5cf6";
 
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden">
       <div className="border-b border-white/5 bg-black/40 px-4 py-3 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">

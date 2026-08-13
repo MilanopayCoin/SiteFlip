@@ -35,7 +35,10 @@ export function MobileBottomNav() {
   const [projectId, setProjectId] = useState<string | null>(null);
 
   useEffect(() => {
-    setProjectId(readLastProjectId());
+    const t = window.setTimeout(() => {
+      setProjectId(readLastProjectId());
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [pathname]);
 
   const projectHref = projectId ? `/build/${projectId}` : "/build";

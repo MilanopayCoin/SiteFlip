@@ -43,7 +43,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased sf-glow`}
       >
         <SiteHeader />
-        <main className="min-h-[calc(100vh-8rem)] pb-20 md:pb-0">{children}</main>
+        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden pb-20 md:pb-0">{children}</main>
         <SiteFooter />
         <MobileBottomNav />
       </body>
