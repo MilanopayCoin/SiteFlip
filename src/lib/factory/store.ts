@@ -1,0 +1,269 @@
+/**
+ * In-memory factory store for MVP.
+ * Swap for Supabase factory_* tables when configured.
+ * No secrets stored as plaintext.
+ */
+
+import { nanoid } from "nanoid";
+import type {
+  FactoryApproval,
+  FactoryBrief,
+  FactoryChange,
+  FactoryMemoryEntry,
+  FactoryOutput,
+  FactoryProject,
+  FactoryQualityScore,
+  FactoryTask,
+  FactoryTaskStatus,
+  PipelineStepId,
+  PipelineVersion,
+} from "./types";
+import { getPipelineSteps } from "./types";
+import { initialFactorySandbox } from "./sandbox";
+
+const globalStore = globalThis as unknown as {
+  __siteflipFactoryProjects?: Map<string, FactoryProject>;
+};
+
+function projects(): Map<string, FactoryProject> {
+  if (!globalStore.__siteflipFactoryProjects) {
+    globalStore.__siteflipFactoryProjects = new Map();
+  }
+  return globalStore.__siteflipFactoryProjects;
+}
+
+export function listFactoryProjects(ownerId?: string): FactoryProject[] {
+  const all = Array.from(projects().values());
+  const filtered = ownerId ? all.filter((p) => p.ownerId === ownerId) : all;
+  return filtered.sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+}
+
+export function getFactoryProject(id: string): FactoryProject | undefined {
+  return projects().get(id);
+}
+
+export function saveFactoryProject(project: FactoryProject): FactoryProject {
+  if (!project.pipelineVersion) {
+    project.pipelineVersion = "v2";
+  }
+  if (project.usage.aiRequestCount == null) {
+    project.usage.aiRequestCount = 0;
+  }
+  if (project.usage.buildAttempts == null) {
+    project.usage.buildAttempts = 0;
+  }
+  project.updatedAt = new Date().toISOString();
+  projects().set(project.id, project);
+  return project;
+}
+
+export function createFactoryProject(
+  brief: FactoryBrief,
+  ownerId = "demo-user",
+  pipelineVersion: PipelineVersion = "v3"
+): FactoryProject {
+  // UUID required for Supabase factory_projects.id
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${nanoid(8)}-${nanoid(4)}-${nanoid(4)}-${nanoid(4)}-${nanoid(12)}`;
+  const now = new Date().toISOString();
+  const slug = `project-${id.replace(/-/g, "").slice(0, 8)}`;
+  const steps = getPipelineSteps(pipelineVersion);
+
+  const tasks: FactoryTask[] = steps.map((step) => ({
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `task_${nanoid(8)}`,
+    projectId: id,
+    stepId: step.id,
+    agent: step.agent,
+    status: "WAITING" as FactoryTaskStatus,
+    progress: 0,
+    activity: null,
+    error: null,
+    outputId: null,
+    startedAt: null,
+    completedAt: null,
+    attempt: 0,
+    maxAttempts: 3,
+  }));
+
+  // IDEA + BUSINESS both use BusinessAgent — keep discrete steps
+  const project: FactoryProject = {
+    id,
+    ownerId,
+    name: "Untitled Factory Project",
+    slug,
+    pipelineVersion,
+    state: "IDEA",
+    brief,
+    currentStep: "IDEA",
+    tasks,
+    outputs: [],
+    approvals: [],
+    changes: [],
+    memory: [],
+    sandbox: initialFactorySandbox(id, ownerId),
+    usage: {
+      projectId: id,
+      aiTokensEstimated: 0,
+      aiCostEurEstimated: 0,
+      aiRequestCount: 0,
+      buildAttempts: 0,
+      infrastructureMonthlyEur: 0,
+      thirdPartyMonthlyEur: 0,
+      buildCostEur: 0,
+      budgetLimitEur: null,
+      costThresholdEur: 10,
+    },
+    quality: null,
+    passport: null,
+    growthPlan: null,
+    persistenceMode: "LOCAL",
+    activityLog: [
+      {
+        id: nanoid(8),
+        at: now,
+        agent: "Orchestrator",
+        message:
+          pipelineVersion === "v2"
+            ? "Factory project created. Persistence mode set after Supabase schema check."
+            : "JIY.APP Factory project created. Sandbox architecture: DEVELOPMENT ISOLATION (not production-grade).",
+        level: "info",
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+    liveAt: null,
+  };
+
+  return saveFactoryProject(project);
+}
+
+export function appendActivity(
+  project: FactoryProject,
+  agent: string,
+  message: string,
+  level: "info" | "success" | "error" | "warning" = "info"
+) {
+  project.activityLog.unshift({
+    id: nanoid(8),
+    at: new Date().toISOString(),
+    agent,
+    message,
+    level,
+  });
+  // keep last 100
+  project.activityLog = project.activityLog.slice(0, 100);
+}
+
+export function addOutput(
+  project: FactoryProject,
+  output: Omit<FactoryOutput, "id" | "createdAt">
+): FactoryOutput {
+  // UUID required for factory_outputs.id (Supabase). Never use out_* ids.
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${nanoid(8)}-${nanoid(4)}-4${nanoid(3)}-a${nanoid(3)}-${nanoid(12)}`;
+  const full: FactoryOutput = {
+    ...output,
+    id,
+    createdAt: new Date().toISOString(),
+  };
+  project.outputs.push(full);
+  return full;
+}
+
+export function addMemory(
+  project: FactoryProject,
+  entry: Omit<FactoryMemoryEntry, "id" | "createdAt">
+) {
+  project.memory.push({
+    ...entry,
+    id: `mem_${nanoid(8)}`,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export function addChange(
+  project: FactoryProject,
+  change: Omit<FactoryChange, "id" | "createdAt">
+) {
+  project.changes.push({
+    ...change,
+    id: `chg_${nanoid(8)}`,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export function addApproval(
+  project: FactoryProject,
+  approval: Omit<FactoryApproval, "id" | "createdAt" | "resolvedAt" | "status">
+): FactoryApproval {
+  const full: FactoryApproval = {
+    ...approval,
+    id: `apr_${nanoid(8)}`,
+    status: "PENDING",
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+  };
+  project.approvals.push(full);
+  return full;
+}
+
+export function updateTask(
+  project: FactoryProject,
+  stepId: PipelineStepId,
+  patch: Partial<FactoryTask>
+) {
+  const task = project.tasks.find((t) => t.stepId === stepId);
+  if (!task) return;
+  Object.assign(task, patch);
+}
+
+export function getOutputByAgent(
+  project: FactoryProject,
+  agent: string
+): FactoryOutput | undefined {
+  return [...project.outputs].reverse().find((o) => o.agent === agent);
+}
+
+export function setQuality(project: FactoryProject, quality: FactoryQualityScore) {
+  project.quality = quality;
+}
+
+export function factoryPortfolioStats(ownerId = "demo-user") {
+  const items = listFactoryProjects(ownerId);
+  return {
+    activeBuilds: items.filter((p) =>
+      [
+        "IDEA",
+        "PLANNING",
+        "RESEARCHING",
+        "DESIGNING",
+        "BUILDING",
+        "TESTING",
+        "PREVIEW",
+        "APPROVAL_REQUIRED",
+        "READY",
+        "DEPLOYING",
+      ].includes(p.state)
+    ).length,
+    completed: items.filter((p) => p.state === "LIVE").length,
+    growing: items.filter((p) => p.state === "LIVE").length,
+    forSale: 0,
+    rented: 0,
+    revived: 0,
+    portfolioValueEur: items.reduce((s, p) => {
+      const fin = getOutputByAgent(p, "FinanceAgent");
+      const v = fin?.data?.businessValueEstimateEur;
+      return s + (typeof v === "number" ? v : 0);
+    }, 0),
+    projects: items,
+  };
+}
