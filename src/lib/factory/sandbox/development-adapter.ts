@@ -165,8 +165,8 @@ export class DevelopmentIsolationSandboxAdapter implements SandboxProvider {
     if (log) record.logs.push(log);
     else record.logs.push(`Lifecycle → ${phase}`);
     if (phase === "PREVIEW") {
-      record.previewUrl = `/build/${record.projectId}/preview`;
-      record.logs.push("SANDBOX PREVIEW ready — not production");
+      record.previewUrl = `/generated/${record.projectId}`;
+      record.logs.push("SANDBOX PREVIEW ready — durable /generated runtime");
     }
     if (phase === "FAILED") {
       record.lastError = log || "Sandbox phase failed";

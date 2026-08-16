@@ -595,7 +595,7 @@ export default function FactoryProjectPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" asChild>
-            <Link href={`/build/${id}/preview`}>Open Preview</Link>
+            <Link href={`/generated/${id}`}>Open Preview</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href={`/build/${id}/passport`}>Business Passport</Link>
@@ -948,7 +948,7 @@ export default function FactoryProjectPage() {
             <CardTitle className="flex flex-wrap items-center justify-between gap-2">
               <span>Preview — AI GENERATED STARTER</span>
               <Button size="sm" variant="secondary" asChild>
-                <Link href={`/build/${id}/preview`}>Open full preview</Link>
+                <Link href={`/generated/${id}`}>Open full preview</Link>
               </Button>
             </CardTitle>
           </CardHeader>
@@ -1054,7 +1054,7 @@ export default function FactoryProjectPage() {
               <div>
                 <p className="text-zinc-500">Preview URL</p>
                 <p className="break-all text-zinc-200">
-                  {project.sandbox.previewUrl || `/build/${id}/preview`}
+                  {project.sandbox.previewUrl || `/generated/${id}`}
                 </p>
               </div>
               <div>
@@ -1085,7 +1085,7 @@ export default function FactoryProjectPage() {
                 DEPLOY MY BUSINESS
               </Button>
               <Button size="sm" variant="outline" asChild>
-                <Link href={`/build/${id}/preview`}>Open preview</Link>
+                <Link href={`/generated/${id}`}>Open preview</Link>
               </Button>
             </div>
 
@@ -1348,7 +1348,7 @@ export default function FactoryProjectPage() {
             <CardTitle className="flex flex-wrap items-center justify-between gap-2">
               <span>Starter MVP — AI GENERATED STARTER</span>
               <Button size="sm" variant="secondary" asChild>
-                <Link href={`/build/${id}/preview`}>Open preview</Link>
+                <Link href={`/generated/${id}`}>Open preview</Link>
               </Button>
             </CardTitle>
           </CardHeader>
@@ -1397,7 +1397,7 @@ export default function FactoryProjectPage() {
               <CardTitle className="flex flex-wrap items-center justify-between gap-2">
                 <span>Landing preview</span>
                 <Button size="sm" variant="secondary" asChild>
-                  <Link href={`/build/${id}/preview`}>Open full preview</Link>
+                  <Link href={`/generated/${id}`}>Open full preview</Link>
                 </Button>
               </CardTitle>
             </CardHeader>
@@ -1456,7 +1456,7 @@ export default function FactoryProjectPage() {
             </div>
             <div className="mt-6 flex flex-wrap gap-2">
               <Button asChild>
-                <Link href={project.sandbox.productionUrl || `/build/${id}/preview`}>
+                <Link href={project.sandbox.productionUrl || `/generated/${id}`}>
                   Open business
                 </Link>
               </Button>

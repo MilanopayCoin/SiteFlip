@@ -384,7 +384,7 @@ This is a starter MVP scaffold — NOT a production-ready SaaS.
     notes: [
       "V3 mini-SaaS scaffold — frontend + API + auth + DB adapter spec",
       "Files stored as factory outputs — isolated from SITEFLIP core",
-      "Preview rendered via SITEFLIP /build/[id]/preview",
+      "Preview rendered via durable /generated/[id] runtime",
     ],
     completeness: "starter_mvp_scaffold",
     sandboxOnly: true,

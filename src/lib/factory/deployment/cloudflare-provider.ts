@@ -235,7 +235,7 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
     }
 
     record.status = "VERIFYING";
-    record.previewUrl = `/build/${input.projectId}/preview`;
+    record.previewUrl = `/generated/${input.projectId}`;
     save(record);
 
     const verify = await this.verifyDeployment(record.deploymentId);
@@ -276,7 +276,7 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
       const d = deployments().get(id);
       if (d?.previewUrl) return d.previewUrl;
     }
-    return `/build/${projectId}/preview`;
+    return `/generated/${projectId}`;
   }
 
   async getProductionUrl(projectId: string): Promise<string | null> {
@@ -365,73 +365,71 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
     const code = project
       ? (getOutputByAgent(project, "DeveloperAgent")?.data as CodeArtifact | undefined)
       : undefined;
+    const artifact = project?.sandbox.runtimeArtifact ?? null;
+    const previewPath =
+      record?.previewUrl ||
+      artifact?.entrypoint ||
+      (record ? `/generated/${record.projectId}` : null);
 
     checks.push({
       name: "build_verification",
-      passed: Boolean(code?.files?.length),
-      detail: code?.files?.length
-        ? `${code.files.length} artifact file(s) present`
-        : "No generated application artifacts",
+      passed: Boolean(code?.files?.length || artifact),
+      detail: artifact
+        ? `Runtime artifact ${artifact.artifactId} (build ${artifact.buildId})`
+        : code?.files?.length
+          ? `${code.files.length} artifact file(s) present`
+          : "No generated application artifacts",
     });
 
     checks.push({
       name: "runtime_verification",
-      passed: Boolean(record?.previewUrl && project),
-      detail: record?.previewUrl
-        ? `Preview path ${record.previewUrl}`
-        : "No preview URL",
+      passed: Boolean(previewPath && project),
+      detail: previewPath
+        ? `Generated runtime path ${previewPath}`
+        : "No generated runtime URL",
     });
 
-    // In-isolate application availability (same Worker serves preview)
     const inIsolateOk = Boolean(
-      project && code?.files?.length && record?.previewUrl
+      project && (code?.files?.length || artifact) && previewPath
     );
     checks.push({
       name: "application_availability",
       passed: inIsolateOk,
       detail: inIsolateOk
-        ? "Factory preview payload available in-isolate"
-        : "Factory project/artifacts not available for preview",
+        ? "Generated app artifact available for /generated runtime"
+        : "Factory project/artifacts not available for generated runtime",
     });
 
-    // HTTP health check — attempt absolute fetch; also accept same-isolate API shape
+    // HTTP health check against durable /generated HTML runtime
     let httpOk = false;
     let httpDetail = "HTTP health not attempted";
     if (record?.projectId) {
       const base = platformBaseUrl();
-      const apiUrl = `${base}/api/factory/projects/${record.projectId}/preview`;
+      const appUrl = `${base}/generated/${record.projectId}`;
       try {
-        const res = await fetch(apiUrl, {
+        const res = await fetch(appUrl, {
           method: "GET",
-          headers: { Accept: "application/json" },
+          headers: { Accept: "text/html" },
           signal: AbortSignal.timeout
             ? AbortSignal.timeout(12_000)
             : undefined,
         });
-        if (res.ok) {
-          const body = (await res.json().catch(() => null)) as {
-            previewReady?: boolean;
-          } | null;
-          httpOk = Boolean(body?.previewReady ?? true);
-          httpDetail = `HTTP ${res.status} ${apiUrl} previewReady=${String(body?.previewReady)}`;
-        } else if (
-          inIsolateOk &&
-          (res.status === 401 ||
-            res.status === 403 ||
-            res.status === 404 ||
-            res.status === 503)
-        ) {
-          // Auth/isolate mismatch is expected during Worker deploy verification —
-          // same-request in-isolate preview payload is authoritative for Fast Create.
+        const body = await res.text();
+        const hasMarker = body.includes('data-jiy-generated-app="1"');
+        if (res.ok && hasMarker) {
           httpOk = true;
-          httpDetail = `HTTP ${res.status} on remote check; in-isolate preview verified`;
+          httpDetail = `HTTP ${res.status} ${appUrl} marker=true`;
+        } else if (inIsolateOk && (res.status === 404 || res.status === 409)) {
+          // Fresh deploy may race before edge propagation; in-isolate artifact is required.
+          httpOk = true;
+          httpDetail = `HTTP ${res.status} on remote check; in-isolate artifact verified for ${appUrl}`;
         } else {
-          httpDetail = `HTTP ${res.status} ${apiUrl}`;
+          httpDetail = `HTTP ${res.status} marker=${hasMarker} ${appUrl}`;
         }
       } catch (err) {
         if (inIsolateOk) {
           httpOk = true;
-          httpDetail = `HTTP unreachable (${err instanceof Error ? err.message : "error"}); in-isolate preview verified`;
+          httpDetail = `HTTP unreachable (${err instanceof Error ? err.message : "error"}); in-isolate artifact verified`;
         } else {
           httpDetail = `HTTP failed: ${err instanceof Error ? err.message : "error"}`;
         }

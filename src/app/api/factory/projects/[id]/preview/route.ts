@@ -131,10 +131,10 @@ export async function GET(request: Request, ctx: Ctx) {
           project.state === "APPROVAL_REQUIRED" ||
           project.state === "PREVIEW")
     ),
-    url: `/build/${id}/preview`,
+    url: `/generated/${id}`,
     label:
       project.state === "LIVE"
-        ? "GENERATED APP LIVE (platform preview)"
+        ? "GENERATED APP LIVE"
         : "SANDBOX PREVIEW",
     sandboxPreview: true,
     isolationLabel:
@@ -143,6 +143,9 @@ export async function GET(request: Request, ctx: Ctx) {
     sandboxId: project.sandbox.sandboxId || null,
     runtimeId: project.sandbox.runtimeId || null,
     businessId: project.sandbox.businessId || project.id,
+    runtimeArtifact: project.sandbox.runtimeArtifact ?? null,
+    entrypoint:
+      project.sandbox.runtimeArtifact?.entrypoint || `/generated/${id}`,
     sandboxLifecycle: project.sandbox.lifecycle || null,
     buildStatus: (() => {
       const build = project.tasks.find((t) => t.stepId === "BUILD");

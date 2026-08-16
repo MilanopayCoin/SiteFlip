@@ -131,6 +131,12 @@ function fromDbProject(
         (sandbox.isolationLabel as string | undefined) ||
         "SANDBOX: DEVELOPMENT ISOLATION",
       isProductionGrade: Boolean(sandbox.isProductionGrade),
+      createMode:
+        (sandbox.createMode as FactoryProject["sandbox"]["createMode"]) ||
+        undefined,
+      runtimeArtifact:
+        (sandbox.runtimeArtifact as FactoryProject["sandbox"]["runtimeArtifact"]) ||
+        null,
     },
     usage: (row.usage || {
       projectId: String(row.id),

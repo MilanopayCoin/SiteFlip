@@ -126,5 +126,6 @@ export function scanGeneratedContent(content: string | null | undefined): {
 }
 
 export function previewPathFor(projectId: string): string {
-  return `/build/${projectId}/preview`;
+  // Durable generated-app runtime (same URL for PREVIEW and GENERATED APP LIVE)
+  return `/generated/${projectId}`;
 }

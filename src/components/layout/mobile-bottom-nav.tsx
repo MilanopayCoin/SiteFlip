@@ -12,9 +12,13 @@ const LAST_PROJECT_KEY = "jiy_last_factory_project_id";
 function readLastProjectId(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const fromPath = window.location.pathname.match(
+    const fromBuild = window.location.pathname.match(
       /^\/build\/([0-9a-f-]{36})/i
     )?.[1];
+    const fromGenerated = window.location.pathname.match(
+      /^\/generated\/([0-9a-f-]{36})/i
+    )?.[1];
+    const fromPath = fromBuild || fromGenerated;
     if (fromPath) {
       sessionStorage.setItem(LAST_PROJECT_KEY, fromPath);
       return fromPath;
@@ -42,7 +46,7 @@ export function MobileBottomNav() {
   }, [pathname]);
 
   const projectHref = projectId ? `/build/${projectId}` : "/build";
-  const previewHref = projectId ? `/build/${projectId}/preview` : "/build";
+  const previewHref = projectId ? `/generated/${projectId}` : "/build";
 
   const items = [
     {
@@ -68,7 +72,9 @@ export function MobileBottomNav() {
       href: previewHref,
       label: "Preview",
       icon: Eye,
-      active: Boolean(projectId) && pathname.includes("/preview"),
+      active:
+        Boolean(projectId) &&
+        (pathname.includes("/preview") || pathname.includes("/generated/")),
     },
     {
       href: "/profile",

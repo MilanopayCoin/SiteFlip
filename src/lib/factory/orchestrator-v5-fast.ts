@@ -27,7 +27,6 @@ import {
 } from "./store";
 import {
   assertSandboxBoundary,
-  previewPathFor,
   provisionProjectSandbox,
   startProjectSandbox,
   runSandboxPhase,
@@ -45,6 +44,7 @@ import type {
   ProductSpec,
 } from "./schemas";
 import { withAiRuntimeOverride } from "@/lib/ai/runtime";
+import { ensureRuntimeArtifact, generatedPathFor } from "./generated-runtime";
 
 const STATE_FOR_STEP: Partial<Record<V5PipelineStepId, FactoryProjectState>> = {
   IDEA: "IDEA",
@@ -358,8 +358,11 @@ export class BusinessFactoryOrchestratorV5Fast {
       source: result.source,
       implementationStatus: "automatically_implemented",
     });
+    const artifact = ensureRuntimeArtifact(project, { force: true });
+    project.sandbox.previewUrl = generatedPathFor(project.id);
     project.sandbox.buildLogs.push(
       `Fast Create: ${result.data.files.length} file(s)`,
+      `Runtime artifact ${artifact.artifactId}`,
       "Cloudflare Free safe path — heuristic agents"
     );
     this.finish("DeveloperAgent", "BUILD", out.id, true);
@@ -369,6 +372,7 @@ export class BusinessFactoryOrchestratorV5Fast {
     this.begin("DeploymentAgent", "PREVIEW");
     const project = this.project;
     await runSandboxPhase(project, "PREVIEW", "Fast Create PREVIEW");
+    const artifact = ensureRuntimeArtifact(project);
     const result = await runDeploymentAgent(project.id, true);
     const out = addOutput(project, {
       projectId: project.id,
@@ -376,17 +380,20 @@ export class BusinessFactoryOrchestratorV5Fast {
       schemaName: "DeploymentPlanSchema",
       data: {
         ...(result.data as unknown as Record<string, unknown>),
-        previewUrl: previewPathFor(project.id),
-        label: "FAST CREATE PREVIEW",
+        previewUrl: generatedPathFor(project.id),
+        entrypoint: artifact.entrypoint,
+        artifactId: artifact.artifactId,
+        buildId: artifact.buildId,
+        label: "FAST CREATE PREVIEW — durable /generated runtime",
       },
       labeledAssumptions: [
         ...(result.assumptions || []),
-        "Platform preview — not production isolation",
+        "Platform generated-app runtime — not production isolation",
       ],
       source: result.source,
       implementationStatus: "ai_generated",
     });
-    project.sandbox.previewUrl = previewPathFor(project.id);
+    project.sandbox.previewUrl = generatedPathFor(project.id);
     project.sandbox.deploymentStatus = "READY";
     this.finish("DeploymentAgent", "PREVIEW", out.id, true);
   }
