@@ -19,6 +19,7 @@ const NAV = [
   { href: "/buy", label: "Buy" },
   { href: "/rent", label: "Rent" },
   { href: "/build", label: "Build" },
+  { href: "/trafik-studio", label: "Trafik" },
   { href: "/revive", label: "Revive" },
   { href: "/sell", label: "Sell" },
 ];
@@ -180,6 +181,7 @@ export function SiteFooter() {
           <h4 className="text-sm font-semibold text-zinc-300">Platform</h4>
           <ul className="mt-3 space-y-2 text-sm text-zinc-500">
             <li><Link href="/build" className="hover:text-zinc-300">Build with AI</Link></li>
+            <li><Link href="/trafik-studio" className="hover:text-zinc-300">Trafik Studio</Link></li>
             <li><Link href="/profile" className="hover:text-zinc-300">Profile</Link></li>
             <li><Link href="/dashboard" className="hover:text-zinc-300">Dashboard</Link></li>
             <li><Link href="/admin" className="hover:text-zinc-300">Admin</Link></li>

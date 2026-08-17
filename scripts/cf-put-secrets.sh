@@ -53,6 +53,8 @@ put_secret GROQ_MODEL
 put_secret AI_PROVIDER
 put_secret MOLLIE_API_KEY
 put_secret MOLLIE_WEBHOOK_URL
+put_secret FAL_KEY
+put_secret FAL_MODEL
 
 # If only legacy name is present in env, also restore canonical binding
 if [[ -z "${MOLLIE_API_KEY:-}" && -n "${Mollie_api:-}" ]]; then
