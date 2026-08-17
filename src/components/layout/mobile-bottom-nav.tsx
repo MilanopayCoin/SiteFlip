@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Factory, FolderKanban, Eye, UserRound } from "lucide-react";
+import { Factory, FolderKanban, CarFront, Eye, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listCachedFactoryProjects } from "@/lib/factory/client-cache";
 
@@ -32,7 +32,8 @@ function readLastProjectId(): string | null {
 }
 
 /**
- * Mobile-only 4-slot bottom bar: Factory · Proje · Preview · Hesap
+ * App bottom bar: Factory · Proje · Trafik · Preview · Hesap
+ * Visible on all viewports so Trafik Studio is one tap away.
  */
 export function MobileBottomNav() {
   const pathname = usePathname();
@@ -69,6 +70,12 @@ export function MobileBottomNav() {
         !pathname.includes("/preview"),
     },
     {
+      href: "/trafik-studio",
+      label: "Trafik",
+      icon: CarFront,
+      active: pathname.startsWith("/trafik-studio"),
+    },
+    {
       href: previewHref,
       label: "Preview",
       icon: Eye,
@@ -88,14 +95,13 @@ export function MobileBottomNav() {
     },
   ] as const;
 
-  // Hide on auth-heavy full-bleed pages? Keep visible — Hesap still useful.
   return (
     <nav
-      aria-label="Mobile primary"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#07070c]/92 backdrop-blur-xl md:hidden"
+      aria-label="Primary"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#07070c]/92 backdrop-blur-xl"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <ul className="mx-auto grid h-14 max-w-lg grid-cols-4">
+      <ul className="mx-auto grid h-14 max-w-lg grid-cols-5">
         {items.map((item) => {
           const Icon = item.icon;
           return (
