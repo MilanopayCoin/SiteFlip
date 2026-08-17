@@ -46,15 +46,13 @@ interface Portfolio {
   note?: string;
 }
 
-/** Default Free-safe path — no TEST/SECURITY/GROWTH in the create Worker call */
+/** User-facing Fast Create path — BUILD/SANDBOX stay internal. */
 const PIPELINE_PREVIEW_V5_FAST = [
   "IDEA",
-  "AI GENERATE",
-  "SANDBOX",
-  "BUILD",
+  "GENERATE",
   "PREVIEW",
   "APPROVAL",
-  "GENERATED APP LIVE",
+  "LIVE URL",
 ];
 
 const PIPELINE_PREVIEW_V5 = [
@@ -117,6 +115,7 @@ export default function BuildFactoryPage() {
   const [pipelineMode, setPipelineMode] = useState<"v5" | "v3" | "v2">("v5");
   /** Fast Create is the default on Cloudflare Free (avoids Error 1102). */
   const [createMode, setCreateMode] = useState<"fast" | "full">("fast");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [costNote, setCostNote] = useState<string | null>(null);
 
   const persistenceReady = Boolean(portfolio?.productionPersistence);
@@ -292,7 +291,7 @@ export default function BuildFactoryPage() {
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-400">
             {pipelineMode === "v5" && createMode === "fast"
-              ? "Fast Create (default): Idea → Generate → Build → Preview → Approval → Live. Built for mobile and Cloudflare Free — skips heavy Test/Security loops that can hit Worker limits."
+              ? "One sentence in. A working app URL out. Idea → Generate → Preview → Approval → Live. BUILD stays internal — you open the app, not a stuck build step."
               : pipelineMode === "v5"
                 ? "Full V5: Idea → Generate → Sandbox → Build → Test → Security → Preview → Approval → Live, then the production roadmap (isolation → separate runtime → domain → Mollie → growth). May exceed Free Worker limits."
                 : "Describe an idea in natural language. Approve preview before production deploy, domain, or Mollie."}
@@ -301,57 +300,73 @@ export default function BuildFactoryPage() {
         <Badge variant="outline" className="gap-1">
           <Factory className="h-3.5 w-3.5" />{" "}
           {pipelineMode === "v5" && createMode === "fast"
-            ? "Factory V5 Fast"
+            ? "Fast Create"
             : "Factory V5"}
         </Badge>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4">
         <Button
           type="button"
           size="sm"
-          variant={pipelineMode === "v5" ? "default" : "outline"}
-          onClick={() => setPipelineMode("v5")}
+          variant="ghost"
+          className="text-zinc-400"
+          onClick={() => setShowAdvanced((v) => !v)}
         >
-          V5 — Idea → Live
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={pipelineMode === "v3" ? "default" : "outline"}
-          onClick={() => setPipelineMode("v3")}
-        >
-          V3/V4 — Mini-SaaS
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={pipelineMode === "v2" ? "default" : "outline"}
-          onClick={() => setPipelineMode("v2")}
-        >
-          V2 — Landing page
+          {showAdvanced ? "Hide advanced" : "Advanced (V2 / V3 / Full V5)"}
         </Button>
       </div>
 
-      {pipelineMode === "v5" && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={createMode === "fast" ? "default" : "outline"}
-            onClick={() => setCreateMode("fast")}
-          >
-            Fast Create (recommended)
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={createMode === "full" ? "default" : "outline"}
-            onClick={() => setCreateMode("full")}
-          >
-            Full V5 (may hit Free limits)
-          </Button>
-        </div>
+      {showAdvanced && (
+        <>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={pipelineMode === "v5" ? "default" : "outline"}
+              onClick={() => setPipelineMode("v5")}
+            >
+              V5 — Idea → Live
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={pipelineMode === "v3" ? "default" : "outline"}
+              onClick={() => setPipelineMode("v3")}
+            >
+              V3/V4 — Mini-SaaS
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={pipelineMode === "v2" ? "default" : "outline"}
+              onClick={() => setPipelineMode("v2")}
+            >
+              V2 — Landing page
+            </Button>
+          </div>
+
+          {pipelineMode === "v5" && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={createMode === "fast" ? "default" : "outline"}
+                onClick={() => setCreateMode("fast")}
+              >
+                Fast Create (recommended)
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={createMode === "full" ? "default" : "outline"}
+                onClick={() => setCreateMode("full")}
+              >
+                Full V5 (may hit Free limits)
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       <motion.div
@@ -410,7 +425,7 @@ export default function BuildFactoryPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-violet-400" />
-              What do you want to build?
+              Describe the app in one sentence
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -445,10 +460,14 @@ export default function BuildFactoryPage() {
                 />
               </div>
               <p className="text-xs text-zinc-500">
-                Optional details improve the blueprint. Idea alone is enough to start.
-                Profile preferences never override your explicit idea.
+                Idea alone is enough. Optional details improve the blueprint —
+                they never override your sentence.
               </p>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <details className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <summary className="cursor-pointer text-sm text-zinc-300">
+                  Optional details
+                </summary>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <Field
                   label="Budget (optional)"
                   name="budget"
@@ -555,6 +574,7 @@ export default function BuildFactoryPage() {
                   </select>
                 </div>
               </div>
+              </details>
 
               <div
                 className={`rounded-xl border p-3 text-xs ${
@@ -585,11 +605,10 @@ export default function BuildFactoryPage() {
                   </>
                 ) : persistenceReady ? (
                   <>
-                    Factory V5 persists projects to Supabase when you are signed
-                    in. Default is Fast Create (Idea → Generate → Build →
-                    Preview → Approval → Live) so mobile create stays within
-                    Cloudflare Free limits. Production isolation, custom domain,
-                    and Mollie stay approval-gated.
+                    Signed in — projects persist. Fast Create is Idea →
+                    Generate → Preview → Approval → Live URL. BUILD runs in
+                    the background. Production isolation, custom domain, and
+                    Mollie stay approval-gated.
                   </>
                 ) : (
                   <>
@@ -619,7 +638,7 @@ export default function BuildFactoryPage() {
                       ? "Fast Create running…"
                       : "Building your app… keep this screen open"
                     : pipelineMode === "v5" && createMode === "fast"
-                      ? "Start Fast Create"
+                      ? "Create app"
                       : "Start Business Factory"}
                   <ArrowRight className="h-4 w-4" />
                 </Button>

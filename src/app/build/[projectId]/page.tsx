@@ -594,8 +594,8 @@ export default function FactoryProjectPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" asChild>
-            <Link href={`/generated/${id}`}>Open Preview</Link>
+          <Button size="sm" asChild>
+            <Link href={`/generated/${id}`}>Open app</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href={`/build/${id}/passport`}>Business Passport</Link>
