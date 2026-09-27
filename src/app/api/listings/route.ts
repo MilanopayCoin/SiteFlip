@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { memoryStore } from "@/lib/data/memory-store";
 import { resolveRequestUser, jsonError, jsonOk } from "@/lib/api/request-user";
 import { fetchMarketplaceListings } from "@/lib/data/marketplace-data";
+import { writeAuditLog } from "@/lib/marketplace/audit";
 import type { MarketplaceFilters } from "@/types/database";
 
 const createSchema = z.object({
@@ -83,7 +84,8 @@ export async function POST(request: Request) {
     });
   }
   const input = parsed.data;
-  const status = input.publish ? "ACTIVE" : "DRAFT";
+  // Publish submits for moderation (PENDING). published_at only when ACTIVE.
+  const status = input.publish ? "PENDING" : "DRAFT";
 
   if (user.mode === "supabase") {
     const supabase = await createClient();
@@ -111,20 +113,21 @@ export async function POST(request: Request) {
         minimum_rental_months: input.minimum_rental_months ?? null,
         currency: input.currency,
         status,
-        published_at: status === "ACTIVE" ? new Date().toISOString() : null,
+        published_at: null,
         is_demo: false,
       })
       .select(`*, business:businesses(*)`)
       .single();
     if (error) return jsonError(error.message, 500);
 
-    if (status === "ACTIVE") {
-      await supabase!.from("business_events").insert({
-        business_id: input.business_id,
-        event_type: "listed",
-        title: "Listed on JIY.APP",
-        description: `${input.listing_type} listing published`,
-        created_by: user.id,
+    if (status === "PENDING") {
+      await writeAuditLog({
+        actorId: user.id,
+        action: "listing_submitted",
+        targetType: "listing",
+        targetId: data.id,
+        after: { status: "PENDING", listing_type: input.listing_type },
+        reason: "Submitted for moderation",
       });
     }
 

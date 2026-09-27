@@ -68,15 +68,13 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "MOLLIE_API_KEY",
       "Mollie_api", // legacy Worker secret name
       "MOLLIE_WEBHOOK_URL",
+      "MOLLIE_ALLOW_LIVE",
       "GROQ_API_KEY",
       "AI_PROVIDER",
       "AI_FALLBACK_PROVIDER",
       "OPENAI_API_KEY",
       "GEMINI_API_KEY",
       "GROQ_MODEL",
-      "FAL_KEY",
-      "EXPO_PUBLIC_FAL_KEY",
-      "FAL_MODEL",
     ];
 
     for (const key of keys) {

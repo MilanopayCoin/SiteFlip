@@ -4,12 +4,19 @@ import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
+  canCreateMolliePayments,
   createMolliePayment,
   isMollieConfigured,
+  isMollieLiveMode,
+  isMollieLivePaymentsAllowed,
   isMollieTestMode,
+  molliePaymentBlockReason,
 } from "@/lib/payments/mollie";
 import { memoryStore } from "@/lib/data/memory-store";
 import { nanoid } from "nanoid";
+import {
+  calculateCommission,
+} from "@/lib/marketplace/commission";
 
 export const runtime = "nodejs";
 
@@ -31,17 +38,23 @@ const createSchema = z.object({
  * Create a Mollie Checkout payment for a JIY.APP transaction.
  * Mollie is a payment processor — NOT escrow.
  * Paid status does NOT transfer business ownership.
+ * Commission is always computed server-side from amount.
  */
 export async function POST(request: Request) {
   await ensureCloudflareEnv();
   const user = await resolveRequestUser(request);
   if (!user) return jsonError("Authentication required", 401);
 
-  if (!isMollieConfigured()) {
-    return jsonError(
-      "Mollie is not configured on this Worker. Add MOLLIE_API_KEY as an encrypted secret.",
-      503
-    );
+  const blockReason = molliePaymentBlockReason();
+  if (blockReason) {
+    return jsonError(blockReason, isMollieConfigured() ? 403 : 503, {
+      testMode: isMollieConfigured() ? isMollieTestMode() : null,
+      liveMode: isMollieConfigured() ? isMollieLiveMode() : null,
+      liveBlocked:
+        isMollieConfigured() &&
+        isMollieLiveMode() &&
+        !isMollieLivePaymentsAllowed(),
+    });
   }
 
   const parsed = createSchema.safeParse(await request.json().catch(() => ({})));
@@ -52,6 +65,17 @@ export async function POST(request: Request) {
   }
 
   const input = parsed.data;
+  // Ignore any client-supplied fee fields — compute server-side only
+  let commission;
+  try {
+    commission = calculateCommission(input.amount, input.currency);
+  } catch (err) {
+    return jsonError(
+      err instanceof Error ? err.message : "Invalid amount for commission",
+      400
+    );
+  }
+
   const appUrl = (
     process.env.NEXT_PUBLIC_APP_URL ||
     "https://siteflip.miqomilano.workers.dev"
@@ -59,14 +83,20 @@ export async function POST(request: Request) {
   const webhookUrl =
     process.env.MOLLIE_WEBHOOK_URL ||
     `${appUrl}/api/payments/mollie/webhook`;
-  const redirectUrl =
-    input.redirectUrl || `${appUrl}/dashboard?payment=return`;
   const idempotencyKey = `mollie_${user.id}_${nanoid(12)}`;
 
   let transactionId = input.transactionId ?? null;
   let businessId = input.businessId ?? null;
   let sellerId = input.sellerId ?? null;
   let listingId = input.listingId ?? null;
+
+  const commissionFields = {
+    platform_fee: commission.platformFee,
+    payment_fee: commission.paymentFee,
+    seller_amount: commission.sellerAmount,
+    commission_rate: commission.commissionRate,
+    funds_state: "PAYMENT_PENDING" as const,
+  };
 
   if (user.mode === "supabase" && isSupabaseConfigured()) {
     const supabase = await createClient();
@@ -93,6 +123,16 @@ export async function POST(request: Request) {
           400
         );
       }
+      // Recompute commission from request amount (authoritative for this payment)
+      await supabase
+        .from("transactions")
+        .update({
+          amount: input.amount,
+          currency: input.currency,
+          ...commissionFields,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", transactionId);
     } else {
       if (!businessId || !sellerId) {
         return jsonError(
@@ -117,6 +157,7 @@ export async function POST(request: Request) {
           payment_provider: "mollie",
           notes:
             "Mollie payment initiated. Not escrow. Ownership does not transfer on payment alone.",
+          ...commissionFields,
         })
         .select("*")
         .single();
@@ -130,6 +171,9 @@ export async function POST(request: Request) {
         note: "Payment initiated via Mollie (not escrow)",
       });
     }
+
+    const redirectUrl =
+      input.redirectUrl || `${appUrl}/deals/${transactionId}`;
 
     let payment;
     try {
@@ -170,7 +214,6 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     });
     if (payErr) {
-      // Transaction + payment_ref still authoritative; surface payment row failure honestly
       console.error("payments insert failed", payErr.message);
     }
     await supabase
@@ -179,6 +222,7 @@ export async function POST(request: Request) {
         status: "PAYMENT_PENDING",
         payment_provider: "mollie",
         payment_ref: payment.id,
+        ...commissionFields,
         updated_at: new Date().toISOString(),
       })
       .eq("id", transactionId);
@@ -191,6 +235,13 @@ export async function POST(request: Request) {
       testMode: isMollieTestMode(),
       isEscrow: false,
       idempotencyKey,
+      commission: {
+        platformFee: commission.platformFee,
+        paymentFee: commission.paymentFee,
+        sellerAmount: commission.sellerAmount,
+        commissionRate: commission.commissionRate,
+      },
+      fundsState: commissionFields.funds_state,
       notice:
         "Mollie processes payment only. This is not escrow. Ownership does not transfer automatically when paid.",
     });
@@ -203,7 +254,7 @@ export async function POST(request: Request) {
     return jsonError(
       status.productionPersistence
         ? "Supabase payment path required — DEMO fallback disabled"
-        : "Supabase session required for payments. Schema may not be applied yet (migrations 001–004).",
+        : "Supabase session required for payments. Schema may not be applied yet (migrations 001–006).",
       503,
       {
         schemaReady: status.schemaReady,
@@ -228,6 +279,8 @@ export async function POST(request: Request) {
       currency: input.currency,
     });
   memoryStore.updateTransaction(tx.id, "PAYMENT_PENDING");
+
+  const redirectUrl = input.redirectUrl || `${appUrl}/deals/${tx.id}`;
 
   let payment;
   try {
@@ -256,6 +309,12 @@ export async function POST(request: Request) {
     testMode: isMollieTestMode(),
     mode: "demo",
     isEscrow: false,
+    commission: {
+      platformFee: commission.platformFee,
+      paymentFee: commission.paymentFee,
+      sellerAmount: commission.sellerAmount,
+      commissionRate: commission.commissionRate,
+    },
     notice:
       "Mollie payment created. Not escrow. DEMO persistence until Supabase schema is ready.",
   });
@@ -263,9 +322,17 @@ export async function POST(request: Request) {
 
 export async function GET() {
   await ensureCloudflareEnv();
+  const liveBlocked =
+    isMollieConfigured() &&
+    isMollieLiveMode() &&
+    !isMollieLivePaymentsAllowed();
   return jsonOk({
     configured: isMollieConfigured(),
     testMode: isMollieConfigured() ? isMollieTestMode() : null,
+    liveMode: isMollieConfigured() ? isMollieLiveMode() : null,
+    liveBlocked,
+    paymentsEnabled: canCreateMolliePayments(),
+    allowLive: isMollieLivePaymentsAllowed(),
     isEscrow: false,
     capabilities: {
       createPayment: true,

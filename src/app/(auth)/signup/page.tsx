@@ -14,7 +14,7 @@ import {
 import { createBrowserClient } from "@/lib/supabase/browser";
 
 function safeNextPath(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/build";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/marketplace";
   return raw;
 }
 
@@ -160,7 +160,7 @@ function SignupForm() {
           Already have an account?{" "}
           <Link
             href={`/login?next=${encodeURIComponent(nextPath)}`}
-            className="text-violet-400 hover:underline"
+            className="text-zinc-700 hover:underline"
           >
             Sign in
           </Link>

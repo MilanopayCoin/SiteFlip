@@ -16,8 +16,8 @@ export function EmptyState({
   return (
     <Card className="mt-6">
       <CardContent className="flex flex-col items-center py-12 text-center">
-        <p className="text-lg font-medium text-white">{title}</p>
-        <p className="mt-2 max-w-md text-sm text-zinc-400">{description}</p>
+        <p className="text-lg font-medium text-zinc-900">{title}</p>
+        <p className="mt-2 max-w-md text-sm text-zinc-500">{description}</p>
         {actionHref && actionLabel && (
           <Button className="mt-6" asChild>
             <Link href={actionHref}>{actionLabel}</Link>

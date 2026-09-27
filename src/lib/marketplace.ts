@@ -66,8 +66,8 @@ export function filterListings(
     );
   }
   if (filters.verifiedOnly) {
-    results = results.filter(
-      (l) => (l.verifications?.length ?? 0) > 0
+    results = results.filter((l) =>
+      (l.verifications ?? []).some((v) => v.status === "VERIFIED")
     );
   }
   if (filters.search) {

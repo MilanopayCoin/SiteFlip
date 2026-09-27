@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Listing } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 
 export function ListingActions({ listing }: { listing: Listing }) {
+  const router = useRouter();
   const [panel, setPanel] = useState<"none" | "offer" | "message" | "rent">(
     "none"
   );
@@ -17,8 +19,66 @@ export function ListingActions({ listing }: { listing: Listing }) {
   const isRent = ["RENT", "RENT_TO_OWN"].includes(listing.listing_type);
   const isRevive = listing.listing_type === "REVIVE";
   const isBuy = ["BUY", "SELL"].includes(listing.listing_type);
+  const canBuyNow =
+    (isBuy || isRevive) &&
+    listing.price != null &&
+    Number(listing.price) > 0;
   const canRent =
     isRent || (!!listing.rental_price_monthly && !isRevive);
+
+  async function buyNow() {
+    setLoading(true);
+    setStatus(null);
+    try {
+      const dealRes = await fetch("/api/deals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          listingId: listing.id,
+          type: isRevive ? "REVIVE" : "BUY",
+        }),
+      });
+      const dealData = await dealRes.json();
+      if (!dealRes.ok) throw new Error(dealData.error || "Failed to create deal");
+
+      const dealId = dealData.deal?.id as string | undefined;
+      if (!dealId) throw new Error("Deal created without id");
+
+      const payRes = await fetch("/api/payments/mollie/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactionId: dealId,
+          amount: Number(listing.price),
+          currency: listing.currency || "EUR",
+          type: isRevive ? "REVIVE_ACQUISITION" : "BUY",
+          listingId: listing.id,
+          businessId: listing.business_id,
+          sellerId: listing.seller_id,
+        }),
+      });
+      const payData = await payRes.json();
+      if (!payRes.ok) {
+        const hint =
+          payData.liveBlocked === true
+            ? "Live Mollie key blocked — use test_ key or MOLLIE_ALLOW_LIVE on Worker."
+            : payData.error || "Payment init failed";
+        setStatus(`${hint} Opening deal room…`);
+        router.push(`/deals/${dealId}`);
+        return;
+      }
+
+      if (payData.checkoutUrl) {
+        window.location.href = payData.checkoutUrl;
+        return;
+      }
+      router.push(`/deals/${dealId}`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Buy failed");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function submitOffer(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -134,22 +194,14 @@ export function ListingActions({ listing }: { listing: Listing }) {
 
   return (
     <div className="space-y-2">
-      {isBuy && (
+      {canBuyNow && (
         <Button
           className="w-full"
           size="lg"
-          onClick={() => setPanel(panel === "offer" ? "none" : "offer")}
+          disabled={loading}
+          onClick={() => void buyNow()}
         >
-          Buy Now / Make Offer
-        </Button>
-      )}
-      {isRevive && (
-        <Button
-          className="w-full"
-          size="lg"
-          onClick={() => setPanel(panel === "offer" ? "none" : "offer")}
-        >
-          Revive — Make Offer
+          {loading ? "Starting…" : isRevive ? "Revive Now" : "Buy Now"}
         </Button>
       )}
       {isRent && (
@@ -164,7 +216,8 @@ export function ListingActions({ listing }: { listing: Listing }) {
       {!isRent && (
         <Button
           className="w-full"
-          variant="secondary"
+          variant={canBuyNow ? "secondary" : "default"}
+          size={canBuyNow ? "default" : "lg"}
           onClick={() => setPanel(panel === "offer" ? "none" : "offer")}
         >
           Make Offer

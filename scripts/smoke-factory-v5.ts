@@ -23,6 +23,7 @@ if (fs.existsSync(envPath)) {
 }
 
 async function main() {
+  process.env.JIY_PREVIEW_VERIFY = "inprocess";
   console.log("BRAND", BRAND.fullName, BRAND.url);
   console.log("V5 pipeline + post-live smoke");
   console.log(
