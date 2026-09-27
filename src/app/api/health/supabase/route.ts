@@ -108,7 +108,7 @@ export async function GET() {
     marketplaceCoreReady,
     marketplaceCoreTables,
     factoryPersistence,
-    workerPostgresTcp: "on_demand_authorized_apply",
+    workerPostgresTcp: "disabled_use_external_db_migrate",
     runtimeDatabaseAccess: "supabase_http_postgrest",
     schema: status.tables,
     urlHost: new URL(publicEnv.url).host,

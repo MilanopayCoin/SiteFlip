@@ -59,8 +59,11 @@ export function ListingActions({ listing }: { listing: Listing }) {
       });
       const payData = await payRes.json();
       if (!payRes.ok) {
-        // Deal exists — send user to deal room even if payment init failed
-        setStatus(payData.error || "Payment init failed — opening deal room");
+        const hint =
+          payData.liveBlocked === true
+            ? "Live Mollie key blocked — use test_ key or MOLLIE_ALLOW_LIVE on Worker."
+            : payData.error || "Payment init failed";
+        setStatus(`${hint} Opening deal room…`);
         router.push(`/deals/${dealId}`);
         return;
       }

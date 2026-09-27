@@ -13,7 +13,9 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy && npm run cf:secrets || true",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "cf:secrets": "bash scripts/cf-put-secrets.sh",
-    "db:migrate": "node scripts/apply-migrations.cjs"
+    "db:migrate": "node scripts/apply-migrations.cjs",
+    "smoke:health": "tsx scripts/smoke-marketplace-health.ts",
+    "smoke:mollie": "tsx scripts/smoke-mollie-config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",
