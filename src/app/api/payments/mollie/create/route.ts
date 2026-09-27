@@ -4,9 +4,13 @@ import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
+  canCreateMolliePayments,
   createMolliePayment,
   isMollieConfigured,
+  isMollieLiveMode,
+  isMollieLivePaymentsAllowed,
   isMollieTestMode,
+  molliePaymentBlockReason,
 } from "@/lib/payments/mollie";
 import { memoryStore } from "@/lib/data/memory-store";
 import { nanoid } from "nanoid";
@@ -41,11 +45,16 @@ export async function POST(request: Request) {
   const user = await resolveRequestUser(request);
   if (!user) return jsonError("Authentication required", 401);
 
-  if (!isMollieConfigured()) {
-    return jsonError(
-      "Mollie is not configured on this Worker. Add MOLLIE_API_KEY as an encrypted secret.",
-      503
-    );
+  const blockReason = molliePaymentBlockReason();
+  if (blockReason) {
+    return jsonError(blockReason, isMollieConfigured() ? 403 : 503, {
+      testMode: isMollieConfigured() ? isMollieTestMode() : null,
+      liveMode: isMollieConfigured() ? isMollieLiveMode() : null,
+      liveBlocked:
+        isMollieConfigured() &&
+        isMollieLiveMode() &&
+        !isMollieLivePaymentsAllowed(),
+    });
   }
 
   const parsed = createSchema.safeParse(await request.json().catch(() => ({})));
@@ -313,9 +322,17 @@ export async function POST(request: Request) {
 
 export async function GET() {
   await ensureCloudflareEnv();
+  const liveBlocked =
+    isMollieConfigured() &&
+    isMollieLiveMode() &&
+    !isMollieLivePaymentsAllowed();
   return jsonOk({
     configured: isMollieConfigured(),
     testMode: isMollieConfigured() ? isMollieTestMode() : null,
+    liveMode: isMollieConfigured() ? isMollieLiveMode() : null,
+    liveBlocked,
+    paymentsEnabled: canCreateMolliePayments(),
+    allowLive: isMollieLivePaymentsAllowed(),
     isEscrow: false,
     capabilities: {
       createPayment: true,
