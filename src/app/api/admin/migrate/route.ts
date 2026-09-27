@@ -5,16 +5,22 @@ import {
   invalidateSchemaStatusCache,
   REQUIRED_PERSISTENCE_TABLES,
 } from "@/lib/supabase/schema-ready";
+import {
+  MIGRATION_FILES,
+  MARKETPLACE_CORE_TABLES,
+  applyMigrationsFromUrl,
+} from "@/lib/supabase/run-migrations";
+import { EMBEDDED_MIGRATION_SQL } from "@/lib/supabase/embedded-migrations";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 /**
- * Migration status / guidance only.
+ * Migration status + authorized apply.
  *
- * IMPORTANT (Cloudflare Free):
- * Do NOT open PostgreSQL TCP/TLS from the Worker.
- * Apply SQL with `npm run db:migrate` (or Supabase CLI) outside the Worker,
- * using Session pooler SUPABASE_DB_URL in the migration environment.
+ * Prefer external `npm run db:migrate` (Session pooler).
+ * Worker apply is available when SITEFLIP_ALLOW_MIGRATE=1 and token matches;
+ * it uses embedded SQL + SUPABASE_DB_URL (may fail on plans that block TCP).
  */
 function authorized(request: Request): boolean {
   const allow = process.env.SITEFLIP_ALLOW_MIGRATE === "1";
@@ -25,23 +31,55 @@ function authorized(request: Request): boolean {
   return Boolean(header && header === token);
 }
 
-const MIGRATION_FILES = [
-  "001_initial_schema.sql",
-  "002_business_factory.sql",
-  "003_mvp_production.sql",
-  "004_mollie_payments.sql",
-  "005_fix_profiles_rls_recursion.sql",
-  "006_marketplace_core.sql",
-] as const;
+async function probeMarketplaceCore(): Promise<{
+  tables: Record<string, boolean>;
+  columns: Record<string, Record<string, boolean>>;
+  ready: boolean;
+}> {
+  const service = await createServiceClient();
+  const tables: Record<string, boolean> = {};
+  const columns: Record<string, Record<string, boolean>> = {
+    listings: {},
+    transactions: {},
+  };
+
+  if (!service) {
+    return { tables, columns, ready: false };
+  }
+
+  for (const t of MARKETPLACE_CORE_TABLES) {
+    const { error } = await service.from(t).select("*").limit(0);
+    tables[t] = !error;
+  }
+
+  const listingCols = ["transfer_readiness", "moderation_note"] as const;
+  for (const col of listingCols) {
+    const { error } = await service.from("listings").select(col).limit(0);
+    columns.listings[col] = !error;
+  }
+  const txCols = ["funds_state", "platform_fee", "commission_rate"] as const;
+  for (const col of txCols) {
+    const { error } = await service.from("transactions").select(col).limit(0);
+    columns.transactions[col] = !error;
+  }
+
+  const ready =
+    MARKETPLACE_CORE_TABLES.every((t) => tables[t]) &&
+    listingCols.every((c) => columns.listings[c]) &&
+    txCols.every((c) => columns.transactions[c]);
+
+  return { tables, columns, ready };
+}
 
 async function statusPayload() {
   invalidateSchemaStatusCache();
   const schema = await getSchemaStatus(true);
   const presence = await getDbSecretPresence();
+  const marketplaceCore = await probeMarketplaceCore();
   return {
     ok: schema.schemaReady,
     action: "status",
-    workerPostgresTcp: "disabled",
+    workerPostgresTcp: "on_demand_authorized_apply",
     runtimeDatabaseAccess: "supabase_http_postgrest",
     migrationFiles: MIGRATION_FILES,
     requiredTables: REQUIRED_PERSISTENCE_TABLES,
@@ -49,15 +87,15 @@ async function statusPayload() {
     productionPersistence: schema.productionPersistence,
     authReachable: schema.authReachable,
     tables: schema.tables,
+    marketplaceCore,
     dbSecretPresence: {
-      // Never include values — presence only (for ops debugging)
       supabaseDbUrlConfigured: presence.supabaseDbUrl.present,
       supabaseDbConfigured: presence.supabaseDb.present,
-      note: "SUPABASE_DB_URL is for external migration tooling only — Worker runtime must not open Postgres TCP",
+      note: "SUPABASE_DB_URL preferred via Session pooler for external npm run db:migrate",
     },
     howToMigrate: {
       command: "npm run db:migrate",
-      requires: "SUPABASE_DB_URL (Session pooler) in migration/CI/agent env — not Worker runtime",
+      requires: "SUPABASE_DB_URL (Session pooler) in migration/CI/agent env — or authorized POST action=apply",
       files: MIGRATION_FILES,
       order: "001 → 002 → 003 → 004 → 005 → 006",
     },
@@ -78,16 +116,73 @@ export async function POST(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // Explicitly refuse Worker-side SQL apply (Free plan TLS/subrequest limits).
-  const status = await statusPayload();
+
+  const body = await request.json().catch(() => ({}));
+  const action = String((body as { action?: string }).action || "status");
+
+  if (action === "status") {
+    return NextResponse.json(await statusPayload());
+  }
+
+  if (action === "apply") {
+    const dbUrl =
+      process.env.SUPABASE_DB_URL?.trim() ||
+      process.env.SUPABASE_DB?.trim() ||
+      process.env.DATABASE_URL?.trim() ||
+      "";
+    if (!dbUrl) {
+      return NextResponse.json(
+        {
+          ...(await statusPayload()),
+          action: "apply",
+          applied: false,
+          error: "SUPABASE_DB_URL not configured on Worker",
+        },
+        { status: 503 }
+      );
+    }
+
+    const only006 = Boolean((body as { only006?: boolean }).only006);
+    const files = only006
+      ? (["006_marketplace_core.sql"] as const)
+      : MIGRATION_FILES;
+
+    try {
+      const result = await applyMigrationsFromUrl(dbUrl, {
+        files,
+        sqlContents: EMBEDDED_MIGRATION_SQL,
+      });
+      invalidateSchemaStatusCache();
+      const status = await statusPayload();
+      return NextResponse.json(
+        {
+          ...status,
+          action: "apply",
+          applied: result.ok,
+          results: result.results,
+          applyMarketplaceCore: result.marketplaceCore,
+          error: result.error || null,
+        },
+        { status: result.ok ? 200 : 500 }
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "apply failed";
+      // Never include connection string in error responses
+      const safe = message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted]");
+      return NextResponse.json(
+        {
+          ...(await statusPayload()),
+          action: "apply",
+          applied: false,
+          error: safe,
+        },
+        { status: 500 }
+      );
+    }
+  }
+
   return NextResponse.json(
-    {
-      ...status,
-      action: "migrate",
-      applied: false,
-      error:
-        "Worker PostgreSQL TCP migrations are disabled. Run `npm run db:migrate` outside the Worker with Session pooler SUPABASE_DB_URL.",
-    },
-    { status: 501 }
+    { error: "Unknown action. Use status or apply." },
+    { status: 400 }
   );
 }
