@@ -2,94 +2,50 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Factory, FolderKanban, Eye, UserRound } from "lucide-react";
+import { Handshake, Store, Tag, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { listCachedFactoryProjects } from "@/lib/factory/client-cache";
-
-const LAST_PROJECT_KEY = "jiy_last_factory_project_id";
-
-function readLastProjectId(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const fromPath = window.location.pathname.match(
-      /^\/(?:build|preview)\/([0-9a-f-]{36})/i
-    )?.[1];
-    if (fromPath) {
-      sessionStorage.setItem(LAST_PROJECT_KEY, fromPath);
-      return fromPath;
-    }
-    const stored = sessionStorage.getItem(LAST_PROJECT_KEY);
-    if (stored) return stored;
-    return listCachedFactoryProjects()[0]?.id ?? null;
-  } catch {
-    return null;
-  }
-}
 
 /**
- * Mobile-only 4-slot bottom bar: Factory · Proje · Preview · Hesap
+ * Mobile-only 4-slot bottom bar: Marketplace · Deals · Sell · Profile
  */
 export function MobileBottomNav() {
   const pathname = usePathname();
-  const [projectId, setProjectId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      setProjectId(readLastProjectId());
-    }, 0);
-    return () => window.clearTimeout(t);
-  }, [pathname]);
-
-  const projectHref = projectId ? `/build/${projectId}` : "/build";
-  const previewHref = projectId ? `/preview/${projectId}` : "/build";
 
   const items = [
     {
-      href: "/build",
-      label: "Factory",
-      icon: Factory,
+      href: "/marketplace",
+      label: "Marketplace",
+      icon: Store,
       active:
-        pathname === "/build" ||
-        (pathname.startsWith("/build") &&
-          !pathname.includes("/preview") &&
-          pathname.split("/").length <= 2),
+        pathname === "/marketplace" || pathname.startsWith("/marketplace/"),
     },
     {
-      href: projectHref,
-      label: "Proje",
-      icon: FolderKanban,
-      active:
-        Boolean(projectId) &&
-        pathname.startsWith(`/build/${projectId}`) &&
-        !pathname.includes("/preview"),
+      href: "/deals",
+      label: "Deals",
+      icon: Handshake,
+      active: pathname === "/deals" || pathname.startsWith("/deals/"),
     },
     {
-      href: previewHref,
-      label: "Preview",
-      icon: Eye,
-      active:
-        Boolean(projectId) &&
-        (pathname.startsWith(`/preview/${projectId}`) ||
-          pathname.includes("/preview")),
+      href: "/sell",
+      label: "Sell",
+      icon: Tag,
+      active: pathname === "/sell" || pathname.startsWith("/sell/"),
     },
     {
       href: "/profile",
-      label: "Hesap",
+      label: "Profile",
       icon: UserRound,
       active:
         pathname.startsWith("/profile") ||
         pathname.startsWith("/login") ||
-        pathname.startsWith("/signup") ||
-        pathname.startsWith("/dashboard"),
+        pathname.startsWith("/signup"),
     },
   ] as const;
 
-  // Hide on auth-heavy full-bleed pages? Keep visible — Hesap still useful.
   return (
     <nav
       aria-label="Mobile primary"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#07070c]/92 backdrop-blur-xl md:hidden"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-zinc-200 bg-white/95 backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto grid h-14 max-w-lg grid-cols-4">
@@ -101,11 +57,11 @@ export function MobileBottomNav() {
                 href={item.href}
                 className={cn(
                   "relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium tracking-wide transition-colors",
-                  item.active ? "text-violet-300" : "text-zinc-500 hover:text-zinc-300"
+                  item.active ? "text-zinc-900" : "text-zinc-400 hover:text-zinc-700"
                 )}
               >
                 {item.active && (
-                  <span className="absolute inset-x-6 top-0 h-0.5 rounded-full bg-violet-400" />
+                  <span className="absolute inset-x-6 top-0 h-0.5 rounded-full bg-zinc-900" />
                 )}
                 <Icon className="h-5 w-5" strokeWidth={item.active ? 2.25 : 1.75} />
                 <span>{item.label}</span>

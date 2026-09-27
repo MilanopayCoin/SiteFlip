@@ -16,18 +16,18 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "JIY.APP — Turn ideas into businesses.",
+    default: "JIY.APP — Verified Digital Businesses",
     template: "%s · JIY.APP",
   },
   description:
-    "JIY.APP — AI Business Factory. BUILD → GROW → BUY → RENT → REVIVE → SELL.",
+    "JIY.APP marketplace — buy, rent, revive, and sell verified digital businesses.",
   keywords: [
-    "AI business factory",
-    "build saas with AI",
     "digital business marketplace",
     "buy saas",
     "rent website",
     "revive abandoned project",
+    "sell online business",
+    "verified digital businesses",
   ],
   metadataBase: new URL("https://jiy.app"),
 };
@@ -38,7 +38,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased sf-glow`}
       >

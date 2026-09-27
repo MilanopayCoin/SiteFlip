@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #07070c;
-  --foreground: #f4f4f5;
-  --muted: #a1a1aa;
-  --card: rgba(255, 255, 255, 0.03);
-  --border: rgba(255, 255, 255, 0.1);
-  --accent: #8b5cf6;
-  --accent-2: #6366f1;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #fb7185;
+  --background: #fafafa;
+  --foreground: #18181b;
+  --muted: #71717a;
+  --card: #ffffff;
+  --border: #e4e4e7;
+  --accent: #18181b;
+  --accent-2: #3f3f46;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
 }
 
 @theme inline {
@@ -40,29 +40,28 @@ body {
 }
 
 ::selection {
-  background: rgba(139, 92, 246, 0.35);
-  color: white;
+  background: rgba(24, 24, 27, 0.12);
+  color: #18181b;
 }
 
-/* Ambient background */
+/* Soft neutral ambient background */
 .sf-glow {
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(109, 40, 217, 0.25), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(67, 56, 202, 0.15), transparent),
-    radial-gradient(ellipse 50% 30% at 0% 50%, rgba(30, 27, 75, 0.4), transparent),
-    #07070c;
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(24, 24, 27, 0.04), transparent),
+    radial-gradient(ellipse 50% 30% at 100% 0%, rgba(113, 113, 122, 0.06), transparent),
+    #fafafa;
 }
 
 .sf-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(24, 24, 27, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 24, 27, 0.04) 1px, transparent 1px);
   background-size: 64px 64px;
   mask-image: radial-gradient(ellipse at center, black 20%, transparent 70%);
 }
 
 .sf-glass {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
   backdrop-filter: blur(16px);
 }

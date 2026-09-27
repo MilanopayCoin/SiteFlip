@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu, X, Sparkles } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,12 +15,10 @@ import {
 } from "@/lib/supabase/browser";
 
 const NAV = [
-  { href: "/explore", label: "Explore" },
-  { href: "/buy", label: "Buy" },
-  { href: "/rent", label: "Rent" },
-  { href: "/build", label: "Build" },
-  { href: "/revive", label: "Revive" },
+  { href: "/marketplace", label: "Marketplace" },
+  { href: "/deals", label: "Deals" },
   { href: "/sell", label: "Sell" },
+  { href: "/profile", label: "Profile" },
 ];
 
 export function SiteHeader() {
@@ -64,14 +62,14 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/5 bg-[#07070c]/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/90 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg shadow-violet-900/40">
-            <Sparkles className="h-4 w-4 text-white" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-900 text-xs font-semibold tracking-tight text-white">
+            J
           </div>
-          <span className="text-lg font-semibold tracking-tight text-white">
-            JIY<span className="text-violet-400">.APP</span>
+          <span className="text-lg font-semibold tracking-tight text-zinc-900">
+            JIY<span className="text-zinc-400">.APP</span>
           </span>
         </Link>
 
@@ -83,8 +81,8 @@ export function SiteHeader() {
               className={cn(
                 "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 pathname === item.href || pathname.startsWith(item.href + "/")
-                  ? "bg-white/10 text-white"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                  ? "bg-zinc-100 text-zinc-900"
+                  : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
               )}
             >
               {item.label}
@@ -97,9 +95,6 @@ export function SiteHeader() {
             <>
               <Button variant="ghost" size="sm" asChild>
                 <Link href="/profile">{username ? `@${username}` : "Profile"}</Link>
-              </Button>
-              <Button size="sm" asChild>
-                <Link href="/dashboard">Dashboard</Link>
               </Button>
               <Button variant="outline" size="sm" onClick={logout}>
                 Log out
@@ -118,7 +113,7 @@ export function SiteHeader() {
         </div>
 
         <button
-          className="md:hidden rounded-lg p-2 text-zinc-300 hover:bg-white/5"
+          className="md:hidden rounded-lg p-2 text-zinc-600 hover:bg-zinc-100"
           onClick={() => setOpen(!open)}
           aria-label="Toggle menu"
         >
@@ -127,25 +122,47 @@ export function SiteHeader() {
       </div>
 
       {open && (
-        <div className="border-t border-white/5 bg-[#07070c] px-4 py-4 md:hidden">
+        <div className="border-t border-zinc-200 bg-white px-4 py-4 md:hidden">
           <nav className="flex flex-col gap-1">
             {NAV.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-zinc-300 hover:bg-white/5"
+                className="rounded-lg px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
               >
                 {item.label}
               </Link>
             ))}
-            <Link
-              href={signedIn ? "/profile" : "/signup"}
-              onClick={() => setOpen(false)}
-              className="mt-2 rounded-lg bg-violet-600 px-3 py-2.5 text-center text-sm font-medium text-white"
-            >
-              {signedIn ? "Profile" : "Register"}
-            </Link>
+            {signedIn ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  logout();
+                }}
+                className="mt-2 rounded-lg border border-zinc-200 px-3 py-2.5 text-center text-sm font-medium text-zinc-700"
+              >
+                Log out
+              </button>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  onClick={() => setOpen(false)}
+                  className="mt-2 rounded-lg px-3 py-2.5 text-center text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg bg-zinc-900 px-3 py-2.5 text-center text-sm font-medium text-white"
+                >
+                  Register
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       )}
@@ -155,39 +172,62 @@ export function SiteHeader() {
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-white/5 bg-[#050508]">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-4">
-        <div className="md:col-span-2">
+    <footer className="border-t border-zinc-200 bg-white">
+      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-3">
+        <div className="md:col-span-1">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-violet-400" />
-            <span className="text-lg font-semibold text-white">JIY.APP</span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-zinc-900 text-[10px] font-semibold text-white">
+              J
+            </div>
+            <span className="text-lg font-semibold text-zinc-900">JIY.APP</span>
           </div>
           <p className="mt-3 max-w-md text-sm text-zinc-500">
-            AI Business Factory. Turn ideas into businesses.
-            BUILD → GROW → BUY → RENT → REVIVE → SELL
+            Verified Digital Businesses.
           </p>
         </div>
         <div>
-          <h4 className="text-sm font-semibold text-zinc-300">Marketplace</h4>
+          <h4 className="text-sm font-semibold text-zinc-800">Marketplace</h4>
           <ul className="mt-3 space-y-2 text-sm text-zinc-500">
-            <li><Link href="/buy" className="hover:text-zinc-300">Buy</Link></li>
-            <li><Link href="/rent" className="hover:text-zinc-300">Rent</Link></li>
-            <li><Link href="/revive" className="hover:text-zinc-300">Revive</Link></li>
-            <li><Link href="/sell" className="hover:text-zinc-300">Sell</Link></li>
+            <li>
+              <Link href="/marketplace?type=BUY" className="hover:text-zinc-800">
+                Buy
+              </Link>
+            </li>
+            <li>
+              <Link href="/marketplace?type=RENT" className="hover:text-zinc-800">
+                Rent
+              </Link>
+            </li>
+            <li>
+              <Link href="/marketplace?type=REVIVE" className="hover:text-zinc-800">
+                Revive
+              </Link>
+            </li>
+            <li>
+              <Link href="/sell" className="hover:text-zinc-800">
+                Sell
+              </Link>
+            </li>
           </ul>
         </div>
         <div>
-          <h4 className="text-sm font-semibold text-zinc-300">Platform</h4>
+          <h4 className="text-sm font-semibold text-zinc-800">Account</h4>
           <ul className="mt-3 space-y-2 text-sm text-zinc-500">
-            <li><Link href="/build" className="hover:text-zinc-300">Build with AI</Link></li>
-            <li><Link href="/profile" className="hover:text-zinc-300">Profile</Link></li>
-            <li><Link href="/dashboard" className="hover:text-zinc-300">Dashboard</Link></li>
-            <li><Link href="/admin" className="hover:text-zinc-300">Admin</Link></li>
+            <li>
+              <Link href="/deals" className="hover:text-zinc-800">
+                Deals
+              </Link>
+            </li>
+            <li>
+              <Link href="/profile" className="hover:text-zinc-800">
+                Profile
+              </Link>
+            </li>
           </ul>
         </div>
       </div>
-      <div className="border-t border-white/5 py-4 text-center text-xs text-zinc-600">
-        © {new Date().getFullYear()} JIY.APP. AI valuations are informational only.
+      <div className="border-t border-zinc-200 py-4 text-center text-xs text-zinc-400">
+        © {new Date().getFullYear()} JIY.APP. Marketplace listings are informational.
       </div>
     </footer>
   );

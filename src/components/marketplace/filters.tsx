@@ -39,7 +39,7 @@ const CATEGORIES = [
   "unused_domain",
 ];
 
-export function MarketplaceFilters({ basePath = "/explore" }: { basePath?: string }) {
+export function MarketplaceFilters({ basePath = "/marketplace" }: { basePath?: string }) {
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -80,8 +80,8 @@ export function MarketplaceFilters({ basePath = "/explore" }: { basePath?: strin
             className={cn(
               "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
               (params.get("type") ?? "ALL") === t.value
-                ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
-                : "border-white/10 text-zinc-400 hover:bg-white/5"
+                ? "border-zinc-900 bg-zinc-900 text-white"
+                : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
             )}
           >
             {t.label}
@@ -93,12 +93,12 @@ export function MarketplaceFilters({ basePath = "/explore" }: { basePath?: strin
         <div>
           <Label className="mb-1.5 block text-xs text-zinc-500">Category</Label>
           <select
-            className="h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
+            className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
             value={params.get("category") ?? "ALL"}
             onChange={(e) => update("category", e.target.value)}
           >
             {CATEGORIES.map((c) => (
-              <option key={c} value={c} className="bg-zinc-900">
+              <option key={c} value={c}>
                 {c === "ALL" ? "All categories" : c.replace(/_/g, " ")}
               </option>
             ))}
@@ -107,12 +107,12 @@ export function MarketplaceFilters({ basePath = "/explore" }: { basePath?: strin
         <div>
           <Label className="mb-1.5 block text-xs text-zinc-500">Sort</Label>
           <select
-            className="h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
+            className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
             value={params.get("sort") ?? "ai"}
             onChange={(e) => update("sort", e.target.value)}
           >
             {SORTS.map((s) => (
-              <option key={s.value} value={s.value} className="bg-zinc-900">
+              <option key={s.value} value={s.value}>
                 {s.label}
               </option>
             ))}
@@ -128,10 +128,10 @@ export function MarketplaceFilters({ basePath = "/explore" }: { basePath?: strin
           />
         </div>
         <div className="flex items-end">
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
+          <label className="flex items-center gap-2 text-sm text-zinc-600">
             <input
               type="checkbox"
-              className="rounded border-white/20 bg-white/5"
+              className="rounded border-zinc-300 bg-white"
               checked={params.get("verified") === "1"}
               onChange={(e) => update("verified", e.target.checked ? "1" : "")}
             />

@@ -4,19 +4,19 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
   {
     variants: {
       variant: {
         default:
-          "bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-900/30",
+          "bg-zinc-900 text-white hover:bg-zinc-800 shadow-sm",
         secondary:
-          "bg-white/5 text-zinc-100 border border-white/10 hover:bg-white/10",
+          "bg-zinc-100 text-zinc-900 border border-zinc-200 hover:bg-zinc-200/80",
         outline:
-          "border border-white/15 bg-transparent text-zinc-100 hover:bg-white/5",
-        ghost: "text-zinc-300 hover:bg-white/5 hover:text-white",
-        danger: "bg-rose-600/90 text-white hover:bg-rose-500",
-        success: "bg-emerald-600/90 text-white hover:bg-emerald-500",
+          "border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50",
+        ghost: "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
+        danger: "bg-rose-600 text-white hover:bg-rose-500",
+        success: "bg-emerald-600 text-white hover:bg-emerald-500",
       },
       size: {
         default: "h-10 px-4 py-2",

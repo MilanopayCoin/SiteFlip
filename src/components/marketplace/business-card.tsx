@@ -47,10 +47,9 @@ export function BusinessCard({
       viewport={{ once: true }}
       transition={{ delay: index * 0.05, duration: 0.4 }}
     >
-      <Card className="group overflow-hidden transition-colors hover:border-violet-500/30">
+      <Card className="group overflow-hidden transition-colors hover:border-zinc-300">
         <CardContent className="p-0">
-          <div className="relative h-28 bg-gradient-to-br from-violet-950/80 via-indigo-950/60 to-zinc-950 p-4">
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-violet-500/20 via-transparent to-transparent" />
+          <div className="relative h-28 border-b border-zinc-100 bg-zinc-50 p-4">
             <div className="relative flex items-start justify-between gap-2">
               <div className="flex flex-wrap gap-1.5">
                 <Badge variant={typeBadge.variant}>{typeBadge.label}</Badge>
@@ -62,10 +61,10 @@ export function BusinessCard({
                 AI {b.ai_score ?? "—"}/100
               </div>
             </div>
-            <h3 className="relative mt-6 text-lg font-semibold text-white">
+            <h3 className="relative mt-6 text-lg font-semibold text-zinc-900">
               {b.name}
             </h3>
-            <p className="relative mt-0.5 text-xs text-zinc-400">
+            <p className="relative mt-0.5 text-xs text-zinc-500">
               {CATEGORY_LABELS[b.category] ?? b.category}
             </p>
           </div>
@@ -78,7 +77,7 @@ export function BusinessCard({
                     ? "Monthly rent"
                     : "Price"}
                 </p>
-                <p className="text-xl font-semibold text-white">
+                <p className="text-xl font-semibold text-zinc-900">
                   {listing.listing_type === "RENT" || listing.listing_type === "RENT_TO_OWN"
                     ? formatCurrency(listing.rental_price_monthly, listing.currency)
                     : formatCurrency(listing.price, listing.currency)}
@@ -148,12 +147,12 @@ function Metric({
   value: string;
 }) {
   return (
-    <div className="rounded-lg bg-white/[0.03] p-2.5">
+    <div className="rounded-lg bg-zinc-50 p-2.5">
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
         <Icon className="h-3 w-3" />
         {label}
       </div>
-      <p className="mt-1 font-medium text-zinc-200">{value}</p>
+      <p className="mt-1 font-medium text-zinc-800">{value}</p>
     </div>
   );
 }
