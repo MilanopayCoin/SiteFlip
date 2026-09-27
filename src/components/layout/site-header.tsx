@@ -17,6 +17,7 @@ import {
 const NAV = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/deals", label: "Deals" },
+  { href: "/trafik-studio", label: "Trafik" },
   { href: "/profile", label: "Profile" },
 ];
 
@@ -235,6 +236,11 @@ export function SiteFooter() {
             <li>
               <Link href="/profile" className="hover:text-zinc-800">
                 Profile
+              </Link>
+            </li>
+            <li>
+              <Link href="/trafik-studio" className="hover:text-zinc-800">
+                Trafik Studio
               </Link>
             </li>
           </ul>
