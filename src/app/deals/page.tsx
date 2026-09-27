@@ -55,10 +55,10 @@ export default function DealsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-semibold text-zinc-900">Deals</h1>
-      <p className="mt-1 text-sm text-zinc-500">
-        Your buy and sell transactions. Open a deal room to track payment,
-        delivery, and disputes.
+      <p className="sf-label">Workspace</p>
+      <h1 className="font-display mt-1 text-3xl text-zinc-900">Deals</h1>
+      <p className="mt-2 text-sm text-zinc-500">
+        Open a deal room for payment, delivery, acceptance, and disputes.
       </p>
 
       {loading && (

@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Sans, Instrument_Serif, Geist_Mono } from "next/font/google";
 import { SiteFooter, SiteHeader } from "@/components/layout/site-header";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
+});
+
+const instrument = Instrument_Serif({
+  variable: "--font-instrument",
+  subsets: ["latin"],
+  weight: "400",
 });
 
 const geistMono = Geist_Mono({
@@ -40,10 +46,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased sf-glow`}
+        className={`${dmSans.variable} ${instrument.variable} ${geistMono.variable} antialiased sf-glow`}
       >
         <SiteHeader />
-        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden pb-20 md:pb-0">{children}</main>
+        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden pb-20 md:pb-0">
+          {children}
+        </main>
         <SiteFooter />
         <MobileBottomNav />
       </body>

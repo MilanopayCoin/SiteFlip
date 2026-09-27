@@ -17,7 +17,6 @@ import {
 const NAV = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/deals", label: "Deals" },
-  { href: "/sell", label: "Sell" },
   { href: "/profile", label: "Profile" },
 ];
 
@@ -64,22 +63,22 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/90 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-900 text-xs font-semibold tracking-tight text-white">
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-[11px] font-semibold tracking-wide text-white">
             J
           </div>
-          <span className="text-lg font-semibold tracking-tight text-zinc-900">
-            JIY<span className="text-zinc-400">.APP</span>
+          <span className="text-[15px] font-semibold tracking-tight text-zinc-900">
+            JIY
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-0.5 md:flex">
           {NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 pathname === item.href || pathname.startsWith(item.href + "/")
                   ? "bg-zinc-100 text-zinc-900"
                   : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
@@ -88,13 +87,21 @@ export function SiteHeader() {
               {item.label}
             </Link>
           ))}
+          <Button
+            size="sm"
+            className="ml-2"
+            variant={pathname.startsWith("/sell") ? "default" : "default"}
+            asChild
+          >
+            <Link href="/sell">Sell</Link>
+          </Button>
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
           {signedIn ? (
             <>
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/profile">{username ? `@${username}` : "Profile"}</Link>
+                <Link href="/profile">{username ? `@${username}` : "Account"}</Link>
               </Button>
               <Button variant="outline" size="sm" onClick={logout}>
                 Log out
@@ -105,7 +112,7 @@ export function SiteHeader() {
               <Button variant="ghost" size="sm" asChild>
                 <Link href="/login">Sign in</Link>
               </Button>
-              <Button size="sm" asChild>
+              <Button variant="outline" size="sm" asChild>
                 <Link href="/signup">Register</Link>
               </Button>
             </>
@@ -129,11 +136,18 @@ export function SiteHeader() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                className="rounded-md px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
               >
                 {item.label}
               </Link>
             ))}
+            <Link
+              href="/sell"
+              onClick={() => setOpen(false)}
+              className="rounded-md bg-slate-900 px-3 py-2.5 text-center text-sm font-medium text-white"
+            >
+              Sell
+            </Link>
             {signedIn ? (
               <button
                 type="button"

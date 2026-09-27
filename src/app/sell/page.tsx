@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -113,11 +112,9 @@ export default function SellPage() {
       }
 
       setSuccess(
-        "Listing submitted for review. It will go LIVE after admin verification."
+        "Listing submitted for review. It goes LIVE only after admin verification."
       );
-      if (listData.listing?.id) {
-        router.push(`/dashboard/listings`);
-      }
+      router.push("/dashboard/listings");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed");
     } finally {
@@ -127,31 +124,25 @@ export default function SellPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-      <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
+      <p className="sf-label">Intake</p>
+      <h1 className="font-display mt-1 text-3xl text-zinc-900 sm:text-4xl">
         Sell your business
       </h1>
       <p className="mt-2 text-sm text-zinc-500">
-        Submit a listing for review. Seller-claimed metrics stay UNVERIFIED until
-        JIY verifies them. Listings are not public until moderation.
+        Submissions stay private until moderation. Claimed metrics remain
+        UNVERIFIED until JIY verifies them.
       </p>
 
-      <Card className="mt-8">
-        <CardHeader>
-          <CardTitle>Listing details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <Label htmlFor="name">Business name</Label>
-              <Input id="name" name="name" required className="mt-1.5" />
-            </div>
-
+      <form onSubmit={onSubmit} className="mt-10 space-y-10">
+        <Section n="01" title="Business identity">
+          <Field label="Business name" name="name" required />
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="category">Category</Label>
               <select
                 id="category"
                 name="category"
-                className="mt-1.5 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
+                className="mt-1.5 h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
                 defaultValue="saas"
               >
                 {CATEGORIES.map((c) => (
@@ -161,16 +152,17 @@ export default function SellPage() {
                 ))}
               </select>
             </div>
-
             <div>
               <Label htmlFor="listing_type">Type</Label>
               <select
                 id="listing_type"
                 name="listing_type"
-                className="mt-1.5 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
+                className="mt-1.5 h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
                 value={listingType}
                 onChange={(e) =>
-                  setListingType(e.target.value as (typeof LISTING_TYPES)[number])
+                  setListingType(
+                    e.target.value as (typeof LISTING_TYPES)[number]
+                  )
                 }
               >
                 {LISTING_TYPES.map((t) => (
@@ -180,145 +172,149 @@ export default function SellPage() {
                 ))}
               </select>
             </div>
+          </div>
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              name="description"
+              required
+              rows={4}
+              className="mt-1.5 rounded-md"
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Domain" name="domain" />
+            <Field label="Website URL" name="website_url" type="url" />
+          </div>
+        </Section>
 
-            <div className="sm:col-span-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                name="description"
-                required
-                rows={4}
-                className="mt-1.5"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="price">
-                {listingType === "RENT" ? "Monthly price (EUR)" : "Price (EUR)"}
-              </Label>
-              <Input
-                id="price"
-                name="price"
-                type="number"
-                min={0}
-                step="0.01"
-                required
-                className="mt-1.5"
-              />
-            </div>
-
+        <Section n="02" title="Commercials">
+          <p className="text-xs text-zinc-500">
+            These figures are seller-claimed until verified.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label={
+                listingType === "RENT" ? "Monthly price (EUR)" : "Price (EUR)"
+              }
+              name="price"
+              type="number"
+              required
+            />
             {listingType === "RENT" && (
-              <div>
-                <Label htmlFor="min_term">Minimum term (months)</Label>
-                <Input
-                  id="min_term"
-                  name="min_term"
-                  type="number"
-                  min={1}
-                  className="mt-1.5"
-                />
-              </div>
+              <Field label="Minimum term (months)" name="min_term" type="number" />
             )}
+            <Field label="Monthly revenue (claimed)" name="revenue" type="number" />
+            <Field label="Monthly profit (claimed)" name="profit" type="number" />
+            <Field label="Users / traffic (claimed)" name="users" type="number" />
+          </div>
+        </Section>
 
-            <div>
-              <Label htmlFor="revenue">Monthly revenue (claimed)</Label>
-              <Input
-                id="revenue"
-                name="revenue"
-                type="number"
-                min={0}
-                step="0.01"
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <Label htmlFor="profit">Monthly profit (claimed)</Label>
-              <Input
-                id="profit"
-                name="profit"
-                type="number"
-                step="0.01"
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <Label htmlFor="users">Users / traffic (claimed)</Label>
-              <Input
-                id="users"
-                name="users"
-                type="number"
-                min={0}
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <Label htmlFor="domain">Domain</Label>
-              <Input id="domain" name="domain" className="mt-1.5" />
-            </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="website_url">Website URL</Label>
-              <Input
-                id="website_url"
-                name="website_url"
-                type="url"
-                placeholder="https://"
-                className="mt-1.5"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="assets">Assets included</Label>
-              <Textarea id="assets" name="assets" rows={2} className="mt-1.5" />
-            </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="source_code">Source code / access</Label>
-              <Textarea
-                id="source_code"
-                name="source_code"
-                rows={2}
-                className="mt-1.5"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="analytics">Analytics access</Label>
-              <Textarea
-                id="analytics"
-                name="analytics"
-                rows={2}
-                className="mt-1.5"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="transfer_terms">Transfer terms</Label>
-              <Textarea
-                id="transfer_terms"
-                name="transfer_terms"
-                rows={2}
-                className="mt-1.5"
-              />
-            </div>
+        <Section n="03" title="Assets & access">
+          <div>
+            <Label htmlFor="assets">Assets included</Label>
+            <Textarea id="assets" name="assets" rows={2} className="mt-1.5 rounded-md" />
+          </div>
+          <div>
+            <Label htmlFor="source_code">Source code / access</Label>
+            <Textarea
+              id="source_code"
+              name="source_code"
+              rows={2}
+              className="mt-1.5 rounded-md"
+            />
+          </div>
+          <div>
+            <Label htmlFor="analytics">Analytics access</Label>
+            <Textarea
+              id="analytics"
+              name="analytics"
+              rows={2}
+              className="mt-1.5 rounded-md"
+            />
+          </div>
+        </Section>
 
-            {error && (
-              <p className="sm:col-span-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
-              </p>
-            )}
-            {success && (
-              <p className="sm:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                {success}
-              </p>
-            )}
+        <Section n="04" title="Transfer terms">
+          <div>
+            <Label htmlFor="transfer_terms">Terms</Label>
+            <Textarea
+              id="transfer_terms"
+              name="transfer_terms"
+              rows={3}
+              className="mt-1.5 rounded-md"
+            />
+          </div>
+        </Section>
 
-            <div className="sm:col-span-2 flex flex-wrap gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Submitting…" : "Submit for review"}
-              </Button>
-              <Button type="button" variant="outline" asChild>
-                <Link href="/marketplace">Cancel</Link>
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        {error && (
+          <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            {success}
+          </p>
+        )}
+
+        <div className="sticky bottom-16 z-10 flex flex-wrap gap-3 border-t border-zinc-200 bg-[#fafaf9]/95 py-4 backdrop-blur md:bottom-0">
+          <Button type="submit" disabled={loading}>
+            {loading ? "Submitting…" : "Submit for review"}
+          </Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/marketplace">Cancel</Link>
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Section({
+  n,
+  title,
+  children,
+}: {
+  n: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-t border-zinc-200 pt-8">
+      <div className="mb-5 flex items-baseline gap-3">
+        <span className="tabular text-xs text-zinc-400">{n}</span>
+        <h2 className="text-lg font-medium text-zinc-900">{title}</h2>
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+function Field({
+  label,
+  name,
+  type = "text",
+  required,
+}: {
+  label: string;
+  name: string;
+  type?: string;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <Label htmlFor={name}>{label}</Label>
+      <Input
+        id={name}
+        name={name}
+        type={type}
+        required={required}
+        min={type === "number" ? 0 : undefined}
+        step={type === "number" ? "0.01" : undefined}
+        className="mt-1.5 rounded-md"
+      />
     </div>
   );
 }

@@ -87,7 +87,8 @@ export default async function ListingDetailPage({ params }: Props) {
       <div className="grid gap-8 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl">
+            <p className="sf-label">Listing memo</p>
+            <h1 className="font-display mt-1 text-3xl text-zinc-900 sm:text-4xl">
               {b.name}
             </h1>
             {b.tagline && (
