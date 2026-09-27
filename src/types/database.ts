@@ -81,7 +81,10 @@ export type VerificationType =
   | "OWNERSHIP"
   | "REVENUE"
   | "TRAFFIC"
-  | "BUSINESS";
+  | "BUSINESS"
+  | "ANALYTICS"
+  | "CODE_ASSETS"
+  | "IDENTITY";
 
 export type VerificationStatus =
   | "PENDING"
@@ -210,6 +213,7 @@ export interface Listing {
   rental_price_monthly: number | null;
   rent_to_own_credit_percent: number | null;
   rent_to_own_period_months: number | null;
+  minimum_rental_months?: number | null;
   currency: string;
   featured: boolean;
   views: number;

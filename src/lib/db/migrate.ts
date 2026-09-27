@@ -13,6 +13,7 @@ export const MIGRATION_FILES = [
   "003_mvp_production.sql",
   "004_mollie_payments.sql",
   "005_fix_profiles_rls_recursion.sql",
+  "006_marketplace_core.sql",
 ] as const;
 
 const IGNORABLE = new Set([
