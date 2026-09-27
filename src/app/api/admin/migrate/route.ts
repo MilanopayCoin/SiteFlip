@@ -8,9 +8,7 @@ import {
 import {
   MIGRATION_FILES,
   MARKETPLACE_CORE_TABLES,
-  applyMigrationsFromUrl,
 } from "@/lib/supabase/run-migrations";
-import { EMBEDDED_MIGRATION_SQL } from "@/lib/supabase/embedded-migrations";
 import { createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -125,55 +123,22 @@ export async function POST(request: Request) {
   }
 
   if (action === "apply") {
-    // Worker TCP to Postgres hangs on this runtime (CF 1101). Refuse here;
-    // use external npm run db:migrate or action=handoff_dsn (authorized).
+    // Worker TCP to Postgres hangs on this runtime (CF 1101).
+    // Apply externally: SUPABASE_DB_URL=… npm run db:migrate
     return NextResponse.json(
       {
         ...(await statusPayload()),
         action: "apply",
         applied: false,
         error:
-          "Worker PostgreSQL TCP apply is disabled (runtime hang). Use action=handoff_dsn then npm run db:migrate externally.",
+          "Worker PostgreSQL TCP apply is disabled (runtime hang). Run `npm run db:migrate` externally with Session pooler SUPABASE_DB_URL.",
       },
       { status: 501 }
     );
   }
 
-  /**
-   * One-shot DSN handoff for external migrators (agent/CI).
-   * Requires SITEFLIP_ALLOW_MIGRATE=1 + MIGRATE_TOKEN.
-   * Caller must not log the value; prefer writing straight to env / secret file.
-   */
-  if (action === "handoff_dsn") {
-    const dbUrl =
-      process.env.SUPABASE_DB_URL?.trim() ||
-      process.env.SUPABASE_DB?.trim() ||
-      process.env.DATABASE_URL?.trim() ||
-      "";
-    if (!dbUrl) {
-      return NextResponse.json(
-        { error: "SUPABASE_DB_URL not configured on Worker" },
-        { status: 503 }
-      );
-    }
-    // Shape hint only in logs; full DSN only in response body for authorized caller
-    let host = "unknown";
-    try {
-      host = new URL(dbUrl.replace(/^postgres(ql)?:/, "http:")).hostname;
-    } catch {
-      /* ignore */
-    }
-    return NextResponse.json({
-      ok: true,
-      action: "handoff_dsn",
-      host,
-      dsn: dbUrl,
-      note: "Use immediately with npm run db:migrate; do not persist in git or logs",
-    });
-  }
-
   return NextResponse.json(
-    { error: "Unknown action. Use status, apply, or handoff_dsn." },
+    { error: "Unknown action. Use status or apply." },
     { status: 400 }
   );
 }
