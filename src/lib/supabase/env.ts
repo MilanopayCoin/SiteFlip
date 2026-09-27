@@ -74,9 +74,6 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "OPENAI_API_KEY",
       "GEMINI_API_KEY",
       "GROQ_MODEL",
-      "FAL_KEY",
-      "EXPO_PUBLIC_FAL_KEY",
-      "FAL_MODEL",
     ];
 
     for (const key of keys) {
