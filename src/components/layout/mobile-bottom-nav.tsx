@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Handshake, Store, Tag, UserRound } from "lucide-react";
+import { CarFront, Handshake, Store, Tag, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Mobile-only 4-slot bottom bar: Marketplace · Deals · Sell · Profile
+ * Mobile-only 5-slot bottom bar: Marketplace · Deals · Trafik · Sell · Profile
  */
 export function MobileBottomNav() {
   const pathname = usePathname();
@@ -24,6 +24,12 @@ export function MobileBottomNav() {
       label: "Deals",
       icon: Handshake,
       active: pathname === "/deals" || pathname.startsWith("/deals/"),
+    },
+    {
+      href: "/trafik-studio",
+      label: "Trafik",
+      icon: CarFront,
+      active: pathname.startsWith("/trafik-studio"),
     },
     {
       href: "/sell",
@@ -48,7 +54,7 @@ export function MobileBottomNav() {
       className="fixed inset-x-0 bottom-0 z-50 border-t border-zinc-200 bg-white/95 backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <ul className="mx-auto grid h-14 max-w-lg grid-cols-4">
+      <ul className="mx-auto grid h-14 max-w-lg grid-cols-5">
         {items.map((item) => {
           const Icon = item.icon;
           return (

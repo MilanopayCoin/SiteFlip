@@ -44,6 +44,35 @@ export function isMollieTestMode(): boolean {
   return Boolean(key?.startsWith("test_"));
 }
 
+export function isMollieLiveMode(): boolean {
+  return isMollieConfigured() && !isMollieTestMode();
+}
+
+/** Explicit opt-in required before creating payments with a live (non test_) key. */
+export function isMollieLivePaymentsAllowed(): boolean {
+  if (!isMollieLiveMode()) return true;
+  const flag = process.env.MOLLIE_ALLOW_LIVE?.trim().toLowerCase();
+  return flag === "1" || flag === "true" || flag === "yes";
+}
+
+/** When set, POST /api/payments/mollie/create must refuse to charge real money. */
+export function molliePaymentBlockReason(): string | null {
+  if (!isMollieConfigured()) {
+    return "Mollie is not configured on this Worker. Add MOLLIE_API_KEY as an encrypted secret.";
+  }
+  if (isMollieLiveMode() && !isMollieLivePaymentsAllowed()) {
+    return (
+      "Live Mollie API key detected. Use a test_ key for sandbox checkout, " +
+      "or set MOLLIE_ALLOW_LIVE=true to allow real charges."
+    );
+  }
+  return null;
+}
+
+export function canCreateMolliePayments(): boolean {
+  return molliePaymentBlockReason() === null;
+}
+
 async function mollieFetch(
   path: string,
   init?: RequestInit

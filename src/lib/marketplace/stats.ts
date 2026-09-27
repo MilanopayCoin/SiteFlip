@@ -35,26 +35,34 @@ export async function fetchMarketplaceStats(): Promise<MarketplaceStats> {
     };
   }
 
-  const [listings, verified, deals] = await Promise.all([
-    supabase
-      .from("listings")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "ACTIVE")
-      .eq("is_demo", false),
-    supabase
-      .from("business_verifications")
-      .select("business_id", { count: "exact", head: true })
-      .eq("status", "VERIFIED"),
-    supabase
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "COMPLETED"),
-  ]);
+  try {
+    const [listings, verified, deals] = await Promise.all([
+      supabase
+        .from("listings")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "ACTIVE"),
+      supabase
+        .from("business_verifications")
+        .select("business_id", { count: "exact", head: true })
+        .eq("status", "VERIFIED"),
+      supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "COMPLETED"),
+    ]);
 
-  return {
-    activeListings: listings.count ?? 0,
-    verifiedBusinesses: verified.count ?? 0,
-    completedDeals: deals.count ?? 0,
-    mode: "supabase",
-  };
+    return {
+      activeListings: listings.count ?? 0,
+      verifiedBusinesses: verified.count ?? 0,
+      completedDeals: deals.count ?? 0,
+      mode: "supabase",
+    };
+  } catch {
+    return {
+      activeListings: 0,
+      verifiedBusinesses: 0,
+      completedDeals: 0,
+      mode: "unavailable",
+    };
+  }
 }

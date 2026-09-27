@@ -5,11 +5,33 @@ import { ListingRow } from "@/components/marketplace/listing-row";
 import { fetchMarketplaceStats } from "@/lib/marketplace/stats";
 import { fetchMarketplaceListings } from "@/lib/data/marketplace-data";
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
-  const [stats, market] = await Promise.all([
-    fetchMarketplaceStats(),
-    fetchMarketplaceListings({ sort: "newest" }, { page: 1, pageSize: 3 }),
-  ]);
+  let stats = {
+    activeListings: 0,
+    verifiedBusinesses: 0,
+    completedDeals: 0,
+  };
+  let listings: Awaited<
+    ReturnType<typeof fetchMarketplaceListings>
+  >["listings"] = [];
+
+  try {
+    stats = await fetchMarketplaceStats();
+  } catch {
+    // keep zeros
+  }
+
+  try {
+    const market = await fetchMarketplaceListings(
+      { sort: "newest" },
+      { page: 1, pageSize: 3 }
+    );
+    listings = (market.listings || []).filter((l) => Boolean(l?.business));
+  } catch {
+    listings = [];
+  }
 
   return (
     <div>
@@ -78,7 +100,7 @@ export default async function HomePage() {
         </ol>
       </section>
 
-      {market.listings.length > 0 && (
+      {listings.length > 0 && (
         <section className="mx-auto max-w-5xl px-4 pb-20 sm:px-6">
           <div className="mb-4 flex items-end justify-between">
             <div>
@@ -95,7 +117,7 @@ export default async function HomePage() {
             </Link>
           </div>
           <div className="sf-panel overflow-hidden">
-            {market.listings.map((l) => (
+            {listings.map((l) => (
               <ListingRow key={l.id} listing={l} />
             ))}
           </div>
@@ -109,7 +131,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="px-3 py-8 text-center sm:px-6">
       <p className="tabular text-2xl font-semibold text-zinc-900 sm:text-3xl">
-        {value}
+        {Number.isFinite(value) ? value : 0}
       </p>
       <p className="mt-1 text-xs text-zinc-500 sm:text-sm">{label}</p>
     </div>
