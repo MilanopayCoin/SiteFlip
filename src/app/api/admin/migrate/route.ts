@@ -125,6 +125,26 @@ export async function POST(request: Request) {
   }
 
   if (action === "apply") {
+    // Worker TCP to Postgres hangs on this runtime (CF 1101). Refuse here;
+    // use external npm run db:migrate or action=handoff_dsn (authorized).
+    return NextResponse.json(
+      {
+        ...(await statusPayload()),
+        action: "apply",
+        applied: false,
+        error:
+          "Worker PostgreSQL TCP apply is disabled (runtime hang). Use action=handoff_dsn then npm run db:migrate externally.",
+      },
+      { status: 501 }
+    );
+  }
+
+  /**
+   * One-shot DSN handoff for external migrators (agent/CI).
+   * Requires SITEFLIP_ALLOW_MIGRATE=1 + MIGRATE_TOKEN.
+   * Caller must not log the value; prefer writing straight to env / secret file.
+   */
+  if (action === "handoff_dsn") {
     const dbUrl =
       process.env.SUPABASE_DB_URL?.trim() ||
       process.env.SUPABASE_DB?.trim() ||
@@ -132,57 +152,28 @@ export async function POST(request: Request) {
       "";
     if (!dbUrl) {
       return NextResponse.json(
-        {
-          ...(await statusPayload()),
-          action: "apply",
-          applied: false,
-          error: "SUPABASE_DB_URL not configured on Worker",
-        },
+        { error: "SUPABASE_DB_URL not configured on Worker" },
         { status: 503 }
       );
     }
-
-    const only006 = Boolean((body as { only006?: boolean }).only006);
-    const files = only006
-      ? (["006_marketplace_core.sql"] as const)
-      : MIGRATION_FILES;
-
+    // Shape hint only in logs; full DSN only in response body for authorized caller
+    let host = "unknown";
     try {
-      const result = await applyMigrationsFromUrl(dbUrl, {
-        files,
-        sqlContents: EMBEDDED_MIGRATION_SQL,
-      });
-      invalidateSchemaStatusCache();
-      const status = await statusPayload();
-      return NextResponse.json(
-        {
-          ...status,
-          action: "apply",
-          applied: result.ok,
-          results: result.results,
-          applyMarketplaceCore: result.marketplaceCore,
-          error: result.error || null,
-        },
-        { status: result.ok ? 200 : 500 }
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "apply failed";
-      // Never include connection string in error responses
-      const safe = message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted]");
-      return NextResponse.json(
-        {
-          ...(await statusPayload()),
-          action: "apply",
-          applied: false,
-          error: safe,
-        },
-        { status: 500 }
-      );
+      host = new URL(dbUrl.replace(/^postgres(ql)?:/, "http:")).hostname;
+    } catch {
+      /* ignore */
     }
+    return NextResponse.json({
+      ok: true,
+      action: "handoff_dsn",
+      host,
+      dsn: dbUrl,
+      note: "Use immediately with npm run db:migrate; do not persist in git or logs",
+    });
   }
 
   return NextResponse.json(
-    { error: "Unknown action. Use status or apply." },
+    { error: "Unknown action. Use status, apply, or handoff_dsn." },
     { status: 400 }
   );
 }
