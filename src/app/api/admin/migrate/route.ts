@@ -31,6 +31,7 @@ const MIGRATION_FILES = [
   "003_mvp_production.sql",
   "004_mollie_payments.sql",
   "005_fix_profiles_rls_recursion.sql",
+  "006_marketplace_core.sql",
 ] as const;
 
 async function statusPayload() {
@@ -58,7 +59,7 @@ async function statusPayload() {
       command: "npm run db:migrate",
       requires: "SUPABASE_DB_URL (Session pooler) in migration/CI/agent env — not Worker runtime",
       files: MIGRATION_FILES,
-      order: "001 → 002 → 003 → 004",
+      order: "001 → 002 → 003 → 004 → 005 → 006",
     },
     reason: schema.reason || null,
   };

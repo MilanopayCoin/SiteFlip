@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Sans, Instrument_Serif, Geist_Mono } from "next/font/google";
 import { SiteFooter, SiteHeader } from "@/components/layout/site-header";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
+});
+
+const instrument = Instrument_Serif({
+  variable: "--font-instrument",
+  subsets: ["latin"],
+  weight: "400",
 });
 
 const geistMono = Geist_Mono({
@@ -16,18 +22,18 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "JIY.APP — Turn ideas into businesses.",
+    default: "JIY.APP — Verified Digital Businesses",
     template: "%s · JIY.APP",
   },
   description:
-    "JIY.APP — AI Business Factory. BUILD → GROW → BUY → RENT → REVIVE → SELL.",
+    "JIY.APP marketplace — buy, rent, revive, and sell verified digital businesses.",
   keywords: [
-    "AI business factory",
-    "build saas with AI",
     "digital business marketplace",
     "buy saas",
     "rent website",
     "revive abandoned project",
+    "sell online business",
+    "verified digital businesses",
   ],
   metadataBase: new URL("https://jiy.app"),
 };
@@ -38,12 +44,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased sf-glow`}
+        className={`${dmSans.variable} ${instrument.variable} ${geistMono.variable} antialiased sf-glow`}
       >
         <SiteHeader />
-        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden pb-20 md:pb-0">{children}</main>
+        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden pb-20 md:pb-0">
+          {children}
+        </main>
         <SiteFooter />
         <MobileBottomNav />
       </body>

@@ -17,8 +17,7 @@ import {
 } from "@/lib/profile/client-cache";
 
 function safeNextPath(raw: string | null): string {
-  // Factory-first: avoid broken /dashboard SSR on Free Workers after login
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/build";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/marketplace";
   return raw;
 }
 
@@ -122,7 +121,7 @@ function LoginForm() {
             Live Supabase Auth is unavailable — demo dashboard still works.
           </p>
         )}
-        {nextPath !== "/build" && (
+        {nextPath !== "/marketplace" && (
           <p className="mb-4 text-sm text-zinc-400">
             After sign in you will return to{" "}
             <span className="text-zinc-200">{nextPath}</span>.
@@ -160,13 +159,13 @@ function LoginForm() {
           No account?{" "}
           <Link
             href={`/signup?next=${encodeURIComponent(nextPath)}`}
-            className="text-violet-400 hover:underline"
+            className="text-zinc-700 hover:underline"
           >
             Register
           </Link>
         </p>
         <p className="mt-2 text-center text-sm">
-          <Link href="/profile" className="text-zinc-400 hover:text-white">
+          <Link href="/profile" className="text-zinc-500 hover:text-zinc-900">
             Open profile →
           </Link>
         </p>

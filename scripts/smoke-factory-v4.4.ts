@@ -28,6 +28,7 @@ if (fs.existsSync(envPath)) {
 }
 
 async function main() {
+  process.env.JIY_PREVIEW_VERIFY = "inprocess";
   console.log("BRAND", BRAND.fullName, BRAND.url);
   console.log("V4.4 Deployment Engine smoke");
 

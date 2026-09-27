@@ -16,6 +16,7 @@ if (fs.existsSync(envPath)) {
 
 async function main() {
   process.env.AI_PROVIDER = "heuristic";
+  process.env.JIY_PREVIEW_VERIFY = "inprocess";
   const project = createFactoryProject(
     {
       idea: "AI booking for cleaning companies in the Netherlands.",
