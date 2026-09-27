@@ -58,6 +58,14 @@ const TABS = [
 
 type Tab = (typeof TABS)[number];
 
+type MollieConfig = {
+  configured: boolean;
+  testMode: boolean | null;
+  liveMode: boolean | null;
+  liveBlocked: boolean;
+  paymentsEnabled: boolean;
+};
+
 export default function DealRoomPage() {
   const params = useParams();
   const id = String(params?.id || "");
@@ -74,6 +82,7 @@ export default function DealRoomPage() {
   const [disputeReason, setDisputeReason] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
+  const [mollieConfig, setMollieConfig] = useState<MollieConfig | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -106,6 +115,28 @@ export default function DealRoomPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/payments/mollie/create")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        setMollieConfig({
+          configured: Boolean(data.configured),
+          testMode: data.testMode ?? null,
+          liveMode: data.liveMode ?? null,
+          liveBlocked: Boolean(data.liveBlocked),
+          paymentsEnabled: Boolean(data.paymentsEnabled),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setMollieConfig(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function callAction(
     path: string,
     body: Record<string, unknown> = {}
@@ -133,6 +164,22 @@ export default function DealRoomPage() {
 
   async function startPayment() {
     if (!deal) return;
+    if (mollieConfig && !mollieConfig.paymentsEnabled) {
+      setStatusMsg(
+        "Checkout is disabled: live Mollie key without MOLLIE_ALLOW_LIVE. Use a test_ key for sandbox."
+      );
+      return;
+    }
+    if (
+      mollieConfig?.liveMode &&
+      !mollieConfig.testMode &&
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "This environment uses a live Mollie key. You may be charged real money. Continue?"
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     setStatusMsg(null);
     try {
@@ -311,6 +358,38 @@ export default function DealRoomPage() {
 
         {tab === "Payment" && (
           <div className="space-y-4">
+            {mollieConfig?.configured && (
+              <div
+                className={cn(
+                  "border px-3 py-2 text-sm",
+                  mollieConfig.liveBlocked
+                    ? "border-amber-300 bg-amber-50 text-amber-950"
+                    : mollieConfig.testMode
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                      : "border-zinc-200 bg-zinc-50 text-zinc-800"
+                )}
+              >
+                {mollieConfig.liveBlocked ? (
+                  <>
+                    <strong>Live key blocked.</strong> Swap to a{" "}
+                    <code className="text-xs">test_</code> API key for sandbox
+                    checkout, or set{" "}
+                    <code className="text-xs">MOLLIE_ALLOW_LIVE=true</code> on
+                    the Worker.
+                  </>
+                ) : mollieConfig.testMode ? (
+                  <>
+                    <strong>Sandbox mode.</strong> Mollie test key — no real
+                    charges.
+                  </>
+                ) : (
+                  <>
+                    <strong>Live Mollie.</strong> Checkout may charge real
+                    money. Confirm before paying.
+                  </>
+                )}
+              </div>
+            )}
             <p className="text-sm text-zinc-500">
               Mollie processes payment only — not escrow. Paid status is set only
               after provider webhook confirmation.
@@ -341,8 +420,18 @@ export default function DealRoomPage() {
               </ul>
             )}
             {canPay && (
-              <Button disabled={busy} onClick={() => void startPayment()}>
-                {busy ? "Starting…" : "Pay with Mollie"}
+              <Button
+                disabled={
+                  busy ||
+                  (mollieConfig !== null && !mollieConfig.paymentsEnabled)
+                }
+                onClick={() => void startPayment()}
+              >
+                {busy
+                  ? "Starting…"
+                  : mollieConfig?.liveBlocked
+                    ? "Pay blocked (live key)"
+                    : "Pay with Mollie"}
               </Button>
             )}
           </div>
