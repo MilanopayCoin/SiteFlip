@@ -24,9 +24,10 @@ async function main() {
     console.log(
       "\nNote: live key blocked — set test_ MOLLIE_API_KEY or MOLLIE_ALLOW_LIVE=true"
     );
-  }
-  if (data.paymentsEnabled === false) {
     process.exit(2);
+  }
+  if (!data.configured) {
+    console.log("\nNote: MOLLIE_API_KEY not set in this environment (expected locally).");
   }
 }
 
