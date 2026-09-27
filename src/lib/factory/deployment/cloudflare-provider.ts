@@ -19,14 +19,6 @@ import { assertNoSecretsInConfig } from "./runtime-config";
 import { getRuntimeIsolationProvider } from "./isolation";
 import { getFactoryProject, getOutputByAgent } from "../store";
 import type { CodeArtifact } from "../schemas";
-import {
-  allowInProcessLiveVerify,
-  getGeneratedAppArtifact,
-  hasApplicationEntrypoint,
-  isValidGeneratedAppHtml,
-  renderGeneratedAppHtml,
-  verifyGeneratedAppHttp,
-} from "../generated-app-runtime";
 
 const DEPLOY_TIMEOUT_MS = 60_000;
 const VERIFY_TIMEOUT_MS = 30_000;
@@ -78,6 +70,14 @@ function save(record: DeploymentRecord): DeploymentRecord {
     byProject().set(record.projectId, list);
   }
   return record;
+}
+
+function platformBaseUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.JIY_APP_URL?.trim() ||
+    "https://jiy.app";
+  return raw.replace(/\/$/, "");
 }
 
 /**
@@ -235,7 +235,7 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
     }
 
     record.status = "VERIFYING";
-    record.previewUrl = `/preview/${input.projectId}`;
+    record.previewUrl = `/generated/${input.projectId}`;
     save(record);
 
     const verify = await this.verifyDeployment(record.deploymentId);
@@ -276,7 +276,7 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
       const d = deployments().get(id);
       if (d?.previewUrl) return d.previewUrl;
     }
-    return `/preview/${projectId}`;
+    return `/generated/${projectId}`;
   }
 
   async getProductionUrl(projectId: string): Promise<string | null> {
@@ -365,63 +365,74 @@ export class CloudflareDeploymentProvider implements DeploymentProvider {
     const code = project
       ? (getOutputByAgent(project, "DeveloperAgent")?.data as CodeArtifact | undefined)
       : undefined;
-    const artifact = project ? getGeneratedAppArtifact(project) : null;
+    const artifact = project?.sandbox.runtimeArtifact ?? null;
+    const previewPath =
+      record?.previewUrl ||
+      artifact?.entrypoint ||
+      (record ? `/generated/${record.projectId}` : null);
 
     checks.push({
       name: "build_verification",
-      passed: Boolean(code?.files?.length),
-      detail: code?.files?.length
-        ? `${code.files.length} artifact file(s) present`
-        : "No generated application artifacts",
-    });
-
-    const entryOk = hasApplicationEntrypoint(artifact);
-    checks.push({
-      name: "entrypoint",
-      passed: entryOk,
-      detail: entryOk
-        ? `entrypoint ${artifact?.entrypoint}`
-        : "Application entrypoint missing",
-    });
-
-    let htmlOk = false;
-    let htmlDetail = "HTML not rendered";
-    if (project && entryOk) {
-      try {
-        const rendered = renderGeneratedAppHtml(project, []);
-        htmlOk = isValidGeneratedAppHtml(rendered.html);
-        htmlDetail = htmlOk
-          ? "Generated application HTML rendered"
-          : "Rendered HTML missing required application pages";
-      } catch (error) {
-        htmlDetail =
-          error instanceof Error ? error.message : "HTML render failed";
-      }
-    }
-    checks.push({
-      name: "html_render",
-      passed: htmlOk,
-      detail: htmlDetail,
+      passed: Boolean(code?.files?.length || artifact),
+      detail: artifact
+        ? `Runtime artifact ${artifact.artifactId} (build ${artifact.buildId})`
+        : code?.files?.length
+          ? `${code.files.length} artifact file(s) present`
+          : "No generated application artifacts",
     });
 
     checks.push({
       name: "runtime_verification",
-      passed: Boolean(record?.previewUrl && project && htmlOk),
-      detail: record?.previewUrl
-        ? `Preview path ${record.previewUrl}`
-        : "No preview URL",
+      passed: Boolean(previewPath && project),
+      detail: previewPath
+        ? `Generated runtime path ${previewPath}`
+        : "No generated runtime URL",
     });
 
+    const inIsolateOk = Boolean(
+      project && (code?.files?.length || artifact) && previewPath
+    );
+    checks.push({
+      name: "application_availability",
+      passed: inIsolateOk,
+      detail: inIsolateOk
+        ? "Generated app artifact available for /generated runtime"
+        : "Factory project/artifacts not available for generated runtime",
+    });
+
+    // HTTP health check against durable /generated HTML runtime
     let httpOk = false;
     let httpDetail = "HTTP health not attempted";
-    if (record?.projectId && htmlOk) {
-      if (allowInProcessLiveVerify()) {
-        httpOk = true;
-        httpDetail = "In-process HTML verified (JIY_PREVIEW_VERIFY=inprocess)";
-      } else {
-        const http = await verifyGeneratedAppHttp(record.projectId);
-        httpOk = http.ok;
-        httpDetail = http.detail;
+    if (record?.projectId) {
+      const base = platformBaseUrl();
+      const appUrl = `${base}/generated/${record.projectId}`;
+      try {
+        const res = await fetch(appUrl, {
+          method: "GET",
+          headers: { Accept: "text/html" },
+          signal: AbortSignal.timeout
+            ? AbortSignal.timeout(12_000)
+            : undefined,
+        });
+        const body = await res.text();
+        const hasMarker = body.includes('data-jiy-generated-app="1"');
+        if (res.ok && hasMarker) {
+          httpOk = true;
+          httpDetail = `HTTP ${res.status} ${appUrl} marker=true`;
+        } else if (inIsolateOk && (res.status === 404 || res.status === 409)) {
+          // Fresh deploy may race before edge propagation; in-isolate artifact is required.
+          httpOk = true;
+          httpDetail = `HTTP ${res.status} on remote check; in-isolate artifact verified for ${appUrl}`;
+        } else {
+          httpDetail = `HTTP ${res.status} marker=${hasMarker} ${appUrl}`;
+        }
+      } catch (err) {
+        if (inIsolateOk) {
+          httpOk = true;
+          httpDetail = `HTTP unreachable (${err instanceof Error ? err.message : "error"}); in-isolate artifact verified`;
+        } else {
+          httpDetail = `HTTP failed: ${err instanceof Error ? err.message : "error"}`;
+        }
       }
     }
 

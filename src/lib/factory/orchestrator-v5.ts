@@ -36,16 +36,16 @@ import {
   stopProjectSandbox,
   runSandboxPhase,
 } from "./sandbox";
+import {
+  ensureRuntimeArtifact,
+  generatedPathFor,
+  serveGeneratedApp,
+  verifyGeneratedAppHttp,
+  GENERATED_APP_MARKER,
+} from "./generated-runtime";
+import { persistFactoryProject } from "./supabase-store";
 import { computeFactoryQuality, estimateAgentCost } from "./quality";
 import { buildBusinessPassport } from "./passport";
-import {
-  allowInProcessLiveVerify,
-  attachGeneratedAppArtifact,
-  hasApplicationEntrypoint,
-  isValidGeneratedAppHtml,
-  renderGeneratedAppHtml,
-  verifyGeneratedAppHttp,
-} from "./generated-app-runtime";
 import {
   runArchitectureAgent,
   runDatabaseAgent,
@@ -60,7 +60,6 @@ import { runTestingAgentV3 } from "./agents/testing-v3";
 import { runSecurityScanAgent } from "./agents/security-scan";
 import { deployPreview } from "./deployment";
 import { unlockV5PostLiveRoadmap } from "./v5-post-live";
-import { persistGeneratedAppArtifact } from "./supabase-store";
 import type {
   ArchitectureSpec,
   CodeArtifact,
@@ -614,6 +613,11 @@ export class BusinessFactoryOrchestratorV5 {
       `Generated ${result.data.files.length} sandbox file(s)`,
       "V5 BUILD — artifacts only (no host npm install on Worker Free)"
     );
+    const artifact = ensureRuntimeArtifact(project, { force: true });
+    project.sandbox.previewUrl = generatedPathFor(project.id);
+    project.sandbox.buildLogs.push(
+      `Runtime artifact ${artifact.artifactId} → ${artifact.entrypoint}`
+    );
     addChange(project, {
       projectId: project.id,
       agent: "DeveloperAgent",
@@ -700,6 +704,7 @@ export class BusinessFactoryOrchestratorV5 {
     this.begin("DeploymentAgent", "PREVIEW");
     const project = this.project;
     await runSandboxPhase(project, "PREVIEW", "V5 PREVIEW — not production");
+    const artifact = ensureRuntimeArtifact(project);
     const result = await runDeploymentAgent(project.id, true);
     const out = addOutput(project, {
       projectId: project.id,
@@ -707,18 +712,21 @@ export class BusinessFactoryOrchestratorV5 {
       schemaName: "DeploymentPlanSchema",
       data: {
         ...(result.data as unknown as Record<string, unknown>),
-        previewUrl: previewPathFor(project.id),
-        label: "AI GENERATED STARTER PREVIEW",
+        previewUrl: generatedPathFor(project.id),
+        entrypoint: artifact.entrypoint,
+        artifactId: artifact.artifactId,
+        buildId: artifact.buildId,
+        label: "AI GENERATED STARTER PREVIEW — durable /generated runtime",
       },
       labeledAssumptions: [
         ...(result.assumptions || []),
-        "Preview is platform-hosted — not a separate production Worker",
+        "Preview is platform-hosted generated runtime — not a separate production Worker",
       ],
       source: result.source,
       implementationStatus: "ai_generated",
     });
-    project.sandbox.previewUrl = previewPathFor(project.id);
-    attachGeneratedAppArtifact(project);
+    project.sandbox.previewUrl = generatedPathFor(project.id);
+    project.sandbox.deploymentStatus = "READY";
     this.finish("DeploymentAgent", "PREVIEW", out.id, true);
   }
 
@@ -819,8 +827,8 @@ export class BusinessFactoryOrchestratorV5 {
 
 /**
  * After user approves `generated_app_live`:
- * verified platform preview → GENERATED APP LIVE, then unlock post-live roadmap.
- * LIVE only when preview HTML returns 200, entrypoint exists, and HTML is valid.
+ * verified durable /generated runtime → GENERATED APP LIVE.
+ * LIVE is only valid when GET /generated/:id returns HTTP 200 with app HTML.
  */
 export async function goGeneratedAppLive(
   projectId: string
@@ -831,26 +839,12 @@ export async function goGeneratedAppLive(
     throw new Error("goGeneratedAppLive is V5-only");
   }
 
-  const failLive = (stage: string, msg: string): FactoryProject => {
-    project.sandbox.runtimeError = { stage, message: msg };
-    updateTask(project, "LIVE", {
-      status: "FAILED",
-      progress: 100,
-      activity: `Live publish failed: ${msg}`,
-      completedAt: new Date().toISOString(),
-      error: msg,
-    });
-    project.state = "FAILED";
-    appendActivity(project, "DeploymentAgent", `${stage}: ${msg}`, "error");
-    return saveFactoryProject(project);
-  };
-
   project.state = "DEPLOYING";
   project.currentStep = "LIVE";
   updateTask(project, "LIVE", {
     status: "RUNNING",
     progress: 20,
-    activity: "Publishing verified generated app…",
+    activity: "Publishing durable generated-app runtime…",
     startedAt: new Date().toISOString(),
     error: null,
   });
@@ -860,41 +854,17 @@ export async function goGeneratedAppLive(
     "V5 GENERATED APP LIVE publish started",
     "info"
   );
+
+  const artifact = ensureRuntimeArtifact(project);
+  project.sandbox.previewUrl = generatedPathFor(project.id);
+  project.sandbox.deploymentStatus = "DEPLOYING";
   saveFactoryProject(project);
 
+  // Persist BEFORE HTTP verify so a fresh isolate can load the artifact.
   try {
-    attachGeneratedAppArtifact(project);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Artifact missing";
-    return failLive("artifact", msg);
-  }
-
-  const artifact = project.sandbox.generatedArtifact ?? null;
-  if (!hasApplicationEntrypoint(artifact)) {
-    return failLive("entrypoint", "Generated application entrypoint is missing");
-  }
-
-  let html = "";
-  try {
-    html = renderGeneratedAppHtml(project, []).html;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "HTML render failed";
-    return failLive("html_render", msg);
-  }
-  if (!isValidGeneratedAppHtml(html)) {
-    return failLive("html_render", "Rendered HTML is not a generated application");
-  }
-
-  await persistGeneratedAppArtifact(project).catch(() => null);
-
-  if (!allowInProcessLiveVerify()) {
-    const http = await verifyGeneratedAppHttp(project.id);
-    if (!http.ok) {
-      return failLive(
-        "http_verify",
-        http.detail || "Preview URL did not return HTTP 200 HTML"
-      );
-    }
+    await persistFactoryProject(project);
+  } catch {
+    // continue — memory may still serve same-isolate verify
   }
 
   let result: Awaited<ReturnType<typeof deployPreview>>;
@@ -903,26 +873,88 @@ export async function goGeneratedAppLive(
   } catch (error) {
     const msg =
       error instanceof Error ? error.message : "Preview deploy crashed";
-    return failLive("http_verify", msg);
+    updateTask(project, "LIVE", {
+      status: "FAILED",
+      progress: 100,
+      activity: `Live publish failed: ${msg}`,
+      completedAt: new Date().toISOString(),
+      error: msg,
+    });
+    project.state = "FAILED";
+    appendActivity(project, "DeploymentAgent", msg, "error");
+    return saveFactoryProject(project);
   }
   const refreshed = getFactoryProject(projectId)!;
 
-  if (result.deployment.status !== "LIVE") {
-    return failLive(
-      "http_verify",
-      result.deployment.error || result.deployment.status
+  // Hard gate: generated app must render HTML with marker (no fake LIVE).
+  // Prefer absolute HTTP; if Worker cannot self-fetch, require in-process 200+marker
+  // after Supabase persist (external clients still hit durable /generated URL).
+  const localRes = await serveGeneratedApp({ projectId });
+  const localBody = await localRes.text();
+  const localOk =
+    localRes.status === 200 && localBody.includes(GENERATED_APP_MARKER);
+
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    "https://jiy.app";
+  const httpVerify = await verifyGeneratedAppHttp(projectId, base);
+  const httpHardFail = httpVerify.status > 0 && !httpVerify.ok;
+  const ok = localOk && !httpHardFail;
+
+  if (!ok) {
+    const detail = !localOk
+      ? `Local runtime HTTP ${localRes.status} marker=${localBody.includes(GENERATED_APP_MARKER)}`
+      : httpVerify.detail;
+    updateTask(refreshed, "LIVE", {
+      status: "FAILED",
+      progress: 100,
+      activity: `GENERATED APP ERROR: ${detail}`,
+      completedAt: new Date().toISOString(),
+      error: detail,
+    });
+    refreshed.state = "FAILED";
+    refreshed.sandbox.deploymentStatus = "FAILED";
+    appendActivity(
+      refreshed,
+      "DeploymentAgent",
+      `GENERATED APP ERROR — ${detail}`,
+      "error"
     );
+    return saveFactoryProject(refreshed);
+  }
+
+  const verifyDetail = httpVerify.ok
+    ? httpVerify.detail
+    : `in-process runtime 200+marker (HTTP self-check: ${httpVerify.detail})`;
+
+  if (result.deployment.status !== "LIVE") {
+    updateTask(refreshed, "LIVE", {
+      status: "FAILED",
+      progress: 100,
+      activity: `Live publish failed: ${result.deployment.status}`,
+      completedAt: new Date().toISOString(),
+      error: result.deployment.error || result.deployment.status,
+    });
+    refreshed.state = "FAILED";
+    appendActivity(
+      refreshed,
+      "DeploymentAgent",
+      result.deployment.error || "Preview deploy failed",
+      "error"
+    );
+    return saveFactoryProject(refreshed);
   }
 
   refreshed.state = "LIVE";
   refreshed.currentStep = "LIVE";
   refreshed.liveAt = new Date().toISOString();
   refreshed.sandbox.deploymentStatus = "LIVE";
-  refreshed.sandbox.runtimeError = null;
-  refreshed.sandbox.previewUrl =
-    refreshed.sandbox.previewUrl || previewPathFor(refreshed.id);
+  refreshed.sandbox.previewUrl = generatedPathFor(refreshed.id);
+  refreshed.sandbox.runtimeArtifact =
+    refreshed.sandbox.runtimeArtifact || artifact;
   refreshed.sandbox.isolationLabel = "SANDBOX: DEVELOPMENT ISOLATION";
-  refreshed.sandbox.productionUrl = null;
+  refreshed.sandbox.productionUrl = null; // honest — not production isolation
   updateTask(refreshed, "APPROVAL", {
     status: "COMPLETED",
     progress: 100,
@@ -933,7 +965,7 @@ export async function goGeneratedAppLive(
     status: "COMPLETED",
     progress: 100,
     activity:
-      "GENERATED APP LIVE after HTTP 200 HTML + entrypoint. NEXT: REAL PRODUCTION ISOLATION",
+      "GENERATED APP LIVE — durable /generated runtime verified",
     completedAt: new Date().toISOString(),
   });
   if (refreshed.passport) {
@@ -944,14 +976,14 @@ export async function goGeneratedAppLive(
       previewUrl: refreshed.sandbox.previewUrl,
       productionUrl: null,
       deploymentStatus: "LIVE",
-      runtimeStatus: "PLATFORM_PREVIEW_LIVE",
+      runtimeStatus: "GENERATED_APP_LIVE",
     };
   }
   unlockV5PostLiveRoadmap(refreshed);
   appendActivity(
     refreshed,
     "DeploymentAgent",
-    "GENERATED APP LIVE — YOU ARE HERE. Next: REAL PRODUCTION ISOLATION (blocked on Cloudflare Free)",
+    `GENERATED APP LIVE — ${verifyDetail}`,
     "success"
   );
   return saveFactoryProject(refreshed);

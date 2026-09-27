@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getFactoryProject, getOutputByAgent } from "@/lib/factory/store";
-import { loadFactoryProject } from "@/lib/factory/supabase-store";
+import { resolveFactoryProject } from "@/lib/factory/supabase-store";
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { resolveRequestUser } from "@/lib/api/request-user";
+import { getSchemaStatus } from "@/lib/supabase/schema-ready";
 import type {
   CodeArtifact,
   ContentPack,
@@ -77,16 +78,24 @@ function v5LandingFromSpecs(project: FactoryProject) {
 export async function GET(request: Request, ctx: Ctx) {
   await ensureCloudflareEnv();
   const { id } = await ctx.params;
+  const status = await getSchemaStatus();
   const user = await resolveRequestUser(request);
 
-  const loaded = await loadFactoryProject(id, { preferDatabase: true });
-  const project = loaded.project ?? getFactoryProject(id) ?? null;
+  let project = await resolveFactoryProject(id);
+  if (!project) project = getFactoryProject(id) ?? null;
   if (!project) {
-    return NextResponse.json({ error: "PROJECT NOT FOUND" }, { status: 404 });
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (user && project.ownerId !== user.id) {
+  if (
+    (status.productionPersistence || user) &&
+    user &&
+    project.ownerId !== user.id
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (status.productionPersistence && !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
   const code = getOutputByAgent(project, "DeveloperAgent")?.data as
@@ -122,10 +131,10 @@ export async function GET(request: Request, ctx: Ctx) {
           project.state === "APPROVAL_REQUIRED" ||
           project.state === "PREVIEW")
     ),
-    url: `/preview/${id}`,
+    url: `/generated/${id}`,
     label:
       project.state === "LIVE"
-        ? "GENERATED APP LIVE (platform preview)"
+        ? "GENERATED APP LIVE"
         : "SANDBOX PREVIEW",
     sandboxPreview: true,
     isolationLabel:
@@ -134,6 +143,9 @@ export async function GET(request: Request, ctx: Ctx) {
     sandboxId: project.sandbox.sandboxId || null,
     runtimeId: project.sandbox.runtimeId || null,
     businessId: project.sandbox.businessId || project.id,
+    runtimeArtifact: project.sandbox.runtimeArtifact ?? null,
+    entrypoint:
+      project.sandbox.runtimeArtifact?.entrypoint || `/generated/${id}`,
     sandboxLifecycle: project.sandbox.lifecycle || null,
     buildStatus: (() => {
       const build = project.tasks.find((t) => t.stepId === "BUILD");

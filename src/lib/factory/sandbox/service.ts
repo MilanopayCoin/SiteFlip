@@ -30,6 +30,8 @@ export function applySandboxRecordToProject(
   project: FactoryProject,
   record: SandboxRecord
 ): void {
+  const previousPreview =
+    project.sandbox.previewUrl || record.previewUrl || null;
   project.sandbox = {
     ...project.sandbox,
     projectId: project.id,
@@ -40,13 +42,21 @@ export function applySandboxRecordToProject(
     schemaStrategy: record.schemaStrategy,
     storagePrefix: record.storagePrefix,
     envConfigKeys: record.allowedEnvKeys,
-    buildLogs: [...record.logs],
+    buildLogs: [
+      ...(project.sandbox.buildLogs || []),
+      ...record.logs,
+    ].slice(-40),
     deploymentStatus: project.sandbox.deploymentStatus,
-    previewUrl: record.previewUrl,
+    // Prefer durable /generated runtime URL when already attached
+    previewUrl: previousPreview?.startsWith("/generated/")
+      ? previousPreview
+      : record.previewUrl || previousPreview,
     productionUrl: null,
     lifecycle: record.lifecycle,
     isolationLabel: record.label,
     isProductionGrade: record.isProductionGrade,
+    createMode: project.sandbox.createMode,
+    runtimeArtifact: project.sandbox.runtimeArtifact ?? null,
   };
 }
 

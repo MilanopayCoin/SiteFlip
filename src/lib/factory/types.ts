@@ -253,6 +253,20 @@ export interface FactoryMemoryEntry {
   createdAt: string;
 }
 
+/** Durable generated-app runtime pointer (also mirrored under generated-runtime/). */
+export interface FactoryRuntimeArtifact {
+  projectId: string;
+  businessId: string;
+  version: string;
+  buildId: string;
+  artifactId: string;
+  entrypoint: string;
+  runtimeKind: "platform_html_mvp";
+  pages: string[];
+  appName: string;
+  createdAt: string;
+}
+
 export interface FactorySandbox {
   projectId: string;
   ownerId: string;
@@ -276,30 +290,8 @@ export interface FactorySandbox {
    * "full" = complete TEST/SECURITY/GROWTH path (may exceed Worker limits).
    */
   createMode?: "fast" | "full";
-  /** Deterministic generated-app artifact persisted on the factory project row */
-  generatedArtifact?: {
-    projectId: string;
-    businessId: string;
-    version: string;
-    buildId: string;
-    entrypoint: string;
-    pages: string[];
-    app: {
-      name: string;
-      summary: string;
-      problem: string;
-      solution: string;
-      targetCustomer: string;
-      country: string;
-      workflows: string[];
-      pricing: string;
-    };
-    createdAt: string;
-  } | null;
-  runtimeError?: {
-    stage: string;
-    message: string;
-  } | null;
+  /** Persisted artifact metadata for /generated/:projectId runtime */
+  runtimeArtifact?: FactoryRuntimeArtifact | null;
 }
 
 export interface FactoryQualityScore {

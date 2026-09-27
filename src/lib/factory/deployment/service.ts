@@ -81,7 +81,7 @@ export async function deployPreview(projectId: string): Promise<{
     appName: project.name,
     businessId: project.id,
     version,
-    publicUrl: `/preview/${project.id}`,
+    publicUrl: `/generated/${project.id}`,
   });
 
   const deployment = await provider.deployProject({

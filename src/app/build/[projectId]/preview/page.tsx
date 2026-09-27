@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 
-/** Legacy factory preview URL — generated app lives at /preview/:projectId */
-export default async function LegacyFactoryPreviewRedirect({
-  params,
-}: {
-  params: Promise<{ projectId: string }>;
-}) {
+type Props = { params: Promise<{ projectId: string }> };
+
+/**
+ * Legacy preview route — redirects to the durable generated-app runtime.
+ * PREVIEW and GENERATED APP LIVE share /generated/:projectId.
+ */
+export default async function PreviewRedirectPage({ params }: Props) {
   const { projectId } = await params;
-  redirect(`/preview/${projectId}`);
+  redirect(`/generated/${projectId}`);
 }

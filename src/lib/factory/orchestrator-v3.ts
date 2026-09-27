@@ -23,7 +23,6 @@ import {
   updateTask,
 } from "./store";
 import { assertSandboxBoundary, createSandboxProvider, previewPathFor } from "./sandbox";
-import { attachGeneratedAppArtifact } from "./generated-app-runtime";
 import {
   provisionProjectSandbox,
   startProjectSandbox,
@@ -178,13 +177,6 @@ export class BusinessFactoryOrchestratorV3 {
       project = this.project;
       project.sandbox.previewUrl = previewPathFor(project.id);
       project.sandbox.deploymentStatus = canPreview ? "READY" : "FAILED";
-      if (canPreview) {
-        try {
-          attachGeneratedAppArtifact(project);
-        } catch {
-          // V3 preview still records files; runtime error surfaces on /preview
-        }
-      }
 
       // Lifecycle: never leave sandbox indefinitely RUNNING
       await stopProjectSandbox(project);
