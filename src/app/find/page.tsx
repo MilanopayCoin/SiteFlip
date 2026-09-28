@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { SectionHeading } from "@/components/ui/section-heading";
 
 interface MatchResult {
   listing_id: string;
@@ -60,13 +61,12 @@ export default function FindPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-      <h1 className="text-3xl font-semibold text-white sm:text-4xl">
-        Find My Business
-      </h1>
-      <p className="mt-2 text-zinc-400">
-        Deterministic filters first. AI ranking second. Best matches for your criteria.
-      </p>
+    <div className="jiy-container max-w-4xl py-8 sm:py-10">
+      <SectionHeading
+        eyebrow="Match"
+        title="Find my business"
+        subtitle="Deterministic filters first. AI ranking second. Best matches for your criteria."
+      />
 
       <Card className="mt-8">
         <CardHeader>
@@ -84,7 +84,7 @@ export default function FindPage() {
             </div>
             <div>
               <Label htmlFor="businessType">Business type</Label>
-              <select id="businessType" name="businessType" className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200">
+              <select id="businessType" name="businessType" className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface-2 px-3 text-sm text-foreground">
                 <option value="any">Any</option>
                 <option value="saas">SaaS</option>
                 <option value="ai_tools">AI Tools</option>
@@ -96,7 +96,7 @@ export default function FindPage() {
             </div>
             <div>
               <Label htmlFor="risk">Risk</Label>
-              <select id="risk" name="risk" className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200">
+              <select id="risk" name="risk" className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface-2 px-3 text-sm text-foreground">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -104,7 +104,7 @@ export default function FindPage() {
             </div>
             <div>
               <Label htmlFor="workload">Workload</Label>
-              <select id="workload" name="workload" className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200">
+              <select id="workload" name="workload" className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface-2 px-3 text-sm text-foreground">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -112,7 +112,7 @@ export default function FindPage() {
             </div>
             <div>
               <Label htmlFor="growth">Growth preference</Label>
-              <select id="growth" name="growth" className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200">
+              <select id="growth" name="growth" className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface-2 px-3 text-sm text-foreground">
                 <option value="stable">Stable</option>
                 <option value="growing">Growing</option>
                 <option value="aggressive">Aggressive</option>
@@ -124,25 +124,25 @@ export default function FindPage() {
               </Button>
             </div>
           </form>
-          {error && <p className="mt-4 text-sm text-rose-400">{error}</p>}
+          {error && <p className="mt-4 text-sm text-danger">{error}</p>}
         </CardContent>
       </Card>
 
       {results.length > 0 && (
         <div className="mt-8 space-y-4">
-          <h2 className="text-xl font-semibold text-white">Best Matches</h2>
+          <h2 className="text-xl font-semibold text-foreground">Best Matches</h2>
           {results.map((r) => (
             <Card key={r.listing_id}>
               <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-white">
+                    <h3 className="font-semibold text-foreground">
                       {r.listing.business?.name || r.listing.title}
                     </h3>
                     <Badge variant="success">Match {r.match_percent}%</Badge>
                   </div>
-                  <p className="mt-1 text-sm text-zinc-400">{r.listing.summary}</p>
-                  <ul className="mt-2 space-y-1 text-sm text-zinc-300">
+                  <p className="mt-1 text-sm text-muted">{r.listing.summary}</p>
+                  <ul className="mt-2 space-y-1 text-sm text-foreground">
                     {r.reasons.map((reason) => (
                       <li key={reason}>• {reason}</li>
                     ))}

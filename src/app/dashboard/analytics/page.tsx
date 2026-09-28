@@ -23,8 +23,8 @@ const DATA = [
 export default function AnalyticsPage() {
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-white">Analytics</h1>
-      <p className="mt-1 text-sm text-zinc-400">
+      <h1 className="text-2xl font-semibold text-foreground">Analytics</h1>
+      <p className="mt-1 text-sm text-muted">
         Portfolio revenue, profit, and traffic (demo aggregate).
       </p>
       <Card className="mt-6">

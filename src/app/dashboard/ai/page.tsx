@@ -97,13 +97,13 @@ export default function AiCommandCenterPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-white">AI Command Center</h1>
-      <p className="mt-1 text-sm text-zinc-400">
+      <h1 className="text-2xl font-semibold text-foreground">AI Command Center</h1>
+      <p className="mt-1 text-sm text-muted">
         Questions use your stored business data
         {mode === "demo" ? " (DEMO / local)" : ""}. Assumptions are labeled.
       </p>
 
-      <p className="mt-2 text-xs text-zinc-500">
+      <p className="mt-2 text-xs text-muted">
         Context businesses: {owned.length || "none yet — create a business first"}
       </p>
 
@@ -112,7 +112,7 @@ export default function AiCommandCenterPage() {
           <button
             key={s}
             onClick={() => ask(s)}
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5 hover:text-white"
+            className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-2 hover:text-foreground"
           >
             {s}
           </button>
@@ -138,7 +138,7 @@ export default function AiCommandCenterPage() {
           <CardHeader>
             <CardTitle className="text-base">Response</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-zinc-300 whitespace-pre-wrap">
+          <CardContent className="space-y-3 text-sm text-foreground whitespace-pre-wrap">
             {reply}
             {assumptions.length > 0 && (
               <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200/80">

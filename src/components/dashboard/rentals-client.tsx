@@ -68,13 +68,13 @@ export function RentalsClient() {
   }
 
   if (loading) {
-    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-white/5" />;
+    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface-2" />;
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-white">My Rentals</h1>
-      <p className="mt-1 text-sm text-zinc-400">
+      <h1 className="text-2xl font-semibold text-foreground">My Rentals</h1>
+      <p className="mt-1 text-sm text-muted">
         Rental requests and rent-to-own — not escrow, not automatic legal contracts.
       </p>
 
@@ -109,11 +109,11 @@ export function RentalsClient() {
                 <CardContent className="space-y-3 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-medium text-white">
+                      <p className="font-medium text-foreground">
                         {formatCurrency(r.monthly_price)}/mo
                         {r.is_rent_to_own ? " · Rent to own" : ""}
                       </p>
-                      <p className="text-xs text-zinc-500">
+                      <p className="text-xs text-muted">
                         Listing {r.listing_id.slice(0, 12)}…
                         {r.minimum_months
                           ? ` · min ${r.minimum_months} mo`
@@ -123,7 +123,7 @@ export function RentalsClient() {
                     <Badge variant="info">{r.status}</Badge>
                   </div>
                   {remaining != null && (
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-muted">
                       Estimated remaining balance after term:{" "}
                       {formatCurrency(remaining)} (estimate only)
                     </p>

@@ -78,13 +78,13 @@ export function MessagesClient() {
   }, []);
 
   if (loading) {
-    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-white/5" />;
+    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface-2" />;
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-white">Messages</h1>
-      <p className="mt-1 text-sm text-zinc-400">
+      <h1 className="text-2xl font-semibold text-foreground">Messages</h1>
+      <p className="mt-1 text-sm text-muted">
         Internal messaging around listings, offers, businesses, and transactions
         {unread > 0 ? ` · ${unread} unread` : ""}.
       </p>
@@ -112,18 +112,18 @@ export function MessagesClient() {
                   onClick={() => openConversation(c.id)}
                   className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
                     active === c.id
-                      ? "border-violet-500/40 bg-violet-500/10"
-                      : "border-white/10 hover:bg-white/5"
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-border hover:bg-surface-2"
                   }`}
                 >
-                  <p className="font-medium text-zinc-200">
+                  <p className="font-medium text-foreground">
                     {c.listing_id
                       ? `Listing ${c.listing_id.slice(0, 8)}`
                       : c.offer_id
                         ? `Offer ${c.offer_id.slice(0, 8)}`
                         : "Conversation"}
                   </p>
-                  <p className="mt-1 text-xs text-zinc-600">
+                  <p className="mt-1 text-xs text-muted">
                     {c.last_message_at
                       ? new Date(c.last_message_at).toLocaleString()
                       : "No messages yet"}
@@ -139,17 +139,17 @@ export function MessagesClient() {
             </CardHeader>
             <CardContent className="space-y-3">
               {!active ? (
-                <p className="text-sm text-zinc-500">Select a conversation</p>
+                <p className="text-sm text-muted">Select a conversation</p>
               ) : (
                 <>
                   <div className="max-h-80 space-y-2 overflow-y-auto">
                     {messages.map((m) => (
                       <div
                         key={m.id}
-                        className="rounded-lg border border-white/10 p-3 text-sm"
+                        className="rounded-lg border border-border p-3 text-sm"
                       >
-                        <p className="text-zinc-200">{m.body}</p>
-                        <p className="mt-1 text-[10px] text-zinc-600">
+                        <p className="text-foreground">{m.body}</p>
+                        <p className="mt-1 text-[10px] text-muted">
                           {new Date(m.created_at).toLocaleString()}
                           {m.read_at ? " · read" : ""}
                         </p>

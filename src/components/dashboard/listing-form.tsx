@@ -77,7 +77,7 @@ export function ListingForm() {
   if (businesses.length === 0) {
     return (
       <Card>
-        <CardContent className="space-y-4 p-6 text-sm text-zinc-400">
+        <CardContent className="space-y-4 p-6 text-sm text-muted">
           <p>Create a business before listing it on the marketplace.</p>
           <Button asChild>
             <Link href="/dashboard/businesses/new">Create business</Link>
@@ -99,7 +99,7 @@ export function ListingForm() {
               id="business_id"
               name="business_id"
               required
-              className="mt-1.5 w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
             >
               {businesses.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -114,7 +114,7 @@ export function ListingForm() {
               id="listing_type"
               value={type}
               onChange={(e) => setType(e.target.value as (typeof TYPES)[number])}
-              className="mt-1.5 w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
             >
               {TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -196,7 +196,7 @@ export function ListingForm() {
             </div>
           )}
           {type === "RENT_TO_OWN" && (
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-muted">
               Remaining balance estimates are illustrative only. Ownership does not
               transfer automatically.
             </p>

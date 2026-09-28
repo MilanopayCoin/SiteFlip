@@ -31,6 +31,13 @@ export const metadata: Metadata = {
     "verified digital businesses",
   ],
   metadataBase: new URL("https://jiy.app"),
+  openGraph: {
+    type: "website",
+    siteName: "JIY.APP",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 const themeInitScript = `(function(){try{var t=localStorage.getItem('jiy-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();`;

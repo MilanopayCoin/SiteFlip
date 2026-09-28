@@ -1,29 +1,28 @@
 import Link from "next/link";
 import { fetchMarketplaceStats } from "@/lib/marketplace/stats";
+import { SectionHeading } from "@/components/ui/section-heading";
 
 export const metadata = { title: "Admin" };
 
 const SECTIONS = [
   { label: "Listings", href: "/admin/listings" },
   { label: "Verification", href: "/admin/verifications" },
-  { label: "Deals", href: "/admin/transactions" },
-  { label: "Payments", href: "/admin/transactions" },
-  { label: "Payouts", href: "/admin/transactions" },
+  { label: "Deals & payments", href: "/admin/transactions" },
   { label: "Disputes", href: "/admin/disputes" },
   { label: "Users", href: "/admin/users" },
-  { label: "Audit Log", href: "/admin/reports" },
+  { label: "Audit log", href: "/admin/reports" },
 ];
 
 export default async function AdminPage() {
   const stats = await fetchMarketplaceStats();
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-      <h1 className="text-3xl font-semibold text-zinc-900">Admin</h1>
-      <p className="mt-2 text-sm text-zinc-500">
-        Operations only. All actions require profiles.is_admin and are audited
-        server-side.
-      </p>
+    <div>
+      <SectionHeading
+        eyebrow="Operations"
+        title="Admin"
+        subtitle="All actions require profiles.is_admin and are audited server-side."
+      />
 
       <div className="mt-8 grid gap-3 sm:grid-cols-3">
         <Stat label="Active listings" value={stats.activeListings} />
@@ -36,7 +35,7 @@ export default async function AdminPage() {
           <li key={s.label}>
             <Link
               href={s.href}
-              className="block border border-zinc-200 bg-white px-4 py-3 text-sm font-medium text-zinc-900 hover:border-zinc-400"
+              className="jiy-focus-ring block rounded-[12px] border border-border bg-surface px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
             >
               {s.label}
             </Link>
@@ -49,11 +48,11 @@ export default async function AdminPage() {
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="border border-zinc-200 bg-white px-4 py-5">
-      <p className="text-2xl font-semibold tabular-nums text-zinc-900">
+    <div className="rounded-[12px] border border-border bg-surface px-4 py-5">
+      <p className="font-mono text-2xl tabular font-semibold text-foreground">
         {value}
       </p>
-      <p className="mt-1 text-xs text-zinc-500">{label}</p>
+      <p className="mt-1 text-xs text-muted">{label}</p>
     </div>
   );
 }
