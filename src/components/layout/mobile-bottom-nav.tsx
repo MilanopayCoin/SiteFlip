@@ -51,10 +51,10 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="Mobile primary"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-zinc-200 bg-white/95 backdrop-blur-xl md:hidden"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <ul className="mx-auto grid h-14 max-w-lg grid-cols-5">
+      <ul className="mx-auto grid h-[3.75rem] max-w-lg grid-cols-5">
         {items.map((item) => {
           const Icon = item.icon;
           return (
@@ -62,12 +62,12 @@ export function MobileBottomNav() {
               <Link
                 href={item.href}
                 className={cn(
-                  "relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium tracking-wide transition-colors",
-                  item.active ? "text-zinc-900" : "text-zinc-400 hover:text-zinc-700"
+                  "relative flex min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-medium tracking-wide transition-colors",
+                  item.active ? "text-accent" : "text-muted hover:text-foreground"
                 )}
               >
                 {item.active && (
-                  <span className="absolute inset-x-6 top-0 h-0.5 rounded-full bg-zinc-900" />
+                  <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-accent" />
                 )}
                 <Icon className="h-5 w-5" strokeWidth={item.active ? 2.25 : 1.75} />
                 <span>{item.label}</span>

@@ -13,6 +13,7 @@ import {
   createBrowserClient,
   resetBrowserClient,
 } from "@/lib/supabase/browser";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 const NAV = [
   { href: "/marketplace", label: "Marketplace" },
@@ -62,13 +63,13 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/90 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-[11px] font-semibold tracking-wide text-white">
+    <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-xl">
+      <div className="jiy-container flex h-16 items-center justify-between">
+        <Link href="/" className="group flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-accent text-[11px] font-semibold tracking-wide text-accent-ink">
             J
           </div>
-          <span className="text-[15px] font-semibold tracking-tight text-zinc-900">
+          <span className="font-display text-[15px] font-semibold tracking-tight text-foreground">
             JIY
           </span>
         </Link>
@@ -81,8 +82,8 @@ export function SiteHeader() {
               className={cn(
                 "rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 pathname === item.href || pathname.startsWith(item.href + "/")
-                  ? "bg-zinc-100 text-zinc-900"
-                  : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
+                  ? "bg-surface-2 text-foreground"
+                  : "text-muted hover:bg-surface-2 hover:text-foreground"
               )}
             >
               {item.label}
@@ -113,7 +114,7 @@ export function SiteHeader() {
               <Button variant="ghost" size="sm" asChild>
                 <Link href="/login">Sign in</Link>
               </Button>
-              <Button variant="outline" size="sm" asChild>
+              <Button size="sm" asChild>
                 <Link href="/signup">Register</Link>
               </Button>
             </>
@@ -121,7 +122,7 @@ export function SiteHeader() {
         </div>
 
         <button
-          className="md:hidden rounded-lg p-2 text-zinc-600 hover:bg-zinc-100"
+          className="jiy-focus-ring rounded-[12px] p-2.5 text-muted hover:bg-surface-2 md:hidden"
           onClick={() => setOpen(!open)}
           aria-label="Toggle menu"
         >
@@ -130,14 +131,14 @@ export function SiteHeader() {
       </div>
 
       {open && (
-        <div className="border-t border-zinc-200 bg-white px-4 py-4 md:hidden">
+        <div className="border-t border-border bg-surface px-4 py-4 md:hidden">
           <nav className="flex flex-col gap-1">
             {NAV.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="rounded-md px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                className="rounded-[12px] px-3 py-2.5 text-sm text-foreground hover:bg-surface-2"
               >
                 {item.label}
               </Link>
@@ -145,7 +146,7 @@ export function SiteHeader() {
             <Link
               href="/sell"
               onClick={() => setOpen(false)}
-              className="rounded-md bg-slate-900 px-3 py-2.5 text-center text-sm font-medium text-white"
+              className="rounded-[12px] bg-accent px-3 py-2.5 text-center text-sm font-medium text-accent-ink"
             >
               Sell
             </Link>
@@ -156,7 +157,7 @@ export function SiteHeader() {
                   setOpen(false);
                   logout();
                 }}
-                className="mt-2 rounded-lg border border-zinc-200 px-3 py-2.5 text-center text-sm font-medium text-zinc-700"
+                className="mt-2 rounded-[12px] border border-border px-3 py-2.5 text-center text-sm font-medium text-foreground"
               >
                 Log out
               </button>
@@ -165,14 +166,14 @@ export function SiteHeader() {
                 <Link
                   href="/login"
                   onClick={() => setOpen(false)}
-                  className="mt-2 rounded-lg px-3 py-2.5 text-center text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  className="mt-2 rounded-[12px] px-3 py-2.5 text-center text-sm font-medium text-foreground hover:bg-surface-2"
                 >
                   Sign in
                 </Link>
                 <Link
                   href="/signup"
                   onClick={() => setOpen(false)}
-                  className="rounded-lg bg-zinc-900 px-3 py-2.5 text-center text-sm font-medium text-white"
+                  className="rounded-[12px] bg-accent px-3 py-2.5 text-center text-sm font-medium text-accent-ink"
                 >
                   Register
                 </Link>
@@ -187,67 +188,75 @@ export function SiteHeader() {
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-zinc-200 bg-white">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-3">
+    <footer className="border-t border-border bg-surface">
+      <div className="jiy-container grid gap-8 py-12 md:grid-cols-3">
         <div className="md:col-span-1">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-zinc-900 text-[10px] font-semibold text-white">
+            <div className="flex h-7 w-7 items-center justify-center rounded-[12px] border border-border bg-accent text-[10px] font-semibold text-accent-ink">
               J
             </div>
-            <span className="text-lg font-semibold text-zinc-900">JIY.APP</span>
+            <span className="font-display text-lg font-semibold text-foreground">
+              JIY.APP
+            </span>
           </div>
-          <p className="mt-3 max-w-md text-sm text-zinc-500">
+          <p className="mt-3 max-w-md text-sm text-muted">
             Verified Digital Businesses.
           </p>
         </div>
         <div>
-          <h4 className="text-sm font-semibold text-zinc-800">Marketplace</h4>
-          <ul className="mt-3 space-y-2 text-sm text-zinc-500">
+          <h4 className="text-sm font-semibold text-foreground">Marketplace</h4>
+          <ul className="mt-3 space-y-2 text-sm text-muted">
             <li>
-              <Link href="/marketplace?type=BUY" className="hover:text-zinc-800">
+              <Link href="/marketplace?type=BUY" className="hover:text-accent">
                 Buy
               </Link>
             </li>
             <li>
-              <Link href="/marketplace?type=RENT" className="hover:text-zinc-800">
+              <Link href="/marketplace?type=RENT" className="hover:text-accent">
                 Rent
               </Link>
             </li>
             <li>
-              <Link href="/marketplace?type=REVIVE" className="hover:text-zinc-800">
+              <Link href="/marketplace?type=REVIVE" className="hover:text-accent">
                 Revive
               </Link>
             </li>
             <li>
-              <Link href="/sell" className="hover:text-zinc-800">
+              <Link href="/sell" className="hover:text-accent">
                 Sell
               </Link>
             </li>
           </ul>
         </div>
         <div>
-          <h4 className="text-sm font-semibold text-zinc-800">Account</h4>
-          <ul className="mt-3 space-y-2 text-sm text-zinc-500">
+          <h4 className="text-sm font-semibold text-foreground">Account</h4>
+          <ul className="mt-3 space-y-2 text-sm text-muted">
             <li>
-              <Link href="/deals" className="hover:text-zinc-800">
+              <Link href="/deals" className="hover:text-accent">
                 Deals
               </Link>
             </li>
             <li>
-              <Link href="/profile" className="hover:text-zinc-800">
+              <Link href="/profile" className="hover:text-accent">
                 Profile
               </Link>
             </li>
             <li>
-              <Link href="/trafik-studio" className="hover:text-zinc-800">
+              <Link href="/trafik-studio" className="hover:text-accent">
                 Trafik Studio
               </Link>
             </li>
           </ul>
         </div>
       </div>
-      <div className="border-t border-zinc-200 py-4 text-center text-xs text-zinc-400">
-        © {new Date().getFullYear()} JIY.APP. Marketplace listings are informational.
+      <div className="border-t border-border">
+        <div className="jiy-container flex flex-col items-center justify-between gap-4 py-4 sm:flex-row">
+          <p className="text-center text-xs text-muted sm:text-left">
+            © {new Date().getFullYear()} JIY.APP. Marketplace listings are
+            informational.
+          </p>
+          <ThemeToggle />
+        </div>
       </div>
     </footer>
   );

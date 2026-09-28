@@ -1,18 +1,13 @@
 import type { Metadata } from "next";
-import { DM_Sans, Instrument_Serif, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
 import { SiteFooter, SiteHeader } from "@/components/layout/site-header";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import "./globals.css";
 
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-});
-
-const instrument = Instrument_Serif({
-  variable: "--font-instrument",
-  subsets: ["latin"],
-  weight: "400",
 });
 
 const geistMono = Geist_Mono({
@@ -38,18 +33,23 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://jiy.app"),
 };
 
+const themeInitScript = `(function(){try{var t=localStorage.getItem('jiy-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body
-        className={`${dmSans.variable} ${instrument.variable} ${geistMono.variable} antialiased sf-glow`}
+        className={`${GeistSans.variable} ${inter.variable} ${geistMono.variable} antialiased`}
       >
         <SiteHeader />
-        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden pb-20 md:pb-0">
+        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden bg-background pb-20 text-foreground md:pb-0">
           {children}
         </main>
         <SiteFooter />
