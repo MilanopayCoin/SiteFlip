@@ -87,9 +87,9 @@ function SignupForm() {
       </CardHeader>
       <CardContent>
         {nextPath !== "/profile" && (
-          <p className="mb-4 text-sm text-zinc-400">
+          <p className="mb-4 text-sm text-muted">
             After signup you will continue to{" "}
-            <span className="text-zinc-200">{nextPath}</span>.
+            <span className="text-foreground">{nextPath}</span>.
           </p>
         )}
         <form onSubmit={onSubmit} className="space-y-4">
@@ -151,16 +151,16 @@ function SignupForm() {
             {loading ? "Creating…" : "Register"}
           </Button>
         </form>
-        {message && <p className="mt-4 text-sm text-zinc-400">{message}</p>}
-        <p className="mt-3 text-xs text-zinc-600">
+        {message && <p className="mt-4 text-sm text-muted">{message}</p>}
+        <p className="mt-3 text-xs text-muted">
           Registration uses Supabase Auth. Profiles persist when production
           schema is ready.
         </p>
-        <p className="mt-4 text-center text-sm text-zinc-500">
+        <p className="mt-4 text-center text-sm text-muted">
           Already have an account?{" "}
           <Link
             href={`/login?next=${encodeURIComponent(nextPath)}`}
-            className="text-zinc-700 hover:underline"
+            className="font-medium text-accent hover:underline"
           >
             Sign in
           </Link>
@@ -172,16 +172,14 @@ function SignupForm() {
 
 export default function SignupPage() {
   return (
-    <div className="mx-auto flex max-w-md flex-col px-4 py-16">
-      <Suspense
-        fallback={
-          <Card>
-            <CardContent className="p-6 text-sm text-zinc-400">Loading…</CardContent>
-          </Card>
-        }
-      >
-        <SignupForm />
-      </Suspense>
-    </div>
+    <Suspense
+      fallback={
+        <Card>
+          <CardContent className="p-6 text-sm text-muted">Loading…</CardContent>
+        </Card>
+      }
+    >
+      <SignupForm />
+    </Suspense>
   );
 }

@@ -132,7 +132,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-zinc-500">
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">
         Loading profile…
       </div>
     );
@@ -141,7 +141,7 @@ export default function ProfilePage() {
   if (error && !profile) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <p className="text-rose-400">{error}</p>
+        <p className="text-danger">{error}</p>
         <Button className="mt-4" asChild>
           <Link href="/login">Sign in</Link>
         </Button>
@@ -152,11 +152,11 @@ export default function ProfilePage() {
   if (!profile) return null;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+    <div className="jiy-container max-w-2xl py-8 sm:py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Your profile</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-semibold text-foreground">Your profile</h1>
+          <p className="mt-1 text-sm text-muted">
             Preferences personalize BUILD. Explicit idea text always wins.
           </p>
         </div>
@@ -179,7 +179,7 @@ export default function ProfilePage() {
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-3 text-base">
             <span>Completion</span>
-            <span className="text-violet-300">{completion}%</span>
+            <span className="font-mono tabular text-accent">{completion}%</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -221,10 +221,10 @@ export default function ProfilePage() {
                   id="risk"
                   name="risk"
                   defaultValue={profile.risk || "Medium"}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
+                  className="mt-1.5 h-10 w-full rounded-[12px] border border-border bg-surface px-3 text-sm text-foreground"
                 >
                   {["Low", "Medium", "High"].map((o) => (
-                    <option key={o} value={o} className="bg-zinc-900">
+                    <option key={o} value={o}>
                       {o}
                     </option>
                   ))}
@@ -236,10 +236,10 @@ export default function ProfilePage() {
                   id="workload"
                   name="workload"
                   defaultValue={profile.workload || "Part-time"}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-zinc-200"
+                  className="mt-1.5 h-10 w-full rounded-[12px] border border-border bg-surface px-3 text-sm text-foreground"
                 >
                   {["Side project", "Part-time", "Full-time"].map((o) => (
-                    <option key={o} value={o} className="bg-zinc-900">
+                    <option key={o} value={o}>
                       {o}
                     </option>
                   ))}
@@ -272,9 +272,9 @@ export default function ProfilePage() {
               {saving ? "Saving…" : "Save profile"}
             </Button>
           </form>
-          {message && <p className="mt-3 text-sm text-emerald-300">{message}</p>}
-          {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
-          <p className="mt-3 text-xs text-zinc-600">
+          {message && <p className="mt-3 text-sm text-accent">{message}</p>}
+          {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+          <p className="mt-3 text-xs text-muted">
             Email ({profile.email}) is private and never shown on public profiles.
           </p>
         </CardContent>

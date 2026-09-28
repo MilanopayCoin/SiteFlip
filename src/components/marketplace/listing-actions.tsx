@@ -193,7 +193,7 @@ export function ListingActions({ listing }: { listing: Listing }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div id="listing-actions" className="scroll-mt-28 space-y-2">
       {canBuyNow && (
         <Button
           className="w-full"

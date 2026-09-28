@@ -122,9 +122,9 @@ function LoginForm() {
           </p>
         )}
         {nextPath !== "/marketplace" && (
-          <p className="mb-4 text-sm text-zinc-400">
+          <p className="mb-4 text-sm text-muted">
             After sign in you will return to{" "}
-            <span className="text-zinc-200">{nextPath}</span>.
+            <span className="text-foreground">{nextPath}</span>.
           </p>
         )}
         <form onSubmit={onSubmit} className="space-y-4">
@@ -154,18 +154,18 @@ function LoginForm() {
             {loading ? "Signing in…" : "Sign in"}
           </Button>
         </form>
-        {message && <p className="mt-4 text-sm text-zinc-400">{message}</p>}
-        <p className="mt-4 text-center text-sm text-zinc-500">
+        {message && <p className="mt-4 text-sm text-muted">{message}</p>}
+        <p className="mt-4 text-center text-sm text-muted">
           No account?{" "}
           <Link
             href={`/signup?next=${encodeURIComponent(nextPath)}`}
-            className="text-zinc-700 hover:underline"
+            className="font-medium text-accent hover:underline"
           >
             Register
           </Link>
         </p>
         <p className="mt-2 text-center text-sm">
-          <Link href="/profile" className="text-zinc-500 hover:text-zinc-900">
+          <Link href="/profile" className="text-muted hover:text-foreground">
             Open profile →
           </Link>
         </p>
@@ -176,16 +176,14 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="mx-auto flex max-w-md flex-col px-4 py-16">
-      <Suspense
-        fallback={
-          <Card>
-            <CardContent className="p-6 text-sm text-zinc-400">Loading…</CardContent>
-          </Card>
-        }
-      >
-        <LoginForm />
-      </Suspense>
-    </div>
+    <Suspense
+      fallback={
+        <Card>
+          <CardContent className="p-6 text-sm text-muted">Loading…</CardContent>
+        </Card>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

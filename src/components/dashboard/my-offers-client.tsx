@@ -72,13 +72,13 @@ export function MyOffersClient() {
   }
 
   if (loading) {
-    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-white/5" />;
+    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface-2" />;
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-white">My Offers</h1>
-      <p className="mt-1 text-sm text-zinc-400">
+      <h1 className="text-2xl font-semibold text-foreground">My Offers</h1>
+      <p className="mt-1 text-sm text-muted">
         PENDING · COUNTERED · ACCEPTED · REJECTED · EXPIRED · CANCELLED
       </p>
 
@@ -103,10 +103,10 @@ export function MyOffersClient() {
                 <CardContent className="space-y-3 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-medium text-white">
+                      <p className="font-medium text-foreground">
                         €{Number(o.amount).toLocaleString()}
                       </p>
-                      <p className="text-xs text-zinc-500">
+                      <p className="text-xs text-muted">
                         {isSeller ? "Incoming" : "Outgoing"} · Listing{" "}
                         {o.listing_id.slice(0, 12)}…
                         {o.message ? ` · ${o.message}` : ""}

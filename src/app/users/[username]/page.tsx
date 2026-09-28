@@ -55,7 +55,7 @@ export default function PublicUserPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-zinc-500">
+      <div className="jiy-container max-w-2xl py-16 text-center text-muted">
         Loading public profile…
       </div>
     );
@@ -63,8 +63,8 @@ export default function PublicUserPage() {
 
   if (error || !profile) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <p className="text-rose-400">{error || "User not found"}</p>
+      <div className="jiy-container max-w-2xl py-16 text-center">
+        <p className="text-danger">{error || "User not found"}</p>
         <Button className="mt-4" asChild>
           <Link href="/explore">Back to explore</Link>
         </Button>
@@ -73,17 +73,17 @@ export default function PublicUserPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+    <div className="jiy-container max-w-2xl py-8 sm:py-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-violet-400">
+          <p className="sf-label">
             @{profile.username}
           </p>
-          <h1 className="mt-1 text-3xl font-semibold text-white">
+          <h1 className="mt-1 text-3xl font-semibold text-foreground">
             {profile.displayName}
           </h1>
           {profile.country && (
-            <p className="mt-1 text-sm text-zinc-400">{profile.country}</p>
+            <p className="mt-1 text-sm text-muted">{profile.country}</p>
           )}
         </div>
         <Badge variant="warning">
@@ -97,14 +97,14 @@ export default function PublicUserPage() {
         <CardHeader>
           <CardTitle>About</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 text-sm text-zinc-300">
+        <CardContent className="space-y-4 text-sm text-foreground">
           <p>{profile.bio || "No bio yet."}</p>
           {profile.website && (
             <p>
               Website:{" "}
               <a
                 href={profile.website}
-                className="text-violet-300 hover:underline"
+                className="text-accent hover:underline"
                 rel="noreferrer"
                 target="_blank"
               >
@@ -133,7 +133,7 @@ export default function PublicUserPage() {
               ))}
             </div>
           )}
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-muted">
             Member since {new Date(profile.memberSince).toLocaleDateString()} ·
             Private contact details are never shown here.
           </p>

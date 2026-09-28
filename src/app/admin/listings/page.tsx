@@ -74,31 +74,31 @@ export default function AdminListingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-semibold text-zinc-900">Admin · Listings</h1>
-      <p className="mt-1 text-sm text-zinc-500">
+    <div>
+      <h1 className="font-display text-2xl text-foreground">Admin · Listings</h1>
+      <p className="mt-1 text-sm text-muted">
         VERIFY_LIVE publishes a PENDING listing. REJECT / SUSPEND keep it off
         the marketplace.
       </p>
 
       {loading && (
-        <div className="mt-8 h-32 animate-pulse rounded-xl bg-zinc-100" />
+        <div className="mt-8 h-32 animate-pulse rounded-[12px] bg-surface-2" />
       )}
       {error && (
-        <p className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-6 rounded-[12px] border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </p>
       )}
 
-      <ul className="mt-8 divide-y divide-zinc-200 border-t border-zinc-200">
+      <ul className="mt-8 divide-y divide-border border-t border-border">
         {listings.map((l) => (
           <li
             key={l.id}
             className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
-              <p className="font-medium text-zinc-900">{l.title}</p>
-              <p className="mt-0.5 text-xs text-zinc-500">
+              <p className="font-medium text-foreground">{l.title}</p>
+              <p className="mt-0.5 text-xs text-muted">
                 {l.listing_type} · {l.id.slice(0, 8)}
               </p>
               <Badge variant="outline" className="mt-2">
@@ -135,7 +135,7 @@ export default function AdminListingsPage() {
       </ul>
 
       {!loading && listings.length === 0 && (
-        <p className="mt-8 text-sm text-zinc-500">No listings loaded.</p>
+        <p className="mt-8 text-sm text-muted">No listings loaded.</p>
       )}
     </div>
   );

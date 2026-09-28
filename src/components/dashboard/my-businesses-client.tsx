@@ -49,7 +49,7 @@ export function MyBusinessesClient() {
   }, []);
 
   if (loading) {
-    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-white/5" />;
+    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface-2" />;
   }
 
   if (error) {
@@ -70,8 +70,8 @@ export function MyBusinessesClient() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-white">My Businesses</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-semibold text-foreground">My Businesses</h1>
+          <p className="mt-1 text-sm text-muted">
             Lifecycle portfolio
             {mode === "demo" ? " · DEMO mode" : ""}
           </p>
@@ -108,8 +108,8 @@ export function MyBusinessesClient() {
                   </Badge>
                 </div>
                 <div className="text-right text-sm">
-                  <p className="text-zinc-500">Value</p>
-                  <p className="font-semibold text-white">
+                  <p className="text-muted">Value</p>
+                  <p className="font-semibold text-foreground">
                     {formatCurrency(b.asking_price)}
                   </p>
                 </div>
@@ -117,26 +117,26 @@ export function MyBusinessesClient() {
               <CardContent>
                 <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                   <div>
-                    <p className="text-zinc-500">MRR</p>
-                    <p className="text-zinc-200">
+                    <p className="text-muted">MRR</p>
+                    <p className="text-foreground">
                       {formatCurrency(b.monthly_revenue)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-zinc-500">Profit</p>
-                    <p className="text-zinc-200">
+                    <p className="text-muted">Profit</p>
+                    <p className="text-foreground">
                       {formatCurrency(b.monthly_profit)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-zinc-500">Traffic</p>
-                    <p className="text-zinc-200">
+                    <p className="text-muted">Traffic</p>
+                    <p className="text-foreground">
                       {b.monthly_traffic?.toLocaleString() ?? "—"}
                     </p>
                   </div>
                   <div>
-                    <p className="text-zinc-500">AI Score</p>
-                    <p className="text-zinc-200">{b.ai_score ?? "—"}</p>
+                    <p className="text-muted">AI Score</p>
+                    <p className="text-foreground">{b.ai_score ?? "—"}</p>
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">

@@ -131,7 +131,7 @@ export function BusinessForm({
               <select
                 id="category"
                 name="category"
-                className="mt-1.5 w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-sm text-white"
+                className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
                 defaultValue={mode === "revive" ? "abandoned_saas" : "saas"}
               >
                 {CATEGORIES.map((c) => (
@@ -147,7 +147,7 @@ export function BusinessForm({
                 <select
                   id="lifecycle"
                   name="lifecycle"
-                  className="mt-1.5 w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-sm text-white"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
                   defaultValue="IDEA"
                 >
                   {LIFECYCLES.map((l) => (
@@ -222,7 +222,7 @@ export function BusinessForm({
                 className="mt-1.5"
                 rows={3}
               />
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-muted">
                 Labeled as SELLER CLAIM. AI will not invent historical facts.
               </p>
             </div>

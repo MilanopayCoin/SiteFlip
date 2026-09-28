@@ -46,13 +46,13 @@ export function WatchlistClient() {
   }
 
   if (loading) {
-    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-white/5" />;
+    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface-2" />;
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-white">My Watchlist</h1>
-      <p className="mt-1 text-sm text-zinc-400">Saved listings</p>
+      <h1 className="text-2xl font-semibold text-foreground">My Watchlist</h1>
+      <p className="mt-1 text-sm text-muted">Saved listings</p>
 
       {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
 
@@ -81,7 +81,7 @@ export function WatchlistClient() {
             ) : (
               <div
                 key={item.id}
-                className="rounded-xl border border-white/10 p-4 text-sm text-zinc-400"
+                className="rounded-xl border border-border p-4 text-sm text-muted"
               >
                 Listing {item.listing_id}
                 <Button

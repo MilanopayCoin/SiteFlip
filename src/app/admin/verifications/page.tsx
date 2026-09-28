@@ -4,13 +4,13 @@ export const metadata = { title: "Admin · Verifications" };
 
 export default function AdminVerificationsPage() {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-semibold text-white">Verifications</h1>
+    <div>
+      <h1 className="font-display text-2xl text-foreground">Verifications</h1>
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>Admin · Verifications</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-zinc-400">
+        <CardContent className="text-sm text-muted">
           Operational view for verifications. Connect Supabase service role + admin RLS
           (profiles.is_admin) to load live data. Demo mode shows architecture only.
         </CardContent>

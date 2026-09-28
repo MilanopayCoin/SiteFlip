@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { DealLifecycleTimeline } from "@/components/deals/deal-lifecycle-timeline";
+import { Badge } from "@/components/ui/badge";
 
 /* robots: noindex — private deal list (metadata via layout if needed) */
 
@@ -54,19 +57,19 @@ export default function DealsPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      <p className="sf-label">Workspace</p>
-      <h1 className="font-display mt-1 text-3xl text-zinc-900">Deals</h1>
-      <p className="mt-2 text-sm text-zinc-500">
-        Open a deal room for payment, delivery, acceptance, and disputes.
-      </p>
+    <div className="jiy-container max-w-3xl py-8 sm:py-10">
+      <SectionHeading
+        eyebrow="Workspace"
+        title="Deals"
+        subtitle="Open a deal room for payment, delivery, acceptance, and disputes."
+      />
 
       {loading && (
-        <div className="mt-8 h-40 animate-pulse rounded-xl bg-zinc-100" />
+        <div className="mt-8 h-40 animate-pulse rounded-[12px] bg-surface-2" />
       )}
 
       {error && (
-        <p className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-6 rounded-[12px] border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error === "Authentication required" ? (
             <>
               <Link href="/login?next=/deals" className="underline">
@@ -81,7 +84,7 @@ export default function DealsPage() {
       )}
 
       {!loading && !error && deals.length === 0 && (
-        <p className="mt-8 text-sm text-zinc-500">
+        <p className="mt-8 text-sm text-muted">
           No deals yet.{" "}
           <Link href="/marketplace" className="underline">
             Browse the marketplace
@@ -91,7 +94,7 @@ export default function DealsPage() {
       )}
 
       {!loading && deals.length > 0 && (
-        <ul className="mt-8 divide-y divide-zinc-200 border-t border-zinc-200">
+        <ul className="mt-8 space-y-3">
           {deals.map((d) => {
             const role =
               d.buyer_id === userId
@@ -105,18 +108,28 @@ export default function DealsPage() {
               <li key={d.id}>
                 <Link
                   href={`/deals/${d.id}`}
-                  className="flex items-center justify-between gap-4 py-4 transition-colors hover:bg-zinc-50"
+                  className="jiy-focus-ring block rounded-[12px] border border-border bg-surface p-4 transition-colors hover:bg-surface-2"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-zinc-900">{title}</p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
-                      {d.type} · {role} · {d.status}
-                      {d.funds_state ? ` · ${d.funds_state}` : ""}
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-foreground">{title}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge variant="outline">{d.type}</Badge>
+                        <Badge variant="outline">{role}</Badge>
+                        <Badge variant="outline">{d.status}</Badge>
+                      </div>
+                      <div className="mt-4">
+                        <DealLifecycleTimeline
+                          status={d.status}
+                          fundsState={d.funds_state}
+                          compact
+                        />
+                      </div>
+                    </div>
+                    <p className="shrink-0 font-mono text-sm tabular text-foreground">
+                      {formatCurrency(d.amount, d.currency)}
                     </p>
                   </div>
-                  <p className="shrink-0 text-sm text-zinc-700">
-                    {formatCurrency(d.amount, d.currency)}
-                  </p>
                 </Link>
               </li>
             );

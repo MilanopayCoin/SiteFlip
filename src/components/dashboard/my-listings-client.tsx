@@ -36,7 +36,7 @@ export function MyListingsClient() {
   }, []);
 
   if (loading) {
-    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-white/5" />;
+    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface-2" />;
   }
 
   if (error) {
@@ -48,7 +48,7 @@ export function MyListingsClient() {
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-white">My Listings</h1>
+        <h1 className="text-2xl font-semibold text-foreground">My Listings</h1>
         <Button asChild>
           <Link href="/dashboard/listings/new">New listing</Link>
         </Button>
@@ -67,7 +67,7 @@ export function MyListingsClient() {
             <Card key={l.id}>
               <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div>
-                  <p className="font-medium text-white">{l.title}</p>
+                  <p className="font-medium text-foreground">{l.title}</p>
                   <div className="mt-1 flex flex-wrap gap-2">
                     <Badge variant="outline">{l.listing_type}</Badge>
                     <Badge
@@ -79,10 +79,10 @@ export function MyListingsClient() {
                   </div>
                 </div>
                 <div className="text-right text-sm">
-                  <p className="text-white">
+                  <p className="text-foreground">
                     {formatCurrency(l.price ?? l.rental_price_monthly)}
                   </p>
-                  <p className="text-zinc-500">{l.views ?? 0} views</p>
+                  <p className="text-muted">{l.views ?? 0} views</p>
                 </div>
                 <Button size="sm" variant="secondary" asChild>
                   <Link href={`/listings/${l.id}`}>Open</Link>

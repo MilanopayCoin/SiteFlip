@@ -41,9 +41,11 @@ const CATEGORIES = [
 export function MarketplaceFilters({
   basePath = "/marketplace",
   layout = "rail",
+  omitTypeSort = false,
 }: {
   basePath?: string;
   layout?: "rail" | "stack";
+  omitTypeSort?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -72,10 +74,10 @@ export function MarketplaceFilters({
       <div>
         <p className="sf-label mb-3">Search</p>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input
             placeholder="Name, category…"
-            className="rounded-md border-zinc-200 pl-9"
+            className="pl-9"
             defaultValue={params.get("search") ?? ""}
             onChange={(e) => {
               const v = e.target.value;
@@ -87,34 +89,36 @@ export function MarketplaceFilters({
         </div>
       </div>
 
-      <div>
-        <p className="sf-label mb-3">Type</p>
-        <div className="flex flex-col gap-1">
-          {TYPES.map((t) => {
-            const active = (params.get("type") ?? "ALL") === t.value;
-            return (
-              <button
-                key={t.value}
-                type="button"
-                onClick={() => update("type", t.value)}
-                className={cn(
-                  "rounded-md px-3 py-2 text-left text-sm transition-colors",
-                  active
-                    ? "bg-slate-900 text-white"
-                    : "text-zinc-600 hover:bg-zinc-50"
-                )}
-              >
-                {t.label}
-              </button>
-            );
-          })}
+      {!omitTypeSort && (
+        <div>
+          <p className="sf-label mb-3">Type</p>
+          <div className="flex flex-col gap-1">
+            {TYPES.map((t) => {
+              const active = (params.get("type") ?? "ALL") === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => update("type", t.value)}
+                  className={cn(
+                    "jiy-focus-ring min-h-11 rounded-[12px] px-3 py-2 text-left text-sm transition-colors",
+                    active
+                      ? "bg-accent text-accent-ink"
+                      : "text-muted hover:bg-surface-2 hover:text-foreground"
+                  )}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       <div>
         <Label className="sf-label mb-2 block">Category</Label>
         <select
-          className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
+          className="jiy-focus-ring h-11 w-full rounded-[12px] border border-border bg-surface px-3 text-sm text-foreground"
           value={params.get("category") ?? "ALL"}
           onChange={(e) => update("category", e.target.value)}
         >
@@ -132,7 +136,6 @@ export function MarketplaceFilters({
           <Input
             type="number"
             placeholder="0"
-            className="rounded-md"
             defaultValue={params.get("minPrice") ?? ""}
             onBlur={(e) => update("minPrice", e.target.value)}
           />
@@ -160,25 +163,27 @@ export function MarketplaceFilters({
         />
       </div>
 
-      <div>
-        <Label className="sf-label mb-2 block">Sort</Label>
-        <select
-          className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
-          value={params.get("sort") ?? "newest"}
-          onChange={(e) => update("sort", e.target.value)}
-        >
-          {SORTS.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      {!omitTypeSort && (
+        <div>
+          <Label className="sf-label mb-2 block">Sort</Label>
+          <select
+            className="jiy-focus-ring h-11 w-full rounded-[12px] border border-border bg-surface px-3 text-sm text-foreground"
+            value={params.get("sort") ?? "newest"}
+            onChange={(e) => update("sort", e.target.value)}
+          >
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      <label className="flex items-center gap-2 text-sm text-zinc-700">
+      <label className="flex min-h-11 items-center gap-2 text-sm text-foreground">
         <input
           type="checkbox"
-          className="rounded border-zinc-300"
+          className="rounded border-border accent-accent"
           checked={params.get("verified") === "1"}
           onChange={(e) => update("verified", e.target.checked ? "1" : "")}
         />

@@ -41,12 +41,12 @@ export default async function BusinessPage({ params }: Props) {
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+    <div className="jiy-container max-w-5xl py-8 sm:py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Badge variant="outline">{lifecycleLabel(b.lifecycle)}</Badge>
-          <h1 className="mt-3 text-3xl font-semibold text-white">{b.name}</h1>
-          <p className="mt-1 text-zinc-400">
+          <h1 className="mt-3 text-3xl font-semibold text-foreground">{b.name}</h1>
+          <p className="mt-1 text-muted">
             {CATEGORY_LABELS[b.category]} · Owner: {owner?.full_name ?? "—"}
           </p>
         </div>
@@ -75,10 +75,10 @@ export default async function BusinessPage({ params }: Props) {
         ].map(([label, value]) => (
           <Card key={label}>
             <CardContent className="p-4">
-              <p className="text-xs text-zinc-500">{label}</p>
+              <p className="text-xs text-muted">{label}</p>
               <p
                 className={`mt-1 font-semibold ${
-                  label === "AI Score" ? scoreColor(b.ai_score) : "text-white"
+                  label === "AI Score" ? scoreColor(b.ai_score) : "text-foreground"
                 }`}
               >
                 {value}
@@ -92,10 +92,10 @@ export default async function BusinessPage({ params }: Props) {
         <CardHeader>
           <CardTitle>Description</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-zinc-300">
+        <CardContent className="text-sm text-muted">
           <p>{b.description}</p>
           {verified.length > 0 && (
-            <p className="mt-3 text-xs text-emerald-400">
+            <p className="mt-3 text-xs text-accent">
               {verified.length} verification badge(s) — never fabricated.
             </p>
           )}

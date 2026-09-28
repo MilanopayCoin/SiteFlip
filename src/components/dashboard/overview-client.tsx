@@ -72,14 +72,14 @@ export function DashboardOverviewClient() {
   }, []);
 
   if (loading) {
-    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-white/5" />;
+    return <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface-2" />;
   }
 
   if (error || !data) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
-        <p className="text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+        <p className="text-sm text-muted">
           {error || "Could not load portfolio."}
         </p>
         <Button asChild>
@@ -106,8 +106,8 @@ export function DashboardOverviewClient() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
-          <p className="text-sm text-zinc-400">
+          <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted">
             {data.modeLabel === "LIVE"
               ? "Live portfolio from your JIY.APP account."
               : "Sign in to see your persisted portfolio."}
@@ -170,7 +170,7 @@ export function DashboardOverviewClient() {
           <CardHeader>
             <CardTitle>Recent activity</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-zinc-400">
+          <CardContent className="space-y-3 text-sm text-muted">
             <p>
               Offers: {data.offers} · Businesses: {data.owned.length}
             </p>
@@ -190,15 +190,15 @@ export function DashboardOverviewClient() {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {data.owned.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-500">
+            <p className="py-8 text-center text-sm text-muted">
               No businesses yet.{" "}
-              <Link href="/build" className="text-violet-300">
+              <Link href="/build" className="text-accent">
                 Create with Fast Create
               </Link>
             </p>
           ) : (
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="text-xs uppercase text-zinc-500">
+              <thead className="text-xs uppercase text-muted">
                 <tr>
                   <th className="pb-3 pr-4">Business</th>
                   <th className="pb-3 pr-4">Status</th>
@@ -209,18 +209,18 @@ export function DashboardOverviewClient() {
               </thead>
               <tbody>
                 {data.owned.slice(0, 8).map((b) => (
-                  <tr key={b.id} className="border-t border-white/5">
-                    <td className="py-3 pr-4 font-medium text-white">{b.name}</td>
+                  <tr key={b.id} className="border-t border-border">
+                    <td className="py-3 pr-4 font-medium text-foreground">{b.name}</td>
                     <td className="py-3 pr-4">
                       <Badge variant="outline">{b.lifecycle}</Badge>
                     </td>
-                    <td className="py-3 pr-4 text-zinc-300">
+                    <td className="py-3 pr-4 text-foreground">
                       {formatCurrency(b.asking_price)}
                     </td>
-                    <td className="py-3 pr-4 text-zinc-300">
+                    <td className="py-3 pr-4 text-foreground">
                       {formatCurrency(b.monthly_revenue)}
                     </td>
-                    <td className="py-3 text-zinc-300">{b.ai_score ?? "—"}</td>
+                    <td className="py-3 text-foreground">{b.ai_score ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -236,8 +236,8 @@ function Stat({ title, value }: { title: string; value: string }) {
   return (
     <Card>
       <CardContent className="p-4">
-        <p className="text-xs text-zinc-500">{title}</p>
-        <p className="mt-1 text-xl font-semibold text-white">{value}</p>
+        <p className="text-xs text-muted">{title}</p>
+        <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
       </CardContent>
     </Card>
   );
