@@ -8,6 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 const CATEGORIES = [
   "saas",
@@ -20,6 +29,13 @@ const CATEGORIES = [
 ] as const;
 
 const LISTING_TYPES = ["BUY", "RENT", "REVIVE"] as const;
+
+const STEPS = [
+  { id: "identity", title: "Business identity" },
+  { id: "commercials", title: "Commercials" },
+  { id: "assets", title: "Assets & access" },
+  { id: "terms", title: "Transfer terms" },
+] as const;
 
 function mapValuationCategory(raw: string | null): string {
   switch (raw) {
@@ -59,11 +75,15 @@ function SellPageContent() {
     }),
     [searchParams]
   );
+  const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [listingType, setListingType] =
     useState<(typeof LISTING_TYPES)[number]>("BUY");
+  const [category, setCategory] = useState(prefill.category);
+
+  const progressValue = ((step + 1) / STEPS.length) * 100;
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -73,7 +93,7 @@ function SellPageContent() {
     const fd = new FormData(e.currentTarget);
 
     const name = String(fd.get("name") || "").trim();
-    const category = String(fd.get("category") || "other");
+    const categoryVal = String(fd.get("category") || category || "other");
     const description = String(fd.get("description") || "").trim();
     const price = fd.get("price") ? Number(fd.get("price")) : undefined;
     const revenue = fd.get("revenue") ? Number(fd.get("revenue")) : undefined;
@@ -92,7 +112,7 @@ function SellPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          category,
+          category: categoryVal,
           description,
           website_url: websiteUrl || undefined,
           domain: domain || undefined,
@@ -159,13 +179,21 @@ function SellPageContent() {
     }
   }
 
+  function goNext() {
+    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  }
+
+  function goBack() {
+    setStep((s) => Math.max(s - 1, 0));
+  }
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+    <div className="jiy-container max-w-2xl py-8 sm:py-10">
       <p className="sf-label">Intake</p>
-      <h1 className="font-display mt-1 text-3xl text-zinc-900 sm:text-4xl">
+      <h1 className="font-display mt-1 text-3xl text-foreground sm:text-4xl">
         Sell your business
       </h1>
-      <p className="mt-2 text-sm text-zinc-500">
+      <p className="mt-2 text-sm text-muted">
         Submissions stay private until moderation. Claimed metrics remain
         UNVERIFIED until JIY verifies them.
       </p>
@@ -180,147 +208,197 @@ function SellPageContent() {
         </p>
       )}
 
-      <form onSubmit={onSubmit} className="mt-10 space-y-10">
-        <Section n="01" title="Business identity">
-          <Field label="Business name" name="name" required />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="category">Category</Label>
-              <select
-                id="category"
-                name="category"
-                className="mt-1.5 h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
-                defaultValue={prefill.category}
+      <div className="mt-8 space-y-3">
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="sf-label">
+            Step {step + 1} of {STEPS.length}
+          </span>
+          <span className="font-medium text-foreground">{STEPS[step].title}</span>
+        </div>
+        <Progress value={progressValue} aria-label="Listing intake progress" />
+        <ol className="flex flex-wrap gap-2">
+          {STEPS.map((s, i) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => setStep(i)}
+                className={cn(
+                  "jiy-focus-ring rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-wide transition-colors",
+                  i === step
+                    ? "border-accent bg-accent/15 text-accent"
+                    : i < step
+                      ? "border-border bg-surface-2 text-foreground"
+                      : "border-transparent text-muted hover:text-foreground"
+                )}
               >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+                {String(i + 1).padStart(2, "0")}
+              </button>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <form onSubmit={onSubmit} className="mt-10 space-y-8">
+        {step === 0 && (
+          <StepSection title="Business identity">
+            <Field label="Business name" name="name" required />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="category">Category</Label>
+                <input type="hidden" name="category" value={category} />
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger id="category" className="mt-1.5">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="listing_type">Type</Label>
+                <Select
+                  value={listingType}
+                  onValueChange={(v) =>
+                    setListingType(v as (typeof LISTING_TYPES)[number])
+                  }
+                >
+                  <SelectTrigger id="listing_type" className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LISTING_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
-              <Label htmlFor="listing_type">Type</Label>
-              <select
-                id="listing_type"
-                name="listing_type"
-                className="mt-1.5 h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
-                value={listingType}
-                onChange={(e) =>
-                  setListingType(
-                    e.target.value as (typeof LISTING_TYPES)[number]
-                  )
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                name="description"
+                required
+                rows={4}
+                className="mt-1.5"
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Domain" name="domain" />
+              <Field label="Website URL" name="website_url" type="url" />
+            </div>
+          </StepSection>
+        )}
+
+        {step === 1 && (
+          <StepSection title="Commercials">
+            <p className="text-xs text-muted">
+              These figures are seller-claimed until verified.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label={
+                  listingType === "RENT" ? "Monthly price (EUR)" : "Price (EUR)"
                 }
-              >
-                {LISTING_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+                name="price"
+                type="number"
+                required
+              />
+              {listingType === "RENT" && (
+                <Field label="Minimum term (months)" name="min_term" type="number" />
+              )}
+              <Field
+                label="Monthly revenue (claimed)"
+                name="revenue"
+                type="number"
+                defaultValue={prefill.revenue}
+              />
+              <Field label="Monthly profit (claimed)" name="profit" type="number" />
+              <Field
+                label="Users / traffic (claimed)"
+                name="users"
+                type="number"
+                defaultValue={prefill.users}
+              />
             </div>
-          </div>
-          <div>
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              name="description"
-              required
-              rows={4}
-              className="mt-1.5 rounded-md"
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Domain" name="domain" />
-            <Field label="Website URL" name="website_url" type="url" />
-          </div>
-        </Section>
+          </StepSection>
+        )}
 
-        <Section n="02" title="Commercials">
-          <p className="text-xs text-zinc-500">
-            These figures are seller-claimed until verified.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label={
-                listingType === "RENT" ? "Monthly price (EUR)" : "Price (EUR)"
-              }
-              name="price"
-              type="number"
-              required
-            />
-            {listingType === "RENT" && (
-              <Field label="Minimum term (months)" name="min_term" type="number" />
-            )}
-            <Field
-              label="Monthly revenue (claimed)"
-              name="revenue"
-              type="number"
-              defaultValue={prefill.revenue}
-            />
-            <Field label="Monthly profit (claimed)" name="profit" type="number" />
-            <Field
-              label="Users / traffic (claimed)"
-              name="users"
-              type="number"
-              defaultValue={prefill.users}
-            />
-          </div>
-        </Section>
+        {step === 2 && (
+          <StepSection title="Assets & access">
+            <div>
+              <Label htmlFor="assets">Assets included</Label>
+              <Textarea id="assets" name="assets" rows={2} className="mt-1.5" />
+            </div>
+            <div>
+              <Label htmlFor="source_code">Source code / access</Label>
+              <Textarea
+                id="source_code"
+                name="source_code"
+                rows={2}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="analytics">Analytics access</Label>
+              <Textarea
+                id="analytics"
+                name="analytics"
+                rows={2}
+                className="mt-1.5"
+              />
+            </div>
+          </StepSection>
+        )}
 
-        <Section n="03" title="Assets & access">
-          <div>
-            <Label htmlFor="assets">Assets included</Label>
-            <Textarea id="assets" name="assets" rows={2} className="mt-1.5 rounded-md" />
-          </div>
-          <div>
-            <Label htmlFor="source_code">Source code / access</Label>
-            <Textarea
-              id="source_code"
-              name="source_code"
-              rows={2}
-              className="mt-1.5 rounded-md"
-            />
-          </div>
-          <div>
-            <Label htmlFor="analytics">Analytics access</Label>
-            <Textarea
-              id="analytics"
-              name="analytics"
-              rows={2}
-              className="mt-1.5 rounded-md"
-            />
-          </div>
-        </Section>
-
-        <Section n="04" title="Transfer terms">
-          <div>
-            <Label htmlFor="transfer_terms">Terms</Label>
-            <Textarea
-              id="transfer_terms"
-              name="transfer_terms"
-              rows={3}
-              className="mt-1.5 rounded-md"
-            />
-          </div>
-        </Section>
+        {step === 3 && (
+          <StepSection title="Transfer terms">
+            <div>
+              <Label htmlFor="transfer_terms">Terms</Label>
+              <Textarea
+                id="transfer_terms"
+                name="transfer_terms"
+                rows={3}
+                className="mt-1.5"
+              />
+            </div>
+          </StepSection>
+        )}
 
         {error && (
-          <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-[12px] border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
           </p>
         )}
         {success && (
-          <p className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <p className="rounded-[12px] border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent">
             {success}
           </p>
         )}
 
-        <div className="sticky bottom-16 z-10 flex flex-wrap gap-3 border-t border-zinc-200 bg-[#fafaf9]/95 py-4 backdrop-blur md:bottom-0">
-          <Button type="submit" disabled={loading}>
-            {loading ? "Submitting…" : "Submit for review"}
-          </Button>
-          <Button type="button" variant="outline" asChild>
+        <div className="sticky bottom-16 z-10 flex flex-wrap gap-3 border-t border-border bg-background/95 py-4 backdrop-blur md:bottom-0">
+          {step > 0 && (
+            <Button type="button" variant="outline" onClick={goBack}>
+              Back
+            </Button>
+          )}
+          {step < STEPS.length - 1 ? (
+            <Button type="button" onClick={goNext}>
+              Continue
+            </Button>
+          ) : (
+            <Button type="submit" disabled={loading}>
+              {loading ? "Submitting…" : "Submit for review"}
+            </Button>
+          )}
+          <Button type="button" variant="ghost" asChild>
             <Link href="/marketplace">Cancel</Link>
           </Button>
         </div>
@@ -329,21 +407,16 @@ function SellPageContent() {
   );
 }
 
-function Section({
-  n,
+function StepSection({
   title,
   children,
 }: {
-  n: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-t border-zinc-200 pt-8">
-      <div className="mb-5 flex items-baseline gap-3">
-        <span className="tabular text-xs text-zinc-400">{n}</span>
-        <h2 className="text-lg font-medium text-zinc-900">{title}</h2>
-      </div>
+    <section className="space-y-4">
+      <h2 className="text-lg font-medium text-foreground">{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
   );
@@ -373,7 +446,7 @@ function Field({
         defaultValue={defaultValue}
         min={type === "number" ? 0 : undefined}
         step={type === "number" ? "0.01" : undefined}
-        className="mt-1.5 rounded-md"
+        className="mt-1.5"
       />
     </div>
   );

@@ -1,11 +1,13 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ListingRow } from "@/components/marketplace/listing-row";
+import { MarketplaceToolbar } from "@/components/marketplace/marketplace-toolbar";
 import { MarketplaceFilters } from "@/components/marketplace/filters";
 import { fetchMarketplaceListings } from "@/lib/data/marketplace-data";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { ListingCard } from "@/components/marketing/listing-card";
 import type { MarketplaceFilters as Filters } from "@/types/database";
 
 export const metadata: Metadata = {
@@ -43,18 +45,13 @@ export default async function MarketplacePage({ searchParams }: Props) {
     `/marketplace?${qs ? `${qs}&` : ""}page=${p}`;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-6">
-        <div>
-          <p className="sf-label">Exchange</p>
-          <h1 className="font-display mt-1 text-3xl text-zinc-900 sm:text-4xl">
-            Marketplace
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-zinc-500">
-            Browse verified digital businesses. Seller-claimed figures stay
-            unmarked until JIY verifies them.
-          </p>
-        </div>
+    <div className="jiy-container py-8 sm:py-10">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
+        <SectionHeading
+          eyebrow="Exchange"
+          title="Marketplace"
+          subtitle="Browse digital businesses. Verified badge appears when JIY confirms evidence."
+        />
         <div className="flex flex-wrap items-center gap-2">
           {mode === "demo" && <Badge variant="warning">DEMO DATA</Badge>}
           {mode === "supabase" && <Badge variant="success">LIVE</Badge>}
@@ -62,19 +59,25 @@ export default async function MarketplacePage({ searchParams }: Props) {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <Suspense fallback={<div className="mb-6 h-12 animate-pulse rounded-[12px] bg-surface-2" />}>
+        <MarketplaceToolbar />
+      </Suspense>
+
+      <div className="mt-8 grid gap-8 lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="lg:sticky lg:top-20 lg:self-start">
           <Suspense
-            fallback={<div className="h-80 animate-pulse bg-zinc-100" />}
+            fallback={<div className="h-80 animate-pulse rounded-[12px] bg-surface-2" />}
           >
-            <MarketplaceFilters basePath="/marketplace" layout="rail" />
+            <MarketplaceFilters basePath="/marketplace" layout="rail" omitTypeSort />
           </Suspense>
         </aside>
 
         <section>
-          <div className="mb-3 flex items-center justify-between px-1">
-            <p className="text-sm text-zinc-500">
-              <span className="tabular font-medium text-zinc-900">{total}</span>{" "}
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <p className="text-sm text-muted">
+              <span className="font-mono tabular font-medium text-foreground">
+                {total}
+              </span>{" "}
               results
               {totalPages > 1 && (
                 <span>
@@ -85,41 +88,32 @@ export default async function MarketplacePage({ searchParams }: Props) {
             </p>
             <Link
               href="/sell"
-              className="text-sm font-medium text-zinc-900 underline-offset-4 hover:underline"
+              className="text-sm font-medium text-accent hover:underline"
             >
               Sell a business
             </Link>
           </div>
 
-          <div className="sf-panel overflow-hidden">
-            <div className="hidden border-b border-zinc-200 bg-zinc-50/80 px-5 py-2 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase sm:grid sm:grid-cols-[minmax(0,1.4fr)_100px_120px_120px_120px_72px] sm:gap-4">
-              <span>Business</span>
-              <span>Price</span>
-              <span>Revenue</span>
-              <span>Users</span>
-              <span />
-              <span className="text-right"> </span>
+          {listings.length === 0 ? (
+            <EmptyState
+              title="No listings match your filters"
+              description="Clear filters or submit a business for review."
+              actionHref="/sell"
+              actionLabel="Sell a Business"
+            />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {listings.map((l) =>
+                l.business ? <ListingCard key={l.id} listing={l} /> : null
+              )}
             </div>
-            {listings.map((l) => (
-              <ListingRow key={l.id} listing={l} />
-            ))}
-            {listings.length === 0 && (
-              <div className="p-6">
-                <EmptyState
-                  title="No listings match your filters"
-                  description="Clear filters or submit a business for review."
-                  actionHref="/sell"
-                  actionLabel="Sell a Business"
-                />
-              </div>
-            )}
-          </div>
+          )}
 
           {totalPages > 1 && (
-            <div className="mt-6 flex justify-center gap-2">
+            <div className="mt-8 flex justify-center gap-2">
               {page > 1 && (
                 <Link
-                  className="border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                  className="jiy-focus-ring min-h-11 rounded-[12px] border border-border bg-surface px-4 py-2 text-sm text-foreground hover:bg-surface-2"
                   href={pageHref(page - 1)}
                 >
                   Previous
@@ -127,7 +121,7 @@ export default async function MarketplacePage({ searchParams }: Props) {
               )}
               {page < totalPages && (
                 <Link
-                  className="border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                  className="jiy-focus-ring min-h-11 rounded-[12px] border border-border bg-surface px-4 py-2 text-sm text-foreground hover:bg-surface-2"
                   href={pageHref(page + 1)}
                 >
                   Next

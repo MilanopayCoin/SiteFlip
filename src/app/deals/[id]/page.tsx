@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, formatCurrency } from "@/lib/utils";
+import { DealLifecycleTimeline } from "@/components/deals/deal-lifecycle-timeline";
 
 type Deal = {
   id: string;
@@ -211,18 +212,18 @@ export default function DealRoomPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <div className="h-48 animate-pulse bg-zinc-100" />
+      <div className="jiy-container max-w-3xl py-10">
+        <div className="h-48 animate-pulse rounded-[12px] bg-surface-2" />
       </div>
     );
   }
 
   if (forbidden || (!deal && error)) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+      <div className="jiy-container max-w-3xl py-10">
         <p className="sf-label">Deal room</p>
-        <h1 className="font-display mt-1 text-2xl text-zinc-900">Access denied</h1>
-        <p className="mt-3 text-sm text-zinc-500">
+        <h1 className="font-display mt-1 text-2xl text-foreground">Access denied</h1>
+        <p className="mt-3 text-sm text-muted">
           {error || "You are not authorized to view this deal."}
         </p>
         <Link href="/deals" className="mt-6 inline-block text-sm underline">
@@ -234,8 +235,8 @@ export default function DealRoomPage() {
 
   if (!deal) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-sm text-zinc-500">Deal not found.</p>
+      <div className="jiy-container max-w-3xl py-10">
+        <p className="text-sm text-muted">Deal not found.</p>
       </div>
     );
   }
@@ -263,14 +264,14 @@ export default function DealRoomPage() {
     );
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      <Link href="/deals" className="text-xs text-zinc-500 hover:text-zinc-800">
+    <div className="jiy-container max-w-3xl py-8 sm:py-10">
+      <Link href="/deals" className="text-xs text-muted hover:text-foreground">
         ← Deals
       </Link>
 
-      <div className="mt-3 border-b border-zinc-200 pb-6">
+      <div className="mt-3 border-b border-border pb-6">
         <p className="sf-label">Deal room</p>
-        <h1 className="font-display mt-1 text-3xl text-zinc-900">{title}</h1>
+        <h1 className="font-display mt-1 text-3xl text-foreground">{title}</h1>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <Chip>{deal.type}</Chip>
           <Chip>{deal.status}</Chip>
@@ -278,22 +279,28 @@ export default function DealRoomPage() {
           <Chip>You · {role || "party"}</Chip>
           <Chip mono>{deal.id.slice(0, 8)}</Chip>
         </div>
-        <p className="mt-4 tabular text-2xl font-semibold text-zinc-900">
+        <p className="mt-4 font-mono text-2xl tabular font-semibold text-foreground">
           {formatCurrency(deal.amount, deal.currency)}
         </p>
+        <div className="mt-6 rounded-[12px] border border-border bg-surface p-4">
+          <DealLifecycleTimeline
+            status={deal.status}
+            fundsState={deal.funds_state}
+          />
+        </div>
       </div>
 
-      <div className="mt-4 flex gap-1 overflow-x-auto border-b border-zinc-200">
+      <div className="mt-4 flex gap-1 overflow-x-auto border-b border-border">
         {TABS.map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
             className={cn(
-              "shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+              "jiy-focus-ring shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
               tab === t
-                ? "border-slate-900 text-zinc-900"
-                : "border-transparent text-zinc-500 hover:text-zinc-800"
+                ? "border-accent text-foreground"
+                : "border-transparent text-muted hover:text-foreground"
             )}
           >
             {t}
@@ -350,7 +357,7 @@ export default function DealRoomPage() {
             {deal.notes && (
               <div className="sm:col-span-2">
                 <p className="sf-label">Notes</p>
-                <p className="mt-1 text-sm text-zinc-600">{deal.notes}</p>
+                <p className="mt-1 text-sm text-muted">{deal.notes}</p>
               </div>
             )}
           </dl>
@@ -390,24 +397,24 @@ export default function DealRoomPage() {
                 )}
               </div>
             )}
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
               Mollie processes payment only — not escrow. Paid status is set only
               after provider webhook confirmation.
             </p>
             {payments.length === 0 ? (
-              <p className="text-sm text-zinc-500">No payments yet.</p>
+              <p className="text-sm text-muted">No payments yet.</p>
             ) : (
-              <ul className="sf-panel divide-y divide-zinc-200">
+              <ul className="sf-panel divide-y divide-border">
                 {payments.map((p) => (
                   <li
                     key={p.id}
                     className="flex items-center justify-between gap-4 px-4 py-3 text-sm"
                   >
                     <div>
-                      <p className="font-medium text-zinc-900">
+                      <p className="font-medium text-foreground">
                         {p.provider} · {p.status}
                       </p>
-                      <p className="mt-0.5 text-xs text-zinc-500">
+                      <p className="mt-0.5 text-xs text-muted">
                         {p.provider_ref || p.id.slice(0, 8)} ·{" "}
                         {new Date(p.created_at).toLocaleString()}
                       </p>
@@ -491,7 +498,7 @@ export default function DealRoomPage() {
                 </Button>
               )}
               {!canDeliver && !canAccept && (
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted">
                   No delivery actions available in the current state.
                 </p>
               )}
@@ -502,20 +509,20 @@ export default function DealRoomPage() {
         {tab === "Timeline" && (
           <div>
             {events.length === 0 ? (
-              <p className="text-sm text-zinc-500">No events yet.</p>
+              <p className="text-sm text-muted">No events yet.</p>
             ) : (
-              <ol className="space-y-0 border-l border-zinc-200">
+              <ol className="space-y-0 border-l border-border">
                 {events.map((ev) => (
                   <li key={ev.id} className="relative py-4 pl-6">
-                    <span className="absolute top-5 -left-[5px] h-2.5 w-2.5 rounded-full border border-zinc-300 bg-white" />
-                    <p className="text-sm font-medium text-zinc-900">
+                    <span className="absolute top-5 -left-[5px] h-2.5 w-2.5 rounded-full border border-border bg-background" />
+                    <p className="text-sm font-medium text-foreground">
                       {ev.from_status ? `${ev.from_status} → ` : ""}
                       {ev.to_status}
                     </p>
                     {ev.note && (
-                      <p className="mt-1 text-sm text-zinc-500">{ev.note}</p>
+                      <p className="mt-1 text-sm text-muted">{ev.note}</p>
                     )}
-                    <p className="mt-1 text-[11px] text-zinc-400">
+                    <p className="mt-1 text-[11px] text-muted">
                       {new Date(ev.created_at).toLocaleString()}
                     </p>
                   </li>
@@ -527,7 +534,7 @@ export default function DealRoomPage() {
 
         {tab === "Dispute" && (
           <div className="space-y-4">
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
               Opening a dispute blocks payout until an admin resolves it.
             </p>
             {canDispute ? (
@@ -552,7 +559,7 @@ export default function DealRoomPage() {
                 </Button>
               </>
             ) : (
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-muted">
                 Dispute is not available for this deal state.
               </p>
             )}
@@ -561,7 +568,7 @@ export default function DealRoomPage() {
       </div>
 
       {statusMsg && (
-        <p className="mt-8 border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600">
+        <p className="mt-8 rounded-[12px] border border-border bg-surface px-3 py-2 text-sm text-muted">
           {statusMsg}
         </p>
       )}
@@ -579,7 +586,7 @@ function Chip({
   return (
     <span
       className={cn(
-        "border border-zinc-200 bg-white px-2 py-0.5 text-zinc-600",
+        "rounded-full border border-border bg-surface px-2 py-0.5 text-muted",
         mono && "font-mono"
       )}
     >
@@ -598,7 +605,7 @@ function Metric({
   return (
     <div className="sf-panel px-4 py-3">
       <p className="sf-label">{label}</p>
-      <div className="mt-1 text-sm font-medium text-zinc-900">{value}</div>
+      <div className="mt-1 text-sm font-medium text-foreground">{value}</div>
     </div>
   );
 }
