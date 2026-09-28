@@ -1,139 +1,104 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ListingRow } from "@/components/marketplace/listing-row";
-import { fetchMarketplaceStats } from "@/lib/marketplace/stats";
 import { fetchMarketplaceListings } from "@/lib/data/marketplace-data";
+import { filterRealListings } from "@/lib/marketing/listing-filters";
+import { listingTickerLabel } from "@/lib/marketing/ticker-label";
+import { LandingHeader } from "@/components/marketing/landing-header";
+import { LandingTicker } from "@/components/marketing/landing-ticker";
+import { HeroVerificationScene } from "@/components/marketing/hero-verification-scene";
+import { TrustStrip } from "@/components/marketing/trust-strip";
+import { ModesBento } from "@/components/marketing/modes-bento";
+import { ValuationCalculator } from "@/components/marketing/valuation-calculator";
+import { HowItWorksSteps } from "@/components/marketing/how-it-works-steps";
+import { ReviveSection } from "@/components/marketing/revive-section";
+import { ListingCard } from "@/components/marketing/listing-card";
+import { VerificationExplainer } from "@/components/marketing/verification-explainer";
+import { LandingFaq } from "@/components/marketing/landing-faq";
+import { LandingCtaFooter } from "@/components/marketing/landing-cta-footer";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  let stats = {
-    activeListings: 0,
-    verifiedBusinesses: 0,
-    completedDeals: 0,
-  };
-  let listings: Awaited<
-    ReturnType<typeof fetchMarketplaceListings>
-  >["listings"] = [];
-
-  try {
-    stats = await fetchMarketplaceStats();
-  } catch {
-    // keep zeros
-  }
-
-  try {
-    const market = await fetchMarketplaceListings(
-      { sort: "newest" },
-      { page: 1, pageSize: 3 }
-    );
-    listings = (market.listings || []).filter((l) => Boolean(l?.business));
-  } catch {
-    listings = [];
-  }
-
-  return (
-    <div>
-      <section className="relative overflow-hidden">
-        <div className="sf-grid absolute inset-0 opacity-60" />
-        <div className="relative mx-auto max-w-3xl px-4 pb-16 pt-20 text-center sm:px-6 sm:pt-28">
-          <p className="sf-label mb-5">JIY</p>
-          <h1 className="font-display text-4xl leading-tight text-zinc-900 sm:text-6xl">
-            Verified Digital Businesses.
-          </h1>
-          <p className="mx-auto mt-5 max-w-md text-base text-zinc-500 sm:text-lg">
-            Buy. Rent. Revive. Sell.
-          </p>
-          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="rounded-md" asChild>
-              <Link href="/marketplace">
-                Explore Marketplace <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" className="rounded-md" asChild>
-              <Link href="/sell">Sell a Business</Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="border-y border-zinc-200 bg-white">
-        <div className="mx-auto grid max-w-3xl grid-cols-3 divide-x divide-zinc-200">
-          <Stat label="Active listings" value={stats.activeListings} />
-          <Stat label="Verified" value={stats.verifiedBusinesses} />
-          <Stat label="Completed deals" value={stats.completedDeals} />
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-3xl px-4 py-14 sm:px-6">
-        <p className="sf-label">How deals work</p>
-        <ol className="mt-6 space-y-5">
-          {[
-            {
-              n: "01",
-              t: "Submit & verify",
-              d: "Listings stay private until JIY reviews ownership and claims.",
-            },
-            {
-              n: "02",
-              t: "Offer or pay",
-              d: "Buyers offer or pay through Mollie. Status comes from the provider webhook.",
-            },
-            {
-              n: "03",
-              t: "Deliver & release",
-              d: "Seller delivers, buyer accepts, then payout eligibility opens.",
-            },
-          ].map((step) => (
-            <li
-              key={step.n}
-              className="grid grid-cols-[48px_1fr] gap-4 border-b border-zinc-200 pb-5"
-            >
-              <span className="tabular text-sm text-zinc-400">{step.n}</span>
-              <div>
-                <p className="font-medium text-zinc-900">{step.t}</p>
-                <p className="mt-1 text-sm text-zinc-500">{step.d}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      {listings.length > 0 && (
-        <section className="mx-auto max-w-5xl px-4 pb-20 sm:px-6">
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <p className="sf-label">On the exchange</p>
-              <h2 className="font-display mt-1 text-2xl text-zinc-900">
-                Recent listings
-              </h2>
-            </div>
-            <Link
-              href="/marketplace"
-              className="text-sm font-medium text-zinc-900 underline-offset-4 hover:underline"
-            >
-              View all
-            </Link>
-          </div>
-          <div className="sf-panel overflow-hidden">
-            {listings.map((l) => (
-              <ListingRow key={l.id} listing={l} />
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
+  const { listings: raw } = await fetchMarketplaceListings(
+    { sort: "newest" },
+    { page: 1, pageSize: 48 }
   );
-}
+  const listings = filterRealListings(raw);
 
-function Stat({ label, value }: { label: string; value: number }) {
+  const tickerLabels = listings.slice(0, 12).map(listingTickerLabel);
+  const featured = listings.slice(0, 6);
+  const revive = listings.filter((l) => l.listing_type === "REVIVE").slice(0, 6);
+
   return (
-    <div className="px-3 py-8 text-center sm:px-6">
-      <p className="tabular text-2xl font-semibold text-zinc-900 sm:text-3xl">
-        {Number.isFinite(value) ? value : 0}
-      </p>
-      <p className="mt-1 text-xs text-zinc-500 sm:text-sm">{label}</p>
+    <div className="min-h-screen bg-background">
+      <LandingHeader />
+      <LandingTicker items={tickerLabels} />
+
+      <section className="jiy-section relative overflow-hidden">
+        <div className="sf-grid absolute inset-0 opacity-40" aria-hidden />
+        <div className="jiy-container relative grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+          <div>
+            <p className="sf-label text-accent/90">
+              The exchange for digital businesses
+            </p>
+            <h1 className="text-display mt-4 text-foreground">
+              Buy, sell and rent verified digital businesses.
+            </h1>
+            <p className="mt-6 max-w-lg text-lg text-muted">
+              Every listing is ownership-checked. Every payment is protected until
+              delivery.
+            </p>
+            <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+              <Button size="lg" asChild>
+                <Link href="/marketplace">
+                  Explore marketplace <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button size="lg" variant="secondary" asChild>
+                <Link href="/sell">Sell your business</Link>
+              </Button>
+            </div>
+          </div>
+          <HeroVerificationScene />
+        </div>
+      </section>
+
+      <TrustStrip />
+      <ModesBento />
+      <ValuationCalculator />
+      <HowItWorksSteps />
+      <ReviveSection listings={revive} />
+
+      <section className="jiy-section border-t border-border">
+        <div className="jiy-container">
+          <SectionHeading
+            eyebrow="Exchange floor"
+            title="Featured listings"
+            subtitle="Live listings with seller-submitted metrics. Verified badge when JIY confirms evidence."
+          />
+          {featured.length === 0 ? (
+            <EmptyState
+              title="First verified listings coming soon"
+              description="We publish only real listings after ownership review — no placeholder inventory."
+              actionHref="/sell"
+              actionLabel="List your business"
+            />
+          ) : (
+            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {featured.map((l) => (
+                <ListingCard key={l.id} listing={l} />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <VerificationExplainer />
+      <LandingFaq />
+      <LandingCtaFooter />
     </div>
   );
 }

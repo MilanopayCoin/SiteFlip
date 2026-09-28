@@ -209,6 +209,25 @@ body {
   animation-play-state: paused;
 }
 
+@media (hover: hover) {
+  .listing-card-3d {
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.25s ease;
+    transform-style: preserve-3d;
+  }
+
+  .listing-card-3d:hover {
+    transform: perspective(900px) rotateX(2deg) rotateY(-2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listing-card-3d:hover {
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
