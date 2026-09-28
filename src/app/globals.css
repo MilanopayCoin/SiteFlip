@@ -223,17 +223,15 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .listing-card-3d:hover {
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }
 
   .jiy-marquee-track {
     animation: none;
+  }
+
+  .listing-card-3d:hover {
+    transform: none;
   }
 }
