@@ -4,26 +4,29 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
+  "jiy-focus-ring inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-[12px] text-sm font-medium transition-[color,background-color,border-color,box-shadow] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         default:
-          "bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-900/30",
+          "bg-accent text-accent-ink hover:shadow-[0_0_24px_var(--glow-accent-hover)]",
+        primary:
+          "bg-accent text-accent-ink hover:shadow-[0_0_24px_var(--glow-accent-hover)]",
         secondary:
-          "bg-white/5 text-zinc-100 border border-white/10 hover:bg-white/10",
+          "border border-border bg-transparent text-foreground hover:border-accent/40 hover:bg-surface-2",
         outline:
-          "border border-white/15 bg-transparent text-zinc-100 hover:bg-white/5",
-        ghost: "text-zinc-300 hover:bg-white/5 hover:text-white",
-        danger: "bg-rose-600/90 text-white hover:bg-rose-500",
-        success: "bg-emerald-600/90 text-white hover:bg-emerald-500",
+          "border border-border bg-surface text-foreground hover:border-accent/40 hover:bg-surface-2",
+        ghost:
+          "text-muted hover:bg-surface-2 hover:text-foreground",
+        danger: "bg-danger text-white hover:opacity-90",
+        success: "bg-success text-accent-ink hover:opacity-90",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-12 rounded-xl px-6 text-base",
-        xl: "h-14 rounded-xl px-8 text-base font-semibold",
-        icon: "h-10 w-10",
+        default: "h-11 px-4 py-2",
+        sm: "h-9 px-3 text-xs",
+        lg: "h-12 px-6 text-base",
+        xl: "h-12 px-8 text-base font-semibold",
+        icon: "h-11 w-11",
       },
     },
     defaultVariants: {

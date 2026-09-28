@@ -69,6 +69,21 @@ export async function GET() {
     Boolean(status.tables.listings) &&
     Boolean(status.tables.offers) &&
     Boolean(status.tables.watchlists);
+
+  // Migration 006 marketplace-core tables (disputes / payouts / audit_logs)
+  const coreTables = ["disputes", "payouts", "audit_logs"] as const;
+  const marketplaceCoreTables: Record<string, boolean> = {};
+  if (hasService && serviceOk) {
+    const service = await createServiceClient();
+    if (service) {
+      for (const t of coreTables) {
+        const { error } = await service.from(t).select("*").limit(0);
+        marketplaceCoreTables[t] = !error;
+      }
+    }
+  }
+  const marketplaceCoreReady = coreTables.every((t) => marketplaceCoreTables[t]);
+
   const factoryPersistence =
     status.productionPersistence &&
     Boolean(status.tables.factory_projects) &&
@@ -90,8 +105,10 @@ export async function GET() {
     schemaReady: status.schemaReady,
     productionPersistence: status.productionPersistence,
     marketplaceReady,
+    marketplaceCoreReady,
+    marketplaceCoreTables,
     factoryPersistence,
-    workerPostgresTcp: "disabled",
+    workerPostgresTcp: "disabled_use_external_db_migrate",
     runtimeDatabaseAccess: "supabase_http_postgrest",
     schema: status.tables,
     urlHost: new URL(publicEnv.url).host,

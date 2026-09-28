@@ -41,10 +41,10 @@ export function slugify(text: string): string {
 
 export function scoreColor(score: number | null | undefined): string {
   if (score == null) return "text-zinc-400";
-  if (score >= 85) return "text-emerald-400";
-  if (score >= 70) return "text-sky-400";
-  if (score >= 50) return "text-amber-400";
-  return "text-rose-400";
+  if (score >= 85) return "text-emerald-600";
+  if (score >= 70) return "text-sky-600";
+  if (score >= 50) return "text-amber-600";
+  return "text-rose-600";
 }
 
 export function lifecycleLabel(lifecycle: string): string {

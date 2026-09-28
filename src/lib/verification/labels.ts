@@ -6,6 +6,9 @@ export const VERIFICATION_BADGE_LABELS: Record<VerificationType, string> = {
   REVENUE: "Revenue Verified",
   TRAFFIC: "Traffic Verified",
   BUSINESS: "Business Verified",
+  ANALYTICS: "Analytics Verified",
+  CODE_ASSETS: "Code / Assets Verified",
+  IDENTITY: "Identity Verified",
 };
 
 export const PENDING_INTEGRATIONS = [

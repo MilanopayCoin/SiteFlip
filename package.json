@@ -8,11 +8,14 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy && npm run cf:secrets || true",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "cf:secrets": "bash scripts/cf-put-secrets.sh",
-    "db:migrate": "node scripts/apply-migrations.cjs"
+    "db:migrate": "node scripts/apply-migrations.cjs",
+    "smoke:health": "tsx scripts/smoke-marketplace-health.ts",
+    "smoke:mollie": "tsx scripts/smoke-mollie-config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",
@@ -37,6 +40,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "framer-motion": "^13.1.0",
+    "geist": "^1.7.2",
     "lucide-react": "^1.31.0",
     "nanoid": "^6.0.1",
     "next": "16.3.0",

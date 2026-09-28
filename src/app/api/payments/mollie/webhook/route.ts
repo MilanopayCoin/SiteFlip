@@ -8,6 +8,8 @@ import {
 } from "@/lib/payments/mollie";
 import { canTransition } from "@/lib/transactions/provider";
 import { memoryStore } from "@/lib/data/memory-store";
+import { writeAuditLog } from "@/lib/marketplace/audit";
+import { fundsStateAfterPaymentPaid } from "@/lib/marketplace/commission";
 import type { TransactionStatus } from "@/types/database";
 
 export const runtime = "nodejs";
@@ -94,6 +96,7 @@ export async function POST(request: Request) {
           provider_ref: paymentId,
           purpose: meta.purpose || "BUY",
           status: mapped,
+          transaction_id: transactionId,
         });
       }
 
@@ -104,28 +107,81 @@ export async function POST(request: Request) {
           .eq("id", transactionId)
           .maybeSingle();
 
-        if (tx && tx.status !== "PAYMENT_RECEIVED" && tx.status !== "COMPLETED") {
-          const next: TransactionStatus = "PAYMENT_RECEIVED";
-          if (canTransition(tx.status, next) || tx.status === "PAYMENT_PENDING") {
-            await service
-              .from("transactions")
-              .update({
-                status: next,
-                payment_provider: "mollie",
-                payment_ref: paymentId,
-                updated_at: new Date().toISOString(),
-                notes:
-                  "Mollie payment verified server-side. Not escrow. Ownership transfer still requires JIY.APP workflow.",
-              })
-              .eq("id", transactionId);
+        if (tx) {
+          // Idempotent: already PAYMENT_RECEIVED → skip duplicate side effects
+          if (tx.status === "PAYMENT_RECEIVED" || tx.status === "COMPLETED") {
+            // still ensure funds_state is set if missing
+            if (!tx.funds_state || tx.funds_state === "PAYMENT_PENDING") {
+              await service
+                .from("transactions")
+                .update({
+                  funds_state: fundsStateAfterPaymentPaid(),
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", transactionId);
+            }
+          } else {
+            const next: TransactionStatus = "PAYMENT_RECEIVED";
+            if (
+              canTransition(tx.status, next) ||
+              tx.status === "PAYMENT_PENDING"
+            ) {
+              const fundsState = fundsStateAfterPaymentPaid(); // HELD_OR_ROUTED
+              await service
+                .from("transactions")
+                .update({
+                  status: next,
+                  funds_state: fundsState,
+                  payment_provider: "mollie",
+                  payment_ref: paymentId,
+                  updated_at: new Date().toISOString(),
+                  notes:
+                    "Mollie payment verified server-side. Not escrow. Ownership transfer still requires JIY.APP workflow.",
+                })
+                .eq("id", transactionId);
 
-            await service.from("transaction_events").insert({
-              transaction_id: transactionId,
-              from_status: tx.status,
-              to_status: next,
-              actor_id: null,
-              note: "Mollie webhook: payment paid (verified). Not escrow. No automatic ownership transfer.",
-            });
+              await service.from("transaction_events").insert({
+                transaction_id: transactionId,
+                from_status: tx.status,
+                to_status: next,
+                actor_id: null,
+                note: "Mollie webhook: payment paid (verified). Funds HELD_OR_ROUTED. Not escrow. No automatic ownership transfer.",
+              });
+
+              // Create payout row PENDING if not exists (amount = seller_amount)
+              const sellerAmount =
+                tx.seller_amount != null
+                  ? Number(tx.seller_amount)
+                  : Number(tx.amount);
+              const { data: existingPayout } = await service
+                .from("payouts")
+                .select("id")
+                .eq("transaction_id", transactionId)
+                .maybeSingle();
+              if (!existingPayout) {
+                await service.from("payouts").insert({
+                  transaction_id: transactionId,
+                  seller_id: tx.seller_id,
+                  amount: sellerAmount,
+                  currency: tx.currency || "EUR",
+                  status: "PENDING",
+                });
+              }
+
+              await writeAuditLog({
+                actorId: null,
+                action: "payment_confirmed",
+                targetType: "transaction",
+                targetId: transactionId,
+                before: { status: tx.status, funds_state: tx.funds_state },
+                after: {
+                  status: next,
+                  funds_state: fundsState,
+                  payment_ref: paymentId,
+                },
+                reason: "Mollie webhook verified paid",
+              });
+            }
           }
         }
       } else if (transactionId && ["failed", "canceled", "expired"].includes(mapped)) {

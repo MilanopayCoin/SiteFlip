@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu, X, Sparkles } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,15 +13,13 @@ import {
   createBrowserClient,
   resetBrowserClient,
 } from "@/lib/supabase/browser";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 const NAV = [
-  { href: "/explore", label: "Explore" },
-  { href: "/buy", label: "Buy" },
-  { href: "/rent", label: "Rent" },
-  { href: "/build", label: "Build" },
+  { href: "/marketplace", label: "Marketplace" },
+  { href: "/deals", label: "Deals" },
   { href: "/trafik-studio", label: "Trafik" },
-  { href: "/revive", label: "Revive" },
-  { href: "/sell", label: "Sell" },
+  { href: "/profile", label: "Profile" },
 ];
 
 export function SiteHeader() {
@@ -65,42 +63,47 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/5 bg-[#07070c]/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg shadow-violet-900/40">
-            <Sparkles className="h-4 w-4 text-white" />
+    <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-xl">
+      <div className="jiy-container flex h-16 items-center justify-between">
+        <Link href="/" className="group flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-accent text-[11px] font-semibold tracking-wide text-accent-ink">
+            J
           </div>
-          <span className="text-lg font-semibold tracking-tight text-white">
-            JIY<span className="text-violet-400">.APP</span>
+          <span className="font-display text-[15px] font-semibold tracking-tight text-foreground">
+            JIY
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-0.5 md:flex">
           {NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 pathname === item.href || pathname.startsWith(item.href + "/")
-                  ? "bg-white/10 text-white"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                  ? "bg-surface-2 text-foreground"
+                  : "text-muted hover:bg-surface-2 hover:text-foreground"
               )}
             >
               {item.label}
             </Link>
           ))}
+          <Button
+            size="sm"
+            className="ml-2"
+            variant={pathname.startsWith("/sell") ? "default" : "default"}
+            asChild
+          >
+            <Link href="/sell">Sell</Link>
+          </Button>
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
           {signedIn ? (
             <>
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/profile">{username ? `@${username}` : "Profile"}</Link>
-              </Button>
-              <Button size="sm" asChild>
-                <Link href="/dashboard">Dashboard</Link>
+                <Link href="/profile">{username ? `@${username}` : "Account"}</Link>
               </Button>
               <Button variant="outline" size="sm" onClick={logout}>
                 Log out
@@ -119,7 +122,7 @@ export function SiteHeader() {
         </div>
 
         <button
-          className="md:hidden rounded-lg p-2 text-zinc-300 hover:bg-white/5"
+          className="jiy-focus-ring rounded-[12px] p-2.5 text-muted hover:bg-surface-2 md:hidden"
           onClick={() => setOpen(!open)}
           aria-label="Toggle menu"
         >
@@ -128,25 +131,54 @@ export function SiteHeader() {
       </div>
 
       {open && (
-        <div className="border-t border-white/5 bg-[#07070c] px-4 py-4 md:hidden">
+        <div className="border-t border-border bg-surface px-4 py-4 md:hidden">
           <nav className="flex flex-col gap-1">
             {NAV.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-zinc-300 hover:bg-white/5"
+                className="rounded-[12px] px-3 py-2.5 text-sm text-foreground hover:bg-surface-2"
               >
                 {item.label}
               </Link>
             ))}
             <Link
-              href={signedIn ? "/profile" : "/signup"}
+              href="/sell"
               onClick={() => setOpen(false)}
-              className="mt-2 rounded-lg bg-violet-600 px-3 py-2.5 text-center text-sm font-medium text-white"
+              className="rounded-[12px] bg-accent px-3 py-2.5 text-center text-sm font-medium text-accent-ink"
             >
-              {signedIn ? "Profile" : "Register"}
+              Sell
             </Link>
+            {signedIn ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  logout();
+                }}
+                className="mt-2 rounded-[12px] border border-border px-3 py-2.5 text-center text-sm font-medium text-foreground"
+              >
+                Log out
+              </button>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  onClick={() => setOpen(false)}
+                  className="mt-2 rounded-[12px] px-3 py-2.5 text-center text-sm font-medium text-foreground hover:bg-surface-2"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => setOpen(false)}
+                  className="rounded-[12px] bg-accent px-3 py-2.5 text-center text-sm font-medium text-accent-ink"
+                >
+                  Register
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       )}
@@ -156,40 +188,75 @@ export function SiteHeader() {
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-white/5 bg-[#050508]">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-4">
-        <div className="md:col-span-2">
+    <footer className="border-t border-border bg-surface">
+      <div className="jiy-container grid gap-8 py-12 md:grid-cols-3">
+        <div className="md:col-span-1">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-violet-400" />
-            <span className="text-lg font-semibold text-white">JIY.APP</span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-[12px] border border-border bg-accent text-[10px] font-semibold text-accent-ink">
+              J
+            </div>
+            <span className="font-display text-lg font-semibold text-foreground">
+              JIY.APP
+            </span>
           </div>
-          <p className="mt-3 max-w-md text-sm text-zinc-500">
-            AI Business Factory. Turn ideas into businesses.
-            BUILD → GROW → BUY → RENT → REVIVE → SELL
+          <p className="mt-3 max-w-md text-sm text-muted">
+            Verified Digital Businesses.
           </p>
         </div>
         <div>
-          <h4 className="text-sm font-semibold text-zinc-300">Marketplace</h4>
-          <ul className="mt-3 space-y-2 text-sm text-zinc-500">
-            <li><Link href="/buy" className="hover:text-zinc-300">Buy</Link></li>
-            <li><Link href="/rent" className="hover:text-zinc-300">Rent</Link></li>
-            <li><Link href="/revive" className="hover:text-zinc-300">Revive</Link></li>
-            <li><Link href="/sell" className="hover:text-zinc-300">Sell</Link></li>
+          <h4 className="text-sm font-semibold text-foreground">Marketplace</h4>
+          <ul className="mt-3 space-y-2 text-sm text-muted">
+            <li>
+              <Link href="/marketplace?type=BUY" className="hover:text-accent">
+                Buy
+              </Link>
+            </li>
+            <li>
+              <Link href="/marketplace?type=RENT" className="hover:text-accent">
+                Rent
+              </Link>
+            </li>
+            <li>
+              <Link href="/marketplace?type=REVIVE" className="hover:text-accent">
+                Revive
+              </Link>
+            </li>
+            <li>
+              <Link href="/sell" className="hover:text-accent">
+                Sell
+              </Link>
+            </li>
           </ul>
         </div>
         <div>
-          <h4 className="text-sm font-semibold text-zinc-300">Platform</h4>
-          <ul className="mt-3 space-y-2 text-sm text-zinc-500">
-            <li><Link href="/build" className="hover:text-zinc-300">Build with AI</Link></li>
-            <li><Link href="/trafik-studio" className="hover:text-zinc-300">Trafik Studio</Link></li>
-            <li><Link href="/profile" className="hover:text-zinc-300">Profile</Link></li>
-            <li><Link href="/dashboard" className="hover:text-zinc-300">Dashboard</Link></li>
-            <li><Link href="/admin" className="hover:text-zinc-300">Admin</Link></li>
+          <h4 className="text-sm font-semibold text-foreground">Account</h4>
+          <ul className="mt-3 space-y-2 text-sm text-muted">
+            <li>
+              <Link href="/deals" className="hover:text-accent">
+                Deals
+              </Link>
+            </li>
+            <li>
+              <Link href="/profile" className="hover:text-accent">
+                Profile
+              </Link>
+            </li>
+            <li>
+              <Link href="/trafik-studio" className="hover:text-accent">
+                Trafik Studio
+              </Link>
+            </li>
           </ul>
         </div>
       </div>
-      <div className="border-t border-white/5 py-4 text-center text-xs text-zinc-600">
-        © {new Date().getFullYear()} JIY.APP. AI valuations are informational only.
+      <div className="border-t border-border">
+        <div className="jiy-container flex flex-col items-center justify-between gap-4 py-4 sm:flex-row">
+          <p className="text-center text-xs text-muted sm:text-left">
+            © {new Date().getFullYear()} JIY.APP. Marketplace listings are
+            informational.
+          </p>
+          <ThemeToggle />
+        </div>
       </div>
     </footer>
   );
