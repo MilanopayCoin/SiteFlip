@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,8 +21,44 @@ const CATEGORIES = [
 
 const LISTING_TYPES = ["BUY", "RENT", "REVIVE"] as const;
 
+function mapValuationCategory(raw: string | null): string {
+  switch (raw) {
+    case "saas":
+      return "saas";
+    case "content":
+      return "content";
+    case "ecommerce":
+      return "ecommerce";
+    case "app":
+      return "web_apps";
+    case "newsletter":
+      return "newsletter";
+    default:
+      return "other";
+  }
+}
+
 export default function SellPage() {
+  return (
+    <Suspense fallback={<div className="jiy-container py-10 text-muted">Loading…</div>}>
+      <SellPageContent />
+    </Suspense>
+  );
+}
+
+function SellPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const prefill = useMemo(
+    () => ({
+      category: mapValuationCategory(searchParams.get("category")),
+      revenue: searchParams.get("revenue") ?? "",
+      users: searchParams.get("users") ?? "",
+      estimateLow: searchParams.get("estimateLow"),
+      estimateHigh: searchParams.get("estimateHigh"),
+    }),
+    [searchParams]
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -133,6 +170,16 @@ export default function SellPage() {
         UNVERIFIED until JIY verifies them.
       </p>
 
+      {prefill.estimateLow && prefill.estimateHigh && (
+        <p className="mt-4 rounded-[12px] border border-border bg-surface px-3 py-2 text-sm text-muted">
+          From calculator (estimate only):{" "}
+          <span className="font-mono tabular text-foreground">
+            {formatCurrency(Number(prefill.estimateLow), "EUR")} –{" "}
+            {formatCurrency(Number(prefill.estimateHigh), "EUR")}
+          </span>
+        </p>
+      )}
+
       <form onSubmit={onSubmit} className="mt-10 space-y-10">
         <Section n="01" title="Business identity">
           <Field label="Business name" name="name" required />
@@ -143,7 +190,7 @@ export default function SellPage() {
                 id="category"
                 name="category"
                 className="mt-1.5 h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
-                defaultValue="saas"
+                defaultValue={prefill.category}
               >
                 {CATEGORIES.map((c) => (
                   <option key={c} value={c}>
@@ -205,9 +252,19 @@ export default function SellPage() {
             {listingType === "RENT" && (
               <Field label="Minimum term (months)" name="min_term" type="number" />
             )}
-            <Field label="Monthly revenue (claimed)" name="revenue" type="number" />
+            <Field
+              label="Monthly revenue (claimed)"
+              name="revenue"
+              type="number"
+              defaultValue={prefill.revenue}
+            />
             <Field label="Monthly profit (claimed)" name="profit" type="number" />
-            <Field label="Users / traffic (claimed)" name="users" type="number" />
+            <Field
+              label="Users / traffic (claimed)"
+              name="users"
+              type="number"
+              defaultValue={prefill.users}
+            />
           </div>
         </Section>
 
@@ -297,11 +354,13 @@ function Field({
   name,
   type = "text",
   required,
+  defaultValue,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
+  defaultValue?: string;
 }) {
   return (
     <div>
@@ -311,6 +370,7 @@ function Field({
         name={name}
         type={type}
         required={required}
+        defaultValue={defaultValue}
         min={type === "number" ? 0 : undefined}
         step={type === "number" ? "0.01" : undefined}
         className="mt-1.5 rounded-md"

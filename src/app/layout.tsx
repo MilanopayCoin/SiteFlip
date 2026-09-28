@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import { GeistSans } from "geist/font/sans";
-import { SiteFooter, SiteHeader } from "@/components/layout/site-header";
-import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
+import { SiteChrome } from "@/components/layout/site-chrome";
+import { MainShell } from "@/components/layout/main-shell";
 import "./globals.css";
 
 const inter = Inter({
@@ -48,12 +48,9 @@ export default function RootLayout({
       <body
         className={`${GeistSans.variable} ${inter.variable} ${geistMono.variable} antialiased`}
       >
-        <SiteHeader />
-        <main className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full overflow-x-hidden bg-background pb-20 text-foreground md:pb-0">
-          {children}
-        </main>
-        <SiteFooter />
-        <MobileBottomNav />
+        <SiteChrome>
+          <MainShell>{children}</MainShell>
+        </SiteChrome>
       </body>
     </html>
   );
