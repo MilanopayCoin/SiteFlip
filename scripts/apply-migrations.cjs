@@ -23,6 +23,7 @@ const FILES = [
   "005_fix_profiles_rls_recursion.sql",
   "006_marketplace_core.sql",
   "007_quote_orders.sql",
+  "008_qr_menus.sql",
 ];
 
 /** Postgres codes we treat as "already applied" (non-destructive continue). */

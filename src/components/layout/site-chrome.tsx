@@ -7,12 +7,15 @@ import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLanding = pathname === "/";
+  /** Guest-facing digital menu — no marketplace chrome */
+  const isPublicMenu = pathname === "/m" || pathname.startsWith("/m/");
+  const bare = isLanding || isPublicMenu;
 
   return (
     <>
-      {!isLanding && <SiteHeader />}
+      {!bare && <SiteHeader />}
       {children}
-      {!isLanding && (
+      {!bare && (
         <>
           <SiteFooter />
           <MobileBottomNav />
