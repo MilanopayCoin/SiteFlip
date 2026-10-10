@@ -114,6 +114,7 @@ export async function createQrMenu(input: {
         menu.slug = makeMenuSlug(input.name);
         continue;
       }
+      // Table missing / schema lag — surface clear error for bootstrap
       throw new Error(`qr_menus insert failed: ${error.message}`);
     }
     throw new Error("qr_menus slug collision");
