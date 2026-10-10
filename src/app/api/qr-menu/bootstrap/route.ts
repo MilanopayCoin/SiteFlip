@@ -13,11 +13,13 @@ function authorized(request: Request): boolean {
   const bearer = header.toLowerCase().startsWith("bearer ")
     ? header.slice(7).trim()
     : "";
-  const migrate = process.env.MIGRATE_TOKEN?.trim();
-  const cf = process.env.CLOUDFLARE_API_TOKEN?.trim();
-  if (bearer && migrate && bearer === migrate) return true;
-  if (bearer && cf && bearer === cf) return true;
-  return false;
+  if (!bearer) return false;
+  const candidates = [
+    process.env.QR_MENU_BOOTSTRAP_TOKEN?.trim(),
+    process.env.MIGRATE_TOKEN?.trim(),
+    process.env.CLOUDFLARE_API_TOKEN?.trim(),
+  ].filter(Boolean) as string[];
+  return candidates.some((t) => t === bearer);
 }
 
 const SQL = `
