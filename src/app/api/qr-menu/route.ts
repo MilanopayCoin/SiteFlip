@@ -32,7 +32,10 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     console.error("qr-menu create failed", err);
-    return jsonError("Failed to create menu", 500);
+    const detail = err instanceof Error ? err.message : "unknown";
+    return jsonError("Failed to create menu", 500, {
+      detail: detail.slice(0, 240),
+    });
   }
 }
 

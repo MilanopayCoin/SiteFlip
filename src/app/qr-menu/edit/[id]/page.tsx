@@ -5,9 +5,12 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { nanoid } from "nanoid";
 import {
+  BellRing,
+  Check,
   Copy,
   Download,
   ExternalLink,
+  MessageCircle,
   Plus,
   Save,
   Trash2,
@@ -23,7 +26,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { MenuCategory } from "@/lib/qr-menu/types";
+import {
+  DEFAULT_ACCENT,
+  type MenuCategory,
+  type MenuSpecial,
+  type WaiterCall,
+} from "@/lib/qr-menu/types";
 
 type EditorMenu = {
   id: string;
@@ -31,6 +39,10 @@ type EditorMenu = {
   name: string;
   tagline: string | null;
   currency: "EUR" | "TRY" | "USD" | "GBP";
+  locale: "tr" | "en";
+  accentColor: string;
+  logoUrl: string | null;
+  special: MenuSpecial | null;
   categories: MenuCategory[];
   published: boolean;
   editToken: string;
@@ -38,14 +50,42 @@ type EditorMenu = {
 
 function money(n: number, currency: string) {
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat("tr-TR", {
       style: "currency",
       currency,
-      minimumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(n);
   } catch {
-    return `${n.toFixed(2)} ${currency}`;
+    return `${n} ${currency}`;
   }
+}
+
+async function downloadQrPng(svgUrl: string, filename: string) {
+  const res = await fetch(svgUrl);
+  const svgText = await res.text();
+  const blob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("QR yüklenemedi"));
+    img.src = url;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 1024;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas yok");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, 1024, 1024);
+  ctx.drawImage(img, 0, 0, 1024, 1024);
+  URL.revokeObjectURL(url);
+  const png = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = png;
+  a.download = filename;
+  a.click();
 }
 
 function EditorInner() {
@@ -58,13 +98,22 @@ function EditorInner() {
   const [menu, setMenu] = useState<EditorMenu | null>(null);
   const [name, setName] = useState("");
   const [tagline, setTagline] = useState("");
-  const [currency, setCurrency] = useState<EditorMenu["currency"]>("EUR");
+  const [currency, setCurrency] = useState<EditorMenu["currency"]>("TRY");
+  const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT);
+  const [logoUrl, setLogoUrl] = useState("");
+  const [specialTitle, setSpecialTitle] = useState("");
+  const [specialDesc, setSpecialDesc] = useState("");
+  const [specialPrice, setSpecialPrice] = useState("");
+  const [specialUntil, setSpecialUntil] = useState("");
+  const [tableCount, setTableCount] = useState(8);
+  const [calls, setCalls] = useState<WaiterCall[]>([]);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [pngBusy, setPngBusy] = useState(false);
 
   useEffect(() => {
     if (!tokenFromUrl && id) {
@@ -81,7 +130,9 @@ function EditorInner() {
     if (!id || !token) {
       if (!token) {
         setLoading(false);
-        setError("Missing edit token. Open the link from when you created the menu.");
+        setError(
+          "Düzenleme anahtarı yok. Menüyü oluşturduğun linkten tekrar aç."
+        );
       }
       return;
     }
@@ -96,7 +147,7 @@ function EditorInner() {
         );
         const data = await res.json();
         if (!res.ok || !data.canEdit) {
-          throw new Error(data.error || "Cannot open editor");
+          throw new Error(data.error || "Editör açılamadı");
         }
         if (cancelled) return;
         const m = data.menu as EditorMenu;
@@ -104,15 +155,38 @@ function EditorInner() {
         setName(m.name);
         setTagline(m.tagline || "");
         setCurrency(m.currency);
+        setAccentColor(m.accentColor || DEFAULT_ACCENT);
+        setLogoUrl(m.logoUrl || "");
+        setSpecialTitle(m.special?.title || "");
+        setSpecialDesc(m.special?.description || "");
+        setSpecialPrice(
+          m.special?.price != null ? String(m.special.price) : ""
+        );
+        setSpecialUntil(
+          m.special?.until ? m.special.until.slice(0, 16) : ""
+        );
         setCategories(m.categories);
         try {
           localStorage.setItem(`jiy-menu-${m.id}`, m.editToken);
+          localStorage.setItem(
+            `jiy-menu-edit-${m.id}`,
+            `${window.location.origin}/qr-menu/edit/${m.id}?token=${m.editToken}`
+          );
         } catch {
           // ignore
         }
+        void fetch(
+          `/api/qr-menu/${encodeURIComponent(m.id)}/calls?token=${encodeURIComponent(m.editToken)}`,
+          { cache: "no-store" }
+        )
+          .then((r) => r.json())
+          .then((d) => {
+            if (!cancelled && Array.isArray(d.calls)) setCalls(d.calls);
+          })
+          .catch(() => undefined);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Load failed");
+          setError(err instanceof Error ? err.message : "Yükleme başarısız");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -129,11 +203,31 @@ function EditorInner() {
     return `${window.location.origin}/m/${menu.slug}`;
   }, [menu]);
 
+  const editUrl = useMemo(() => {
+    if (!menu || !token) return "";
+    if (typeof window === "undefined") {
+      return `/qr-menu/edit/${menu.id}?token=${token}`;
+    }
+    return `${window.location.origin}/qr-menu/edit/${menu.id}?token=${encodeURIComponent(token)}`;
+  }, [menu, token]);
+
   async function save() {
     if (!menu || !token) return;
     setSaving(true);
     setError(null);
     try {
+      const special =
+        specialTitle.trim().length > 0
+          ? {
+              title: specialTitle.trim(),
+              description: specialDesc.trim() || undefined,
+              price:
+                specialPrice.trim() === ""
+                  ? undefined
+                  : Number(specialPrice) || 0,
+              until: specialUntil.trim() || undefined,
+            }
+          : null;
       const res = await fetch(`/api/qr-menu/${encodeURIComponent(menu.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -142,16 +236,19 @@ function EditorInner() {
           name,
           tagline,
           currency,
+          accentColor,
+          logoUrl,
+          special,
           categories,
           published: true,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Save failed");
+      if (!res.ok) throw new Error(data.error || "Kayıt başarısız");
       setMenu(data.menu);
-      setSavedAt(new Date().toLocaleTimeString());
+      setSavedAt(new Date().toLocaleTimeString("tr-TR"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : "Kayıt başarısız");
     } finally {
       setSaving(false);
     }
@@ -163,7 +260,7 @@ function EditorInner() {
       setCopied(label);
       setTimeout(() => setCopied(null), 1600);
     } catch {
-      setError("Could not copy — select the link manually.");
+      setError("Kopyalanamadı — metni elle seç.");
     }
   }
 
@@ -193,17 +290,17 @@ function EditorInner() {
 
   if (loading) {
     return (
-      <div className="jiy-container py-16 text-muted">Loading editor…</div>
+      <div className="jiy-container py-16 text-muted">Editör yükleniyor…</div>
     );
   }
 
   if (error && !menu) {
     return (
       <div className="jiy-container max-w-lg py-16">
-        <h1 className="font-display text-2xl font-semibold">Editor locked</h1>
+        <h1 className="font-display text-2xl font-semibold">Editör kilitli</h1>
         <p className="mt-2 text-sm text-danger">{error}</p>
         <Button asChild className="mt-6">
-          <Link href="/qr-menu">Create a new free menu</Link>
+          <Link href="/">Yeni ücretsiz menü oluştur</Link>
         </Button>
       </div>
     );
@@ -211,48 +308,51 @@ function EditorInner() {
 
   if (!menu) return null;
 
+  const qrSvgPath = `/api/qr-menu/${encodeURIComponent(menu.id)}/qr?size=512`;
+  const waText = encodeURIComponent(
+    `${name} menümüz: ${publicUrl}`
+  );
+
   return (
     <div className="jiy-container max-w-3xl py-8 sm:py-10">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            JIY Menu · Editor
+            JIY Menu · Editör
           </p>
           <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">
-            {name || "Your menu"}
+            {name || "Menün"}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Free forever. Changes go live when you save.
+            Tamamen ücretsiz. Kaydedince misafir menüsü güncellenir.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" asChild>
             <a href={publicUrl} target="_blank" rel="noreferrer">
               <ExternalLink className="mr-1 h-4 w-4" />
-              Preview
+              Önizle
             </a>
           </Button>
           <Button type="button" onClick={() => void save()} disabled={saving}>
             <Save className="mr-1 h-4 w-4" />
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </div>
       </header>
 
       {(error || savedAt) && (
-        <p
-          className={`mt-4 text-sm ${error ? "text-danger" : "text-success"}`}
-        >
-          {error || `Saved at ${savedAt}`}
+        <p className={`mt-4 text-sm ${error ? "text-danger" : "text-success"}`}>
+          {error || `Kaydedildi · ${savedAt}`}
         </p>
       )}
 
       <section className="mt-8 space-y-4 rounded-xl border border-border bg-surface p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
-          Share
+          Paylaş
         </h2>
         <div className="space-y-2">
-          <Label>Public link</Label>
+          <Label>Herkese açık menü linki</Label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input readOnly value={publicUrl} className="font-mono text-xs" />
             <Button
@@ -261,41 +361,261 @@ function EditorInner() {
               onClick={() => void copyText("link", publicUrl)}
             >
               <Copy className="mr-1 h-4 w-4" />
-              {copied === "link" ? "Copied" : "Copy"}
+              {copied === "link" ? "Kopyalandı" : "Kopyala"}
             </Button>
           </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Gizli düzenleme linki (sakla)</Label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input readOnly value={editUrl} className="font-mono text-xs" />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void copyText("edit", editUrl)}
+            >
+              <Copy className="mr-1 h-4 w-4" />
+              {copied === "edit" ? "Kopyalandı" : "Kopyala"}
+            </Button>
+          </div>
+          <p className="text-xs text-warning">
+            Bu link menüyü düzenler. WhatsApp / Instagram’da paylaşma.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-4 pt-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/api/qr-menu/${encodeURIComponent(menu.id)}/qr?size=240`}
-            alt="Menu QR code"
+            alt="Menü QR kodu"
             className="h-36 w-36 rounded-lg bg-white p-2"
           />
           <div className="space-y-2">
             <p className="text-sm text-muted">
-              Print this QR for tables. Guests scan → open the menu.
+              Masaya yapıştır. Misafir okutunca menü açılır.
             </p>
-            <Button type="button" variant="outline" asChild>
-              <a
-                href={`/api/qr-menu/${encodeURIComponent(menu.id)}/qr?size=512`}
-                download={`jiy-menu-${menu.slug}.svg`}
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" asChild>
+                <a href={qrSvgPath} download={`jiy-menu-${menu.slug}.svg`}>
+                  <Download className="mr-1 h-4 w-4" />
+                  SVG
+                </a>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pngBusy}
+                onClick={() => {
+                  setPngBusy(true);
+                  void downloadQrPng(qrSvgPath, `jiy-menu-${menu.slug}.png`)
+                    .catch((err) =>
+                      setError(
+                        err instanceof Error ? err.message : "PNG indirilemedi"
+                      )
+                    )
+                    .finally(() => setPngBusy(false));
+                }}
               >
                 <Download className="mr-1 h-4 w-4" />
-                Download QR (SVG)
-              </a>
-            </Button>
+                {pngBusy ? "PNG…" : "PNG"}
+              </Button>
+              <Button type="button" variant="secondary" asChild>
+                <a
+                  href={`https://wa.me/?text=${waText}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <MessageCircle className="mr-1 h-4 w-4" />
+                  WhatsApp
+                </a>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8 space-y-4 rounded-xl border border-border bg-surface p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+          Masa QR
+        </h2>
+        <p className="text-sm text-muted">
+          Her masa kendi linkiyle açılır; garson çağrısı masa numarasını taşır.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-2">
+            <Label>Masa adedi</Label>
+            <Input
+              type="number"
+              min={1}
+              max={40}
+              value={tableCount}
+              onChange={(e) =>
+                setTableCount(
+                  Math.min(40, Math.max(1, Number(e.target.value) || 1))
+                )
+              }
+              className="w-28"
+            />
+          </div>
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {Array.from({ length: tableCount }, (_, i) => i + 1).map((n) => {
+            const url = `${publicUrl}?masa=${n}`;
+            return (
+              <li
+                key={n}
+                className="flex items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm"
+              >
+                <span className="font-medium">Masa {n}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void copyText(`masa-${n}`, url)}
+                >
+                  <Copy className="mr-1 h-3.5 w-3.5" />
+                  {copied === `masa-${n}` ? "Tamam" : "Link"}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <section className="mt-8 space-y-4 rounded-xl border border-border bg-surface p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+            Garson çağrıları
+          </h2>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              if (!menu || !token) return;
+              void fetch(
+                `/api/qr-menu/${encodeURIComponent(menu.id)}/calls?token=${encodeURIComponent(token)}`,
+                { cache: "no-store" }
+              )
+                .then((r) => r.json())
+                .then((d) => {
+                  if (Array.isArray(d.calls)) setCalls(d.calls);
+                });
+            }}
+          >
+            <BellRing className="mr-1 h-3.5 w-3.5" />
+            Yenile
+          </Button>
+        </div>
+        {calls.length === 0 ? (
+          <p className="text-sm text-muted">Henüz çağrı yok.</p>
+        ) : (
+          <ul className="space-y-2">
+            {calls.map((c) => (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm"
+              >
+                <div>
+                  <p className="font-medium">
+                    Masa {c.tableLabel}
+                    {c.status === "open" ? (
+                      <span className="ml-2 text-xs text-accent">açık</span>
+                    ) : (
+                      <span className="ml-2 text-xs text-muted">okundu</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted">
+                    {new Date(c.createdAt).toLocaleTimeString("tr-TR")}
+                    {c.note ? ` · ${c.note}` : ""}
+                  </p>
+                </div>
+                {c.status === "open" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void fetch(
+                        `/api/qr-menu/${encodeURIComponent(menu.id)}/calls`,
+                        {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            editToken: token,
+                            callId: c.id,
+                          }),
+                        }
+                      ).then(() =>
+                        setCalls((prev) =>
+                          prev.map((x) =>
+                            x.id === c.id ? { ...x, status: "acked" } : x
+                          )
+                        )
+                      );
+                    }}
+                  >
+                    <Check className="mr-1 h-3.5 w-3.5" />
+                    Okundu
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-8 space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+          Günün spesiyali
+        </h2>
+        <p className="text-sm text-muted">
+          Misafir menüsünün üstünde öne çıkar. Boş bırakırsan gösterilmez.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Başlık</Label>
+            <Input
+              value={specialTitle}
+              onChange={(e) => setSpecialTitle(e.target.value)}
+              placeholder="Fırınlanmış somon"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Açıklama</Label>
+            <Input
+              value={specialDesc}
+              onChange={(e) => setSpecialDesc(e.target.value)}
+              placeholder="Limon & dereotu"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Fiyat</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={specialPrice}
+              onChange={(e) => setSpecialPrice(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Bitiş (opsiyonel)</Label>
+            <Input
+              type="datetime-local"
+              value={specialUntil}
+              onChange={(e) => setSpecialUntil(e.target.value)}
+            />
           </div>
         </div>
       </section>
 
       <section className="mt-8 space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
-          Venue
+          Mekan & marka
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name">Ad</Label>
             <Input
               id="name"
               value={name}
@@ -303,16 +623,16 @@ function EditorInner() {
             />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="tagline">Tagline</Label>
+            <Label htmlFor="tagline">Kısa slogan</Label>
             <Input
               id="tagline"
               value={tagline}
               onChange={(e) => setTagline(e.target.value)}
-              placeholder="Kitchen & coffee"
+              placeholder="Kahve & mutfak"
             />
           </div>
           <div className="space-y-2">
-            <Label>Currency</Label>
+            <Label>Para birimi</Label>
             <Select
               value={currency}
               onValueChange={(v) => setCurrency(v as EditorMenu["currency"])}
@@ -321,12 +641,39 @@ function EditorInner() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="EUR">EUR €</SelectItem>
                 <SelectItem value="TRY">TRY ₺</SelectItem>
+                <SelectItem value="EUR">EUR €</SelectItem>
                 <SelectItem value="USD">USD $</SelectItem>
                 <SelectItem value="GBP">GBP £</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="accent">Vurgu rengi</Label>
+            <div className="flex gap-2">
+              <Input
+                id="accent"
+                type="color"
+                value={accentColor}
+                onChange={(e) => setAccentColor(e.target.value.toUpperCase())}
+                className="h-11 w-14 cursor-pointer p-1"
+              />
+              <Input
+                value={accentColor}
+                onChange={(e) => setAccentColor(e.target.value.toUpperCase())}
+                className="font-mono uppercase"
+                maxLength={7}
+              />
+            </div>
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="logo">Logo URL (opsiyonel)</Label>
+            <Input
+              id="logo"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+              placeholder="https://…/logo.png"
+            />
           </div>
         </div>
       </section>
@@ -334,7 +681,7 @@ function EditorInner() {
       <section className="mt-10 space-y-6">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
-            Categories & items
+            Kategoriler & ürünler
           </h2>
           <Button
             type="button"
@@ -343,13 +690,13 @@ function EditorInner() {
             onClick={() =>
               setCategories((p) => [
                 ...p,
-                { id: nanoid(10), name: "New category", items: [] },
+                { id: nanoid(10), name: "Yeni kategori", items: [] },
               ])
             }
             disabled={categories.length >= 20}
           >
             <Plus className="mr-1 h-4 w-4" />
-            Category
+            Kategori
           </Button>
         </div>
 
@@ -360,7 +707,7 @@ function EditorInner() {
           >
             <div className="flex flex-wrap items-end gap-2">
               <div className="min-w-[12rem] flex-1 space-y-2">
-                <Label>Category name</Label>
+                <Label>Kategori adı</Label>
                 <Input
                   value={cat.name}
                   onChange={(e) =>
@@ -372,7 +719,7 @@ function EditorInner() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Remove category"
+                aria-label="Kategoriyi sil"
                 onClick={() =>
                   setCategories((p) => p.filter((_, i) => i !== ci))
                 }
@@ -392,14 +739,14 @@ function EditorInner() {
                     onChange={(e) =>
                       updateItem(ci, ii, { name: e.target.value })
                     }
-                    placeholder="Item name"
+                    placeholder="Ürün adı"
                   />
                   <Input
                     value={item.description || ""}
                     onChange={(e) =>
                       updateItem(ci, ii, { description: e.target.value })
                     }
-                    placeholder="Short description"
+                    placeholder="Kısa açıklama"
                   />
                   <Input
                     type="number"
@@ -411,13 +758,13 @@ function EditorInner() {
                         price: Number(e.target.value) || 0,
                       })
                     }
-                    placeholder="Price"
+                    placeholder="Fiyat"
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label="Remove item"
+                    aria-label="Ürünü sil"
                     onClick={() =>
                       updateCategory(ci, {
                         items: cat.items.filter((_, j) => j !== ii),
@@ -437,12 +784,12 @@ function EditorInner() {
                             .filter(Boolean),
                         })
                       }
-                      placeholder="Allergens (comma-separated): Milk, Gluten…"
+                      placeholder="Alerjenler (virgülle): Süt, Gluten…"
                       rows={1}
                       className="min-h-10"
                     />
                     <p className="mt-1 text-xs text-muted">
-                      Preview price: {money(Number(item.price) || 0, currency)}
+                      Önizleme: {money(Number(item.price) || 0, currency)}
                     </p>
                   </div>
                 </div>
@@ -468,7 +815,7 @@ function EditorInner() {
                 }
               >
                 <Plus className="mr-1 h-4 w-4" />
-                Add item
+                Ürün ekle
               </Button>
             </div>
           </div>
@@ -478,11 +825,11 @@ function EditorInner() {
       <div className="sticky bottom-16 z-10 mt-8 flex flex-wrap gap-3 border-t border-border bg-background/95 py-4 backdrop-blur md:bottom-0">
         <Button type="button" onClick={() => void save()} disabled={saving}>
           <Save className="mr-1 h-4 w-4" />
-          {saving ? "Saving…" : "Save menu"}
+          {saving ? "Kaydediliyor…" : "Menüyü kaydet"}
         </Button>
         <Button type="button" variant="outline" asChild>
           <a href={publicUrl} target="_blank" rel="noreferrer">
-            Open public menu
+            Misafir menüsünü aç
           </a>
         </Button>
       </div>
@@ -493,7 +840,9 @@ function EditorInner() {
 export default function QrMenuEditPage() {
   return (
     <Suspense
-      fallback={<div className="jiy-container py-10 text-muted">Loading…</div>}
+      fallback={
+        <div className="jiy-container py-10 text-muted">Yükleniyor…</div>
+      }
     >
       <EditorInner />
     </Suspense>

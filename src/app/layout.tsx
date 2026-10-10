@@ -17,23 +17,23 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "JIY.APP — Verified Digital Businesses",
-    template: "%s · JIY.APP",
+    default: "JIY Menu — Ücretsiz akıllı QR menü",
+    template: "%s · JIY Menu",
   },
   description:
-    "JIY.APP marketplace — buy, rent, revive, and sell verified digital businesses.",
+    "Ücretsiz dijital menü + QR. Alerjen lens, masa QR, garson çağır, günün spesiyali. Hesap yok.",
   keywords: [
-    "digital business marketplace",
-    "buy saas",
-    "rent website",
-    "revive abandoned project",
-    "sell online business",
-    "verified digital businesses",
+    "qr menü",
+    "dijital menü",
+    "ücretsiz qr menu",
+    "restoran menü",
+    "alerjen menü",
+    "garson çağır",
   ],
   metadataBase: new URL("https://jiy.app"),
   openGraph: {
     type: "website",
-    siteName: "JIY.APP",
+    siteName: "JIY Menu",
   },
   twitter: {
     card: "summary_large_image",
