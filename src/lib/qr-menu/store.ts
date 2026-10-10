@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
+  DEFAULT_ACCENT,
   defaultCategories,
   type MenuCategory,
   type QrMenu,
@@ -14,6 +15,9 @@ type Row = {
   name: string;
   tagline: string | null;
   currency: QrMenu["currency"];
+  locale: "tr" | "en" | null;
+  accent_color: string | null;
+  logo_url: string | null;
   categories: MenuCategory[];
   published: boolean;
   edit_token: string;
@@ -46,7 +50,10 @@ function rowToMenu(row: Row): QrMenu {
     slug: row.slug,
     name: row.name,
     tagline: row.tagline,
-    currency: row.currency || "EUR",
+    currency: row.currency || "TRY",
+    locale: row.locale === "en" ? "en" : "tr",
+    accentColor: row.accent_color || DEFAULT_ACCENT,
+    logoUrl: row.logo_url,
     categories: Array.isArray(row.categories) ? row.categories : [],
     published: Boolean(row.published),
     editToken: row.edit_token,
@@ -64,15 +71,20 @@ export async function createQrMenu(input: {
   name: string;
   tagline?: string;
   currency?: QrMenu["currency"];
+  locale?: "tr" | "en";
 }): Promise<QrMenu> {
+  const locale = input.locale || "tr";
   const ts = now();
   const menu: QrMenu = {
     id: nanoid(16),
     slug: makeMenuSlug(input.name),
     name: input.name.trim(),
     tagline: emptyToNull(input.tagline),
-    currency: input.currency || "EUR",
-    categories: defaultCategories(),
+    currency: input.currency || "TRY",
+    locale,
+    accentColor: DEFAULT_ACCENT,
+    logoUrl: null,
+    categories: defaultCategories(locale),
     published: true,
     editToken: nanoid(32),
     createdAt: ts,
@@ -81,7 +93,6 @@ export async function createQrMenu(input: {
 
   const client = await db();
   if (client) {
-    // Rare slug collision — retry once
     for (let attempt = 0; attempt < 3; attempt++) {
       const { error } = await client.from("qr_menus").insert({
         id: menu.id,
@@ -89,6 +100,9 @@ export async function createQrMenu(input: {
         name: menu.name,
         tagline: menu.tagline,
         currency: menu.currency,
+        locale: menu.locale,
+        accent_color: menu.accentColor,
+        logo_url: menu.logoUrl,
         categories: menu.categories,
         published: menu.published,
         edit_token: menu.editToken,
@@ -100,6 +114,7 @@ export async function createQrMenu(input: {
         menu.slug = makeMenuSlug(input.name);
         continue;
       }
+      // Table missing / schema lag — surface clear error for bootstrap
       throw new Error(`qr_menus insert failed: ${error.message}`);
     }
     throw new Error("qr_menus slug collision");
@@ -149,6 +164,9 @@ export async function updateQrMenu(
     name?: string;
     tagline?: string | null;
     currency?: QrMenu["currency"];
+    locale?: "tr" | "en";
+    accentColor?: string | null;
+    logoUrl?: string | null;
     categories?: MenuCategory[];
     published?: boolean;
   }
@@ -167,6 +185,15 @@ export async function updateQrMenu(
         ? emptyToNull(patch.tagline)
         : existing.tagline,
     currency: patch.currency || existing.currency,
+    locale: patch.locale || existing.locale,
+    accentColor:
+      patch.accentColor !== undefined && patch.accentColor
+        ? patch.accentColor
+        : existing.accentColor,
+    logoUrl:
+      patch.logoUrl !== undefined
+        ? emptyToNull(patch.logoUrl)
+        : existing.logoUrl,
     categories: patch.categories ?? existing.categories,
     published:
       patch.published !== undefined ? patch.published : existing.published,
@@ -181,6 +208,9 @@ export async function updateQrMenu(
         name: updated.name,
         tagline: updated.tagline,
         currency: updated.currency,
+        locale: updated.locale,
+        accent_color: updated.accentColor,
+        logo_url: updated.logoUrl,
         categories: updated.categories,
         published: updated.published,
         updated_at: updated.updatedAt,
