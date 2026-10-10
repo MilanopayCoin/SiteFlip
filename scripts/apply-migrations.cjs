@@ -22,6 +22,7 @@ const FILES = [
   "004_mollie_payments.sql",
   "005_fix_profiles_rls_recursion.sql",
   "006_marketplace_core.sql",
+  "007_quote_orders.sql",
 ];
 
 /** Postgres codes we treat as "already applied" (non-destructive continue). */
