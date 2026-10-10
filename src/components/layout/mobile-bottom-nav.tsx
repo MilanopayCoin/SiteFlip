@@ -2,19 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CarFront, Handshake, Store, Tag, UserRound } from "lucide-react";
+import { Handshake, QrCode, Store, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Mobile-only 5-slot bottom bar: Marketplace · Deals · Trafik · Sell · Profile
+ * Mobile-only bottom bar — JIY Menu focused.
  */
 export function MobileBottomNav() {
   const pathname = usePathname();
 
   const items = [
     {
+      href: "/qr-menu",
+      label: "Menü",
+      icon: QrCode,
+      active:
+        pathname.startsWith("/qr-menu") || pathname.startsWith("/m/"),
+    },
+    {
       href: "/marketplace",
-      label: "Marketplace",
+      label: "Market",
       icon: Store,
       active:
         pathname === "/marketplace" || pathname.startsWith("/marketplace/"),
@@ -26,20 +33,8 @@ export function MobileBottomNav() {
       active: pathname === "/deals" || pathname.startsWith("/deals/"),
     },
     {
-      href: "/trafik-studio",
-      label: "Trafik",
-      icon: CarFront,
-      active: pathname.startsWith("/trafik-studio"),
-    },
-    {
-      href: "/sell",
-      label: "Sell",
-      icon: Tag,
-      active: pathname === "/sell" || pathname.startsWith("/sell/"),
-    },
-    {
       href: "/profile",
-      label: "Profile",
+      label: "Profil",
       icon: UserRound,
       active:
         pathname.startsWith("/profile") ||
@@ -54,7 +49,7 @@ export function MobileBottomNav() {
       className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <ul className="mx-auto grid h-[3.75rem] max-w-lg grid-cols-5">
+      <ul className="mx-auto grid h-[3.75rem] max-w-lg grid-cols-4">
         {items.map((item) => {
           const Icon = item.icon;
           return (

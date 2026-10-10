@@ -1,5 +1,22 @@
 import { z } from "zod";
 
+const hexColor = z
+  .string()
+  .regex(/^#[0-9A-Fa-f]{6}$/, "Use a hex color like #D4FF3A")
+  .optional()
+  .or(z.literal(""));
+
+const logoUrlSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .refine(
+    (v) => !v || /^https?:\/\//i.test(v),
+    "Logo must be an http(s) URL"
+  )
+  .optional()
+  .or(z.literal(""));
+
 export const menuItemSchema = z.object({
   id: z.string().min(4).max(40),
   name: z.string().trim().min(1).max(120),
@@ -18,7 +35,8 @@ export const menuCategorySchema = z.object({
 export const createMenuSchema = z.object({
   name: z.string().trim().min(2).max(80),
   tagline: z.string().trim().max(160).optional().or(z.literal("")),
-  currency: z.enum(["EUR", "TRY", "USD", "GBP"]).default("EUR"),
+  currency: z.enum(["EUR", "TRY", "USD", "GBP"]).default("TRY"),
+  locale: z.enum(["tr", "en"]).default("tr"),
 });
 
 export const updateMenuSchema = z.object({
@@ -26,6 +44,9 @@ export const updateMenuSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   tagline: z.string().trim().max(160).optional().or(z.literal("")),
   currency: z.enum(["EUR", "TRY", "USD", "GBP"]).optional(),
+  locale: z.enum(["tr", "en"]).optional(),
+  accentColor: hexColor,
+  logoUrl: logoUrlSchema,
   categories: z.array(menuCategorySchema).max(20).optional(),
   published: z.boolean().optional(),
 });
@@ -39,12 +60,17 @@ export type QrMenu = {
   name: string;
   tagline: string | null;
   currency: "EUR" | "TRY" | "USD" | "GBP";
+  locale: "tr" | "en";
+  accentColor: string;
+  logoUrl: string | null;
   categories: MenuCategory[];
   published: boolean;
   editToken: string;
   createdAt: string;
   updatedAt: string;
 };
+
+export const DEFAULT_ACCENT = "#D4FF3A";
 
 export function publicMenuView(menu: QrMenu) {
   return {
@@ -53,6 +79,9 @@ export function publicMenuView(menu: QrMenu) {
     name: menu.name,
     tagline: menu.tagline,
     currency: menu.currency,
+    locale: menu.locale,
+    accentColor: menu.accentColor || DEFAULT_ACCENT,
+    logoUrl: menu.logoUrl,
     categories: menu.categories.map((c) => ({
       id: c.id,
       name: c.name,
@@ -79,40 +108,81 @@ export function editorMenuView(menu: QrMenu) {
   };
 }
 
-export function defaultCategories(): MenuCategory[] {
+export function defaultCategories(locale: "tr" | "en" = "tr"): MenuCategory[] {
+  if (locale === "en") {
+    return [
+      {
+        id: "cat_drinks",
+        name: "Drinks",
+        items: [
+          {
+            id: "item_espresso",
+            name: "Espresso",
+            description: "Single shot",
+            price: 2.5,
+            allergens: [],
+            available: true,
+          },
+          {
+            id: "item_latte",
+            name: "Caffe Latte",
+            description: "Espresso, steamed milk",
+            price: 3.8,
+            allergens: ["Milk"],
+            available: true,
+          },
+        ],
+      },
+      {
+        id: "cat_food",
+        name: "Kitchen",
+        items: [
+          {
+            id: "item_toast",
+            name: "Avocado toast",
+            description: "Sourdough, lemon, chili",
+            price: 9.5,
+            allergens: ["Gluten"],
+            available: true,
+          },
+        ],
+      },
+    ];
+  }
+
   return [
     {
       id: "cat_drinks",
-      name: "Drinks",
+      name: "İçecekler",
       items: [
         {
-          id: "item_espresso",
-          name: "Espresso",
-          description: "Single shot",
-          price: 2.5,
+          id: "item_cay",
+          name: "Çay",
+          description: "Demlik çay",
+          price: 40,
           allergens: [],
           available: true,
         },
         {
           id: "item_latte",
-          name: "Caffe Latte",
-          description: "Espresso, steamed milk",
-          price: 3.8,
-          allergens: ["Milk"],
+          name: "Latte",
+          description: "Espresso, süt",
+          price: 120,
+          allergens: ["Süt"],
           available: true,
         },
       ],
     },
     {
       id: "cat_food",
-      name: "Kitchen",
+      name: "Mutfak",
       items: [
         {
-          id: "item_toast",
-          name: "Avocado toast",
-          description: "Sourdough, lemon, chili",
-          price: 9.5,
-          allergens: ["Gluten"],
+          id: "item_tost",
+          name: "Karışık tost",
+          description: "Kaşar, sucuk",
+          price: 180,
+          allergens: ["Gluten", "Süt"],
           available: true,
         },
       ],
