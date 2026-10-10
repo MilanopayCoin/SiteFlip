@@ -18,6 +18,7 @@ export const MIGRATION_FILES = [
   "007_quote_orders.sql",
   "008_qr_menus.sql",
   "009_qr_menus_brand.sql",
+  "010_qr_menu_smart.sql",
 ] as const;
 
 export const MARKETPLACE_CORE_TABLES = [

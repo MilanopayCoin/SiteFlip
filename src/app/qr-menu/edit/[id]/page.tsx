@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { nanoid } from "nanoid";
 import {
+  BellRing,
+  Check,
   Copy,
   Download,
   ExternalLink,
@@ -24,7 +26,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DEFAULT_ACCENT, type MenuCategory } from "@/lib/qr-menu/types";
+import {
+  DEFAULT_ACCENT,
+  type MenuCategory,
+  type MenuSpecial,
+  type WaiterCall,
+} from "@/lib/qr-menu/types";
 
 type EditorMenu = {
   id: string;
@@ -35,6 +42,7 @@ type EditorMenu = {
   locale: "tr" | "en";
   accentColor: string;
   logoUrl: string | null;
+  special: MenuSpecial | null;
   categories: MenuCategory[];
   published: boolean;
   editToken: string;
@@ -93,6 +101,12 @@ function EditorInner() {
   const [currency, setCurrency] = useState<EditorMenu["currency"]>("TRY");
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT);
   const [logoUrl, setLogoUrl] = useState("");
+  const [specialTitle, setSpecialTitle] = useState("");
+  const [specialDesc, setSpecialDesc] = useState("");
+  const [specialPrice, setSpecialPrice] = useState("");
+  const [specialUntil, setSpecialUntil] = useState("");
+  const [tableCount, setTableCount] = useState(8);
+  const [calls, setCalls] = useState<WaiterCall[]>([]);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -143,12 +157,33 @@ function EditorInner() {
         setCurrency(m.currency);
         setAccentColor(m.accentColor || DEFAULT_ACCENT);
         setLogoUrl(m.logoUrl || "");
+        setSpecialTitle(m.special?.title || "");
+        setSpecialDesc(m.special?.description || "");
+        setSpecialPrice(
+          m.special?.price != null ? String(m.special.price) : ""
+        );
+        setSpecialUntil(
+          m.special?.until ? m.special.until.slice(0, 16) : ""
+        );
         setCategories(m.categories);
         try {
           localStorage.setItem(`jiy-menu-${m.id}`, m.editToken);
+          localStorage.setItem(
+            `jiy-menu-edit-${m.id}`,
+            `${window.location.origin}/qr-menu/edit/${m.id}?token=${m.editToken}`
+          );
         } catch {
           // ignore
         }
+        void fetch(
+          `/api/qr-menu/${encodeURIComponent(m.id)}/calls?token=${encodeURIComponent(m.editToken)}`,
+          { cache: "no-store" }
+        )
+          .then((r) => r.json())
+          .then((d) => {
+            if (!cancelled && Array.isArray(d.calls)) setCalls(d.calls);
+          })
+          .catch(() => undefined);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Yükleme başarısız");
@@ -181,6 +216,18 @@ function EditorInner() {
     setSaving(true);
     setError(null);
     try {
+      const special =
+        specialTitle.trim().length > 0
+          ? {
+              title: specialTitle.trim(),
+              description: specialDesc.trim() || undefined,
+              price:
+                specialPrice.trim() === ""
+                  ? undefined
+                  : Number(specialPrice) || 0,
+              until: specialUntil.trim() || undefined,
+            }
+          : null;
       const res = await fetch(`/api/qr-menu/${encodeURIComponent(menu.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -191,6 +238,7 @@ function EditorInner() {
           currency,
           accentColor,
           logoUrl,
+          special,
           categories,
           published: true,
         }),
@@ -252,7 +300,7 @@ function EditorInner() {
         <h1 className="font-display text-2xl font-semibold">Editör kilitli</h1>
         <p className="mt-2 text-sm text-danger">{error}</p>
         <Button asChild className="mt-6">
-          <Link href="/qr-menu">Yeni ücretsiz menü oluştur</Link>
+          <Link href="/">Yeni ücretsiz menü oluştur</Link>
         </Button>
       </div>
     );
@@ -381,6 +429,182 @@ function EditorInner() {
                 </a>
               </Button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8 space-y-4 rounded-xl border border-border bg-surface p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+          Masa QR
+        </h2>
+        <p className="text-sm text-muted">
+          Her masa kendi linkiyle açılır; garson çağrısı masa numarasını taşır.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-2">
+            <Label>Masa adedi</Label>
+            <Input
+              type="number"
+              min={1}
+              max={40}
+              value={tableCount}
+              onChange={(e) =>
+                setTableCount(
+                  Math.min(40, Math.max(1, Number(e.target.value) || 1))
+                )
+              }
+              className="w-28"
+            />
+          </div>
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {Array.from({ length: tableCount }, (_, i) => i + 1).map((n) => {
+            const url = `${publicUrl}?masa=${n}`;
+            return (
+              <li
+                key={n}
+                className="flex items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm"
+              >
+                <span className="font-medium">Masa {n}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void copyText(`masa-${n}`, url)}
+                >
+                  <Copy className="mr-1 h-3.5 w-3.5" />
+                  {copied === `masa-${n}` ? "Tamam" : "Link"}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <section className="mt-8 space-y-4 rounded-xl border border-border bg-surface p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+            Garson çağrıları
+          </h2>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              if (!menu || !token) return;
+              void fetch(
+                `/api/qr-menu/${encodeURIComponent(menu.id)}/calls?token=${encodeURIComponent(token)}`,
+                { cache: "no-store" }
+              )
+                .then((r) => r.json())
+                .then((d) => {
+                  if (Array.isArray(d.calls)) setCalls(d.calls);
+                });
+            }}
+          >
+            <BellRing className="mr-1 h-3.5 w-3.5" />
+            Yenile
+          </Button>
+        </div>
+        {calls.length === 0 ? (
+          <p className="text-sm text-muted">Henüz çağrı yok.</p>
+        ) : (
+          <ul className="space-y-2">
+            {calls.map((c) => (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm"
+              >
+                <div>
+                  <p className="font-medium">
+                    Masa {c.tableLabel}
+                    {c.status === "open" ? (
+                      <span className="ml-2 text-xs text-accent">açık</span>
+                    ) : (
+                      <span className="ml-2 text-xs text-muted">okundu</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted">
+                    {new Date(c.createdAt).toLocaleTimeString("tr-TR")}
+                    {c.note ? ` · ${c.note}` : ""}
+                  </p>
+                </div>
+                {c.status === "open" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void fetch(
+                        `/api/qr-menu/${encodeURIComponent(menu.id)}/calls`,
+                        {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            editToken: token,
+                            callId: c.id,
+                          }),
+                        }
+                      ).then(() =>
+                        setCalls((prev) =>
+                          prev.map((x) =>
+                            x.id === c.id ? { ...x, status: "acked" } : x
+                          )
+                        )
+                      );
+                    }}
+                  >
+                    <Check className="mr-1 h-3.5 w-3.5" />
+                    Okundu
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-8 space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+          Günün spesiyali
+        </h2>
+        <p className="text-sm text-muted">
+          Misafir menüsünün üstünde öne çıkar. Boş bırakırsan gösterilmez.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Başlık</Label>
+            <Input
+              value={specialTitle}
+              onChange={(e) => setSpecialTitle(e.target.value)}
+              placeholder="Fırınlanmış somon"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Açıklama</Label>
+            <Input
+              value={specialDesc}
+              onChange={(e) => setSpecialDesc(e.target.value)}
+              placeholder="Limon & dereotu"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Fiyat</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={specialPrice}
+              onChange={(e) => setSpecialPrice(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Bitiş (opsiyonel)</Label>
+            <Input
+              type="datetime-local"
+              value={specialUntil}
+              onChange={(e) => setSpecialUntil(e.target.value)}
+            />
           </div>
         </div>
       </section>

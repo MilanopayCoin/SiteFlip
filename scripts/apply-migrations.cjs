@@ -25,6 +25,7 @@ const FILES = [
   "007_quote_orders.sql",
   "008_qr_menus.sql",
   "009_qr_menus_brand.sql",
+  "010_qr_menu_smart.sql",
 ];
 
 /** Postgres codes we treat as "already applied" (non-destructive continue). */
