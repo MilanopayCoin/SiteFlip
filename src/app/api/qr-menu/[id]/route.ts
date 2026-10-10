@@ -63,6 +63,9 @@ export async function PATCH(
       name: patch.name,
       tagline: patch.tagline,
       currency: patch.currency,
+      locale: patch.locale,
+      accentColor: patch.accentColor,
+      logoUrl: patch.logoUrl,
       categories: patch.categories,
       published: patch.published,
     });
