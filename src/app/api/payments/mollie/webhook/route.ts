@@ -11,6 +11,12 @@ import { memoryStore } from "@/lib/data/memory-store";
 import { writeAuditLog } from "@/lib/marketplace/audit";
 import { fundsStateAfterPaymentPaid } from "@/lib/marketplace/commission";
 import type { TransactionStatus } from "@/types/database";
+import { QUOTE_PDF_PURPOSE } from "@/lib/quote/types";
+import {
+  getQuoteById,
+  getQuoteByPaymentId,
+  updateQuotePayment,
+} from "@/lib/quote/store";
 
 export const runtime = "nodejs";
 
@@ -62,6 +68,44 @@ export async function POST(request: Request) {
   const mapped = mapMollieStatusToPayment(String(payment.status));
   const meta = payment.metadata || {};
   const transactionId = meta.transactionId || null;
+
+  // JIY Quote PDF unlock (guest checkout — no marketplace transaction)
+  if (meta.purpose === QUOTE_PDF_PURPOSE || meta.quoteId) {
+    const quoteId = meta.quoteId || null;
+    let quote = quoteId ? await getQuoteById(quoteId) : null;
+    if (!quote) quote = await getQuoteByPaymentId(paymentId);
+
+    if (quote) {
+      let quoteStatus:
+        | "paid"
+        | "failed"
+        | "canceled"
+        | "expired"
+        | "pending_payment" = "pending_payment";
+      if (mapped === "paid") quoteStatus = "paid";
+      else if (mapped === "failed") quoteStatus = "failed";
+      else if (mapped === "canceled") quoteStatus = "canceled";
+      else if (mapped === "expired") quoteStatus = "expired";
+
+      await updateQuotePayment({
+        id: quote.id,
+        status: quoteStatus,
+        molliePaymentId: paymentId,
+        paidAt: quoteStatus === "paid" ? new Date().toISOString() : null,
+      });
+    }
+
+    return Response.json({
+      received: true,
+      paymentId,
+      status: mapped,
+      purpose: QUOTE_PDF_PURPOSE,
+      quoteId: quote?.id || quoteId,
+      isEscrow: false,
+      notice:
+        "Quote PDF payment verified with Mollie. Unlock only — not escrow, not e-sign.",
+    });
+  }
 
   // Persist payment + transaction updates
   if (isSupabaseConfigured()) {

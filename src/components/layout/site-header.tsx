@@ -18,6 +18,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 const NAV = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/deals", label: "Deals" },
+  { href: "/quote", label: "Quote" },
   { href: "/trafik-studio", label: "Trafik" },
   { href: "/profile", label: "Profile" },
 ];
