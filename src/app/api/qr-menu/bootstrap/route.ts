@@ -43,6 +43,7 @@ ALTER TABLE qr_menus
   ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'tr',
   ADD COLUMN IF NOT EXISTS accent_color TEXT NOT NULL DEFAULT '#D4FF3A',
   ADD COLUMN IF NOT EXISTS logo_url TEXT;
+NOTIFY pgrst, 'reload schema';
 `;
 
 export async function POST(request: Request) {
