@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { nanoid } from "nanoid";
@@ -10,6 +10,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Images,
   MessageCircle,
   Plus,
   Save,
@@ -26,6 +27,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ItemImageField } from "@/components/qr-menu/item-image-field";
+import {
+  compressImageToDataUri,
+  filenameToItemName,
+} from "@/lib/qr-menu/image";
 import {
   DEFAULT_ACCENT,
   type MenuCategory,
@@ -114,6 +120,8 @@ function EditorInner() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [pngBusy, setPngBusy] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const bulkInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!tokenFromUrl && id) {
@@ -286,6 +294,44 @@ function EditorInner() {
         };
       })
     );
+  }
+
+  async function addItemsFromPhotos(ci: number, files: FileList | null) {
+    if (!files?.length) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+      const created: MenuCategory["items"] = [];
+      for (const file of list.slice(0, 20)) {
+        const imageUrl = await compressImageToDataUri(file);
+        created.push({
+          id: nanoid(10),
+          name: filenameToItemName(file.name),
+          description: "",
+          price: 0,
+          allergens: [],
+          available: true,
+          imageUrl,
+        });
+      }
+      if (created.length === 0) {
+        setError("Geçerli görsel seçilmedi");
+        return;
+      }
+      setCategories((prev) =>
+        prev.map((c, i) => {
+          if (i !== ci) return c;
+          const next = [...c.items, ...created].slice(0, 60);
+          return { ...c, items: next };
+        })
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Toplu ekleme başarısız");
+    } finally {
+      setBulkBusy(false);
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+    }
   }
 
   if (loading) {
@@ -678,11 +724,29 @@ function EditorInner() {
         </div>
       </section>
 
+      <input
+        ref={bulkInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const ci = Number(e.currentTarget.dataset.catIndex || "0");
+          void addItemsFromPhotos(ci, e.target.files);
+        }}
+      />
+
       <section className="mt-10 space-y-6">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
-            Kategoriler & ürünler
-          </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+              Kategoriler & ürünler
+            </h2>
+            <p className="mt-1 text-xs text-muted">
+              Her ürüne fotoğraf ekle veya birden fazla fotoğraf seçerek toplu
+              ürün oluştur.
+            </p>
+          </div>
           <Button
             type="button"
             variant="outline"
@@ -732,48 +796,54 @@ function EditorInner() {
               {cat.items.map((item, ii) => (
                 <div
                   key={item.id}
-                  className="grid gap-2 rounded-lg border border-border/80 bg-surface/50 p-3 sm:grid-cols-[1fr_1fr_6.5rem_auto]"
+                  className="space-y-3 rounded-lg border border-border/80 bg-surface/50 p-3"
                 >
-                  <Input
-                    value={item.name}
-                    onChange={(e) =>
-                      updateItem(ci, ii, { name: e.target.value })
-                    }
-                    placeholder="Ürün adı"
+                  <div className="grid gap-2 sm:grid-cols-[1fr_1fr_6.5rem_auto]">
+                    <Input
+                      value={item.name}
+                      onChange={(e) =>
+                        updateItem(ci, ii, { name: e.target.value })
+                      }
+                      placeholder="Ürün adı"
+                    />
+                    <Input
+                      value={item.description || ""}
+                      onChange={(e) =>
+                        updateItem(ci, ii, { description: e.target.value })
+                      }
+                      placeholder="Kısa açıklama"
+                    />
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.price}
+                      onChange={(e) =>
+                        updateItem(ci, ii, {
+                          price: Number(e.target.value) || 0,
+                        })
+                      }
+                      placeholder="Fiyat"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Ürünü sil"
+                      onClick={() =>
+                        updateCategory(ci, {
+                          items: cat.items.filter((_, j) => j !== ii),
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <ItemImageField
+                    value={item.imageUrl || ""}
+                    onChange={(imageUrl) => updateItem(ci, ii, { imageUrl })}
                   />
-                  <Input
-                    value={item.description || ""}
-                    onChange={(e) =>
-                      updateItem(ci, ii, { description: e.target.value })
-                    }
-                    placeholder="Kısa açıklama"
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={item.price}
-                    onChange={(e) =>
-                      updateItem(ci, ii, {
-                        price: Number(e.target.value) || 0,
-                      })
-                    }
-                    placeholder="Fiyat"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Ürünü sil"
-                    onClick={() =>
-                      updateCategory(ci, {
-                        items: cat.items.filter((_, j) => j !== ii),
-                      })
-                    }
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                  <div className="sm:col-span-4">
+                  <div>
                     <Textarea
                       value={(item.allergens || []).join(", ")}
                       onChange={(e) =>
@@ -794,29 +864,48 @@ function EditorInner() {
                   </div>
                 </div>
               ))}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  updateCategory(ci, {
-                    items: [
-                      ...cat.items,
-                      {
-                        id: nanoid(10),
-                        name: "",
-                        description: "",
-                        price: 0,
-                        allergens: [],
-                        available: true,
-                      },
-                    ],
-                  })
-                }
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Ürün ekle
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    updateCategory(ci, {
+                      items: [
+                        ...cat.items,
+                        {
+                          id: nanoid(10),
+                          name: "",
+                          description: "",
+                          price: 0,
+                          allergens: [],
+                          available: true,
+                          imageUrl: "",
+                        },
+                      ],
+                    })
+                  }
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Ürün ekle
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkBusy || cat.items.length >= 60}
+                  onClick={() => {
+                    // stash category index on the shared input
+                    if (bulkInputRef.current) {
+                      bulkInputRef.current.dataset.catIndex = String(ci);
+                      bulkInputRef.current.click();
+                    }
+                  }}
+                >
+                  <Images className="mr-1 h-4 w-4" />
+                  {bulkBusy ? "Ekleniyor…" : "Fotoğraflardan ekle"}
+                </Button>
+              </div>
             </div>
           </div>
         ))}
