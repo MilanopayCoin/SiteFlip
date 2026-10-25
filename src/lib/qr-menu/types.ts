@@ -17,6 +17,19 @@ const logoUrlSchema = z
   .optional()
   .or(z.literal(""));
 
+const itemImageSchema = z
+  .string()
+  .max(160_000)
+  .refine(
+    (v) =>
+      !v ||
+      /^https?:\/\//i.test(v) ||
+      /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(v),
+    "Image must be http(s) URL or compressed data URI"
+  )
+  .optional()
+  .or(z.literal(""));
+
 export const menuItemSchema = z.object({
   id: z.string().min(4).max(40),
   name: z.string().trim().min(1).max(120),
@@ -24,6 +37,8 @@ export const menuItemSchema = z.object({
   price: z.coerce.number().min(0).max(1_000_000),
   allergens: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
   available: z.boolean().default(true),
+  /** Optional product photo — https URL or compressed JPEG data URI */
+  imageUrl: itemImageSchema,
 });
 
 export const menuCategorySchema = z.object({
@@ -134,6 +149,7 @@ export function publicMenuView(menu: QrMenu) {
           description: i.description || "",
           price: i.price,
           allergens: i.allergens || [],
+          imageUrl: i.imageUrl || "",
         })),
     })),
     published: menu.published,

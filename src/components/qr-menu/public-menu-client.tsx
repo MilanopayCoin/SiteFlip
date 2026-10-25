@@ -12,6 +12,7 @@ type PubItem = {
   description: string;
   price: number;
   allergens: string[];
+  imageUrl?: string;
 };
 
 type PubCategory = {
@@ -238,27 +239,40 @@ export function PublicMenuClient({
                   {cat.items.map((item) => (
                     <li
                       key={item.id}
-                      className="flex items-start justify-between gap-4 border-b border-border/70 pb-5"
+                      className="flex items-start gap-3 border-b border-border/70 pb-5"
                     >
-                      <div className="min-w-0">
-                        <p className="font-medium tracking-tight">{item.name}</p>
-                        {item.description ? (
-                          <p className="mt-1 text-sm text-muted">
-                            {item.description}
+                      {item.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.imageUrl}
+                          alt=""
+                          className="h-16 w-16 shrink-0 rounded-xl object-cover ring-1 ring-border"
+                          loading="lazy"
+                        />
+                      ) : null}
+                      <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium tracking-tight">
+                            {item.name}
                           </p>
-                        ) : null}
-                        {item.allergens?.length ? (
-                          <p className="mt-2 text-[11px] uppercase tracking-wide text-muted/80">
-                            {item.allergens.join(" · ")}
-                          </p>
-                        ) : null}
+                          {item.description ? (
+                            <p className="mt-1 text-sm text-muted">
+                              {item.description}
+                            </p>
+                          ) : null}
+                          {item.allergens?.length ? (
+                            <p className="mt-2 text-[11px] uppercase tracking-wide text-muted/80">
+                              {item.allergens.join(" · ")}
+                            </p>
+                          ) : null}
+                        </div>
+                        <p
+                          className="shrink-0 tabular font-medium"
+                          style={{ color: accent }}
+                        >
+                          {formatPrice(item.price, menu.currency, menu.locale)}
+                        </p>
                       </div>
-                      <p
-                        className="shrink-0 tabular font-medium"
-                        style={{ color: accent }}
-                      >
-                        {formatPrice(item.price, menu.currency, menu.locale)}
-                      </p>
                     </li>
                   ))}
                 </ul>
