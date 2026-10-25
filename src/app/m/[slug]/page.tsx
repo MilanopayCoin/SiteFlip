@@ -82,6 +82,8 @@ export default async function PublicMenuPage({ params }: Props) {
                   rel="noopener noreferrer"
                 >
                   Trustpilot
+                  {menu.venue.trustpilotScore != null &&
+                    ` ★ ${menu.venue.trustpilotScore.toFixed(1)}`}
                 </Link>
               )}
             </p>
