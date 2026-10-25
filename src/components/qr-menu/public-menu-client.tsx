@@ -642,10 +642,7 @@ export function PublicMenuClient({
                   <Button
                     type="button"
                     className="flex-1"
-                    onClick={() => {
-                      setWizardOpen(false);
-                      runWizard();
-                    }}
+                    onClick={() => setWizardOpen(false)}
                     style={{ background: accent, color: "#0a0a0b" }}
                   >
                     {isTr ? "Menüde göster" : "Show on menu"}
