@@ -12,9 +12,11 @@ export const venueSchema = z.object({
   website: z.string().max(300).optional().or(z.literal("")),
   googleRating: z.number().min(0).max(5).optional(),
   googleReviewCount: z.number().int().min(0).optional(),
-  trustpilotProfileUrl: z.string().url().max(300).optional().or(z.literal("")),
+  trustpilotProfileUrl: z.string().max(300).optional().or(z.literal("")),
+  trustpilotScore: z.number().min(0).max(5).optional(),
+  trustpilotReviewCount: z.number().int().min(0).optional(),
   photoName: z.string().max(200).optional(),
-  enrichedAt: z.string().datetime().optional(),
+  enrichedAt: z.string().max(40).optional(),
 });
 
 export type VenueMetadata = z.infer<typeof venueSchema>;
@@ -77,6 +79,8 @@ export function publicVenueView(venue: VenueMetadata | null) {
     googleRating: venue.googleRating ?? null,
     googleReviewCount: venue.googleReviewCount ?? null,
     trustpilotProfileUrl: venue.trustpilotProfileUrl || null,
+    trustpilotScore: venue.trustpilotScore ?? null,
+    trustpilotReviewCount: venue.trustpilotReviewCount ?? null,
     website: venue.website || null,
     market: venue.market,
   };
@@ -113,6 +117,8 @@ export function editorMenuView(menu: QrMenu) {
     ...publicMenuView(menu),
     editToken: menu.editToken,
     createdAt: menu.createdAt,
+    /** Full venue metadata for import / Trustpilot refresh in editor. */
+    venueDetail: menu.venue,
   };
 }
 

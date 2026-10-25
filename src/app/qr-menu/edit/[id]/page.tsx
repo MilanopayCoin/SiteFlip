@@ -23,7 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { MenuCategory } from "@/lib/qr-menu/types";
+import { MenuImportTools } from "@/components/qr-menu/menu-import-tools";
+import type { MenuCategory, VenueMetadata } from "@/lib/qr-menu/types";
 
 type EditorMenu = {
   id: string;
@@ -34,6 +35,7 @@ type EditorMenu = {
   categories: MenuCategory[];
   published: boolean;
   editToken: string;
+  venueDetail?: VenueMetadata | null;
 };
 
 function money(n: number, currency: string) {
@@ -65,6 +67,8 @@ function EditorInner() {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [venueDetail, setVenueDetail] = useState<VenueMetadata | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tokenFromUrl && id) {
@@ -105,6 +109,7 @@ function EditorInner() {
         setTagline(m.tagline || "");
         setCurrency(m.currency);
         setCategories(m.categories);
+        setVenueDetail(m.venueDetail ?? null);
         try {
           localStorage.setItem(`jiy-menu-${m.id}`, m.editToken);
         } catch {
@@ -149,6 +154,7 @@ function EditorInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
       setMenu(data.menu);
+      setVenueDetail(data.menu.venueDetail ?? null);
       setSavedAt(new Date().toLocaleTimeString());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -239,13 +245,25 @@ function EditorInner() {
         </div>
       </header>
 
-      {(error || savedAt) && (
+      {(error || savedAt || importNotice) && (
         <p
           className={`mt-4 text-sm ${error ? "text-danger" : "text-success"}`}
         >
-          {error || `Saved at ${savedAt}`}
+          {error || importNotice || `Saved at ${savedAt}`}
         </p>
       )}
+
+      <MenuImportTools
+        menuId={menu.id}
+        editToken={token}
+        venue={venueDetail}
+        onMenuUpdated={(cats, message) => {
+          setCategories(cats);
+          setImportNotice(message ?? null);
+          setTimeout(() => setImportNotice(null), 8000);
+        }}
+        onVenueUpdated={setVenueDetail}
+      />
 
       <section className="mt-8 space-y-4 rounded-xl border border-border bg-surface p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">

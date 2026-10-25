@@ -3,6 +3,7 @@ import { fetchPlaceDetails, type PlaceDetails } from "@/lib/places/google";
 import { taglineFromPlaceType } from "@/lib/qr-menu/market-templates";
 import type { VenueMetadata } from "@/lib/qr-menu/types";
 import { matchTrustpilot } from "@/lib/trustpilot/match";
+import { enrichTrustpilotByWebsite } from "@/lib/trustpilot/api";
 
 export type EnrichedVenue = {
   name: string;
@@ -26,8 +27,17 @@ export async function enrichFromGooglePlace(input: {
     website: details.website,
     market: input.market,
   });
+  const tpApi = await enrichTrustpilotByWebsite({
+    businessName: details.name,
+    website: details.website,
+    market: input.market,
+  });
 
-  const venue = placeDetailsToVenue(details, input.market, trust.profileUrl);
+  const venue = placeDetailsToVenue(details, input.market, {
+    profileUrl: tpApi.profileUrl ?? trust.profileUrl,
+    trustScore: tpApi.trustScore,
+    reviewCount: tpApi.reviewCount,
+  });
 
   return {
     ok: true,
@@ -43,7 +53,11 @@ export async function enrichFromGooglePlace(input: {
 function placeDetailsToVenue(
   d: PlaceDetails,
   market: MenuMarket,
-  trustpilotProfileUrl: string | null
+  trust: {
+    profileUrl: string | null;
+    trustScore: number | null;
+    reviewCount: number | null;
+  }
 ): VenueMetadata {
   return {
     market,
@@ -55,7 +69,9 @@ function placeDetailsToVenue(
     website: d.website ?? undefined,
     googleRating: d.googleRating ?? undefined,
     googleReviewCount: d.googleReviewCount ?? undefined,
-    trustpilotProfileUrl: trustpilotProfileUrl ?? undefined,
+    trustpilotProfileUrl: trust.profileUrl ?? undefined,
+    trustpilotScore: trust.trustScore ?? undefined,
+    trustpilotReviewCount: trust.reviewCount ?? undefined,
     photoName: d.photoName ?? undefined,
     enrichedAt: new Date().toISOString(),
   };

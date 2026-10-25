@@ -165,6 +165,7 @@ export async function updateQrMenu(
     tagline?: string | null;
     currency?: QrMenu["currency"];
     categories?: MenuCategory[];
+    venue?: VenueMetadata | null;
     published?: boolean;
   }
 ): Promise<QrMenu | null> {
@@ -183,6 +184,7 @@ export async function updateQrMenu(
         : existing.tagline,
     currency: patch.currency || existing.currency,
     categories: patch.categories ?? existing.categories,
+    venue: patch.venue !== undefined ? patch.venue : existing.venue,
     published:
       patch.published !== undefined ? patch.published : existing.published,
     updatedAt: now(),
@@ -197,6 +199,7 @@ export async function updateQrMenu(
         tagline: updated.tagline,
         currency: updated.currency,
         categories: updated.categories,
+        venue: updated.venue,
         published: updated.published,
         updated_at: updated.updatedAt,
       })
