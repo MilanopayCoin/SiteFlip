@@ -19,7 +19,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const menu = await createQrMenu(parsed.data);
+    const menu = await createQrMenu({
+      name: parsed.data.name,
+      tagline: parsed.data.tagline,
+      currency: parsed.data.currency,
+      market: parsed.data.market,
+      venue: parsed.data.venue ?? null,
+      categories: parsed.data.categories,
+    });
     return jsonOk(
       {
         menu: editorMenuView(menu),

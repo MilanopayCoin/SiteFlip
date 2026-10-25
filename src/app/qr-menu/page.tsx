@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, QrCode, Smartphone, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -14,23 +13,41 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  VenuePlacePicker,
+  type VenueSelection,
+} from "@/components/qr-menu/venue-place-picker";
+import { MENU_MARKETS, type MenuMarket } from "@/lib/places/markets";
 
 export default function QrMenuLandingPage() {
   const router = useRouter();
+  const [market, setMarket] = useState<MenuMarket>("nl");
   const [name, setName] = useState("");
+  const [selection, setSelection] = useState<VenueSelection | null>(null);
   const [currency, setCurrency] = useState("EUR");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrency(MENU_MARKETS[market].defaultCurrency);
+  }, [market]);
 
   async function createMenu(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
+      const payload = {
+        name: selection?.name?.trim() || name.trim(),
+        tagline: selection?.tagline || undefined,
+        currency,
+        market,
+        venue: selection?.venue ?? undefined,
+      };
       const res = await fetch("/api/qr-menu", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, currency }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not create menu");
@@ -97,18 +114,32 @@ export default function QrMenuLandingPage() {
               className="mt-10 max-w-md space-y-4"
             >
               <div className="space-y-2">
-                <Label htmlFor="venue">Venue name</Label>
-                <Input
-                  id="venue"
-                  required
-                  minLength={2}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Casa Verde"
-                  className="h-12 text-base"
-                  autoFocus
-                />
+                <Label>
+                  {market === "tr" ? "Pazar" : "Markt"}
+                </Label>
+                <div className="flex gap-2">
+                  {(Object.keys(MENU_MARKETS) as MenuMarket[]).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setMarket(id)}
+                      className={`h-11 flex-1 rounded-lg border text-sm font-medium transition-colors ${
+                        market === id
+                          ? "border-accent bg-accent/15 text-foreground"
+                          : "border-border bg-surface text-muted hover:border-border/80"
+                      }`}
+                    >
+                      {MENU_MARKETS[id].label}
+                    </button>
+                  ))}
+                </div>
               </div>
+              <VenuePlacePicker
+                market={market}
+                name={name}
+                onNameChange={setName}
+                onSelectionChange={setSelection}
+              />
               <div className="space-y-2">
                 <Label>Currency</Label>
                 <Select value={currency} onValueChange={setCurrency}>

@@ -24,6 +24,7 @@ const FILES = [
   "006_marketplace_core.sql",
   "007_quote_orders.sql",
   "008_qr_menus.sql",
+  "009_qr_menu_venue.sql",
 ];
 
 /** Postgres codes we treat as "already applied" (non-destructive continue). */

@@ -59,6 +59,33 @@ export default async function PublicMenuPage({ params }: Props) {
               {menu.tagline}
             </p>
           )}
+          {menu.venue?.formattedAddress && (
+            <p className="mx-auto mt-3 max-w-sm text-sm text-muted">
+              {menu.venue.formattedAddress}
+            </p>
+          )}
+          {(menu.venue?.googleRating != null ||
+            menu.venue?.trustpilotProfileUrl) && (
+            <p className="mx-auto mt-2 flex flex-wrap items-center justify-center gap-3 text-xs text-muted">
+              {menu.venue.googleRating != null && (
+                <span>
+                  Google ★ {menu.venue.googleRating.toFixed(1)}
+                  {menu.venue.googleReviewCount != null &&
+                    ` (${menu.venue.googleReviewCount})`}
+                </span>
+              )}
+              {menu.venue.trustpilotProfileUrl && (
+                <Link
+                  href={menu.venue.trustpilotProfileUrl}
+                  className="text-accent underline-offset-2 hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Trustpilot
+                </Link>
+              )}
+            </p>
+          )}
         </div>
       </header>
 
