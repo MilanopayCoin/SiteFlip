@@ -502,7 +502,19 @@ function EditorInner() {
               className="w-28"
             />
           </div>
+          <Button type="button" variant="outline" asChild>
+            <a
+              href={`/api/qr-menu/${encodeURIComponent(menu.id)}/print-pack?token=${encodeURIComponent(token)}&tables=${tableCount}`}
+              download={`jiy-menu-${menu.slug}-masalar.pdf`}
+            >
+              <Download className="mr-1 h-4 w-4" />
+              Matbaa PDF (A4)
+            </a>
+          </Button>
         </div>
+        <p className="text-xs text-muted">
+          A4’te masa kartları (2×3) — basımevine ver, masaya yapıştır.
+        </p>
         <ul className="grid gap-2 sm:grid-cols-2">
           {Array.from({ length: tableCount }, (_, i) => i + 1).map((n) => {
             const url = `${publicUrl}?masa=${n}`;
