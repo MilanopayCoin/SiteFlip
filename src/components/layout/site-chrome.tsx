@@ -9,7 +9,8 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
   const isLanding = pathname === "/";
   /** Guest-facing digital menu — no marketplace chrome */
   const isPublicMenu = pathname === "/m" || pathname.startsWith("/m/");
-  const bare = isLanding || isPublicMenu;
+  const isGameDemo = pathname.startsWith("/chrono-forge");
+  const bare = isLanding || isPublicMenu || isGameDemo;
 
   return (
     <>
