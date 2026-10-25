@@ -1,10 +1,13 @@
 import { nanoid } from "nanoid";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
+import { defaultCategoriesForMarket } from "@/lib/qr-menu/market-templates";
+import { MENU_MARKETS, type MenuMarket } from "@/lib/places/markets";
 import {
   defaultCategories,
   type MenuCategory,
   type QrMenu,
+  type VenueMetadata,
 } from "@/lib/qr-menu/types";
 import { makeMenuSlug } from "@/lib/qr-menu/slug";
 
@@ -15,6 +18,7 @@ type Row = {
   tagline: string | null;
   currency: QrMenu["currency"];
   categories: MenuCategory[];
+  venue: VenueMetadata | null;
   published: boolean;
   edit_token: string;
   created_at: string;
@@ -48,6 +52,7 @@ function rowToMenu(row: Row): QrMenu {
     tagline: row.tagline,
     currency: row.currency || "EUR",
     categories: Array.isArray(row.categories) ? row.categories : [],
+    venue: row.venue && typeof row.venue === "object" ? row.venue : null,
     published: Boolean(row.published),
     editToken: row.edit_token,
     createdAt: row.created_at,
@@ -64,15 +69,24 @@ export async function createQrMenu(input: {
   name: string;
   tagline?: string;
   currency?: QrMenu["currency"];
+  market?: MenuMarket;
+  venue?: VenueMetadata | null;
+  categories?: MenuCategory[];
 }): Promise<QrMenu> {
+  const market = input.market ?? input.venue?.market ?? "nl";
+  const marketCfg = MENU_MARKETS[market];
   const ts = now();
   const menu: QrMenu = {
     id: nanoid(16),
     slug: makeMenuSlug(input.name),
     name: input.name.trim(),
     tagline: emptyToNull(input.tagline),
-    currency: input.currency || "EUR",
-    categories: defaultCategories(),
+    currency: input.currency || marketCfg.defaultCurrency,
+    categories:
+      input.categories ??
+      defaultCategoriesForMarket(market) ??
+      defaultCategories(),
+    venue: input.venue ?? null,
     published: true,
     editToken: nanoid(32),
     createdAt: ts,
@@ -90,6 +104,7 @@ export async function createQrMenu(input: {
         tagline: menu.tagline,
         currency: menu.currency,
         categories: menu.categories,
+        venue: menu.venue,
         published: menu.published,
         edit_token: menu.editToken,
         created_at: menu.createdAt,
