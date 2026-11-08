@@ -9,6 +9,15 @@ export type VoiceParticipant = {
   joinedAt: string;
 };
 
+export type VoiceGiftEvent = {
+  id: string;
+  fromWallet: string;
+  fromName: string;
+  toWallet: string;
+  giftId: string;
+  at: string;
+};
+
 export type VoiceRoom = {
   id: string;
   /** Geohash-scoped place voice, or invite code room. */
@@ -16,6 +25,8 @@ export type VoiceRoom = {
   label: string;
   hostWallet: string;
   participants: VoiceParticipant[];
+  /** TikTok-style room gift feed (last N). */
+  recentGifts: VoiceGiftEvent[];
   createdAt: string;
   updatedAt: string;
 };
@@ -51,14 +62,21 @@ function norm(w: string) {
   return w.trim().toLowerCase();
 }
 
+function normalizeRoom(room: VoiceRoom): VoiceRoom {
+  if (!room.recentGifts) room.recentGifts = [];
+  return room;
+}
+
 export function listVoiceRooms(limit = 30): VoiceRoom[] {
   return [...rooms().values()]
+    .map(normalizeRoom)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, limit);
 }
 
 export function getVoiceRoom(id: string): VoiceRoom | null {
-  return rooms().get(id) || null;
+  const room = rooms().get(id);
+  return room ? normalizeRoom(room) : null;
 }
 
 export function createVoiceRoom(input: {
@@ -85,6 +103,7 @@ export function createVoiceRoom(input: {
         joinedAt: now(),
       },
     ],
+    recentGifts: [],
     createdAt: now(),
     updatedAt: now(),
   };
@@ -160,6 +179,37 @@ export function setVoiceSpeaking(
   room.participants = room.participants.map((p) =>
     p.wallet === w ? { ...p, speaking } : p
   );
+  room.updatedAt = now();
+  return room;
+}
+
+export function pushVoiceGift(input: {
+  roomId: string;
+  fromWallet: string;
+  fromName: string;
+  toWallet: string;
+  giftId: string;
+}): VoiceRoom {
+  const room = rooms().get(input.roomId);
+  if (!room) throw new Error("Sesli oda yok");
+  if (!room.recentGifts) room.recentGifts = [];
+  const from = norm(input.fromWallet);
+  const to = norm(input.toWallet);
+  if (!room.participants.some((p) => p.wallet === from)) {
+    throw new Error("Odada değilsin");
+  }
+  if (!room.participants.some((p) => p.wallet === to)) {
+    throw new Error("Hedef odada değil");
+  }
+  const evt: VoiceGiftEvent = {
+    id: nanoid(8),
+    fromWallet: from,
+    fromName: input.fromName.slice(0, 40),
+    toWallet: to,
+    giftId: input.giftId.slice(0, 32),
+    at: now(),
+  };
+  room.recentGifts = [evt, ...room.recentGifts].slice(0, 40);
   room.updatedAt = now();
   return room;
 }

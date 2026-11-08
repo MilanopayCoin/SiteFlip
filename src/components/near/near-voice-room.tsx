@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nearFetch } from "@/lib/near/client";
 import { GIFT_CATALOG } from "@/lib/near/gifts";
-import type { VoiceParticipant, VoiceRoom } from "@/lib/near/voice";
+import type {
+  VoiceGiftEvent,
+  VoiceParticipant,
+  VoiceRoom,
+} from "@/lib/near/voice";
 import { shortAddress } from "@/lib/starkey";
 
 const ICE: RTCConfiguration = {
@@ -151,13 +155,16 @@ export function NearVoicePanel({
   avatarEmoji,
   geohashHint,
   onGift,
+  onRoomGift,
   giftBusy,
 }: {
   wallet: string;
   displayName: string;
   avatarEmoji: string;
   geohashHint?: string | null;
-  onGift?: (toWallet: string, giftId: string) => void;
+  onGift?: (toWallet: string, giftId: string) => void | Promise<void>;
+  /** Fired for gifts from other participants (TikTok-style room show). */
+  onRoomGift?: (gift: VoiceGiftEvent) => void;
   giftBusy?: boolean;
 }) {
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
@@ -170,18 +177,37 @@ export function NearVoicePanel({
   const streamRef = useRef<MediaStream | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const speakingRef = useRef(false);
+  const seenGiftsRef = useRef<Set<string>>(new Set());
+  const me = wallet.toLowerCase();
+
+  const ingestGifts = useCallback(
+    (next: VoiceRoom | null | undefined) => {
+      if (!next?.recentGifts?.length) return;
+      for (const g of [...next.recentGifts].reverse()) {
+        if (seenGiftsRef.current.has(g.id)) continue;
+        seenGiftsRef.current.add(g.id);
+        if (g.fromWallet === me) continue;
+        onRoomGift?.(g);
+      }
+    },
+    [me, onRoomGift]
+  );
 
   const refreshList = useCallback(async () => {
     const data = await nearFetch("/api/near/voice");
     setRooms(data.rooms || []);
   }, []);
 
-  const refreshRoom = useCallback(async (id: string) => {
-    const data = await nearFetch(
-      `/api/near/voice?roomId=${encodeURIComponent(id)}`
-    );
-    setRoom(data.room);
-  }, []);
+  const refreshRoom = useCallback(
+    async (id: string) => {
+      const data = await nearFetch(
+        `/api/near/voice?roomId=${encodeURIComponent(id)}`
+      );
+      setRoom(data.room);
+      ingestGifts(data.room);
+    },
+    [ingestGifts]
+  );
 
   useEffect(() => {
     void refreshList().catch(() => undefined);
@@ -272,6 +298,9 @@ export function NearVoicePanel({
           usePresence: true,
         }),
       });
+      seenGiftsRef.current = new Set(
+        (data.room?.recentGifts || []).map((g: VoiceGiftEvent) => g.id)
+      );
       setRoom(data.room);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Oda açılamadı");
@@ -294,6 +323,9 @@ export function NearVoicePanel({
           avatarEmoji,
         }),
       });
+      seenGiftsRef.current = new Set(
+        (data.room?.recentGifts || []).map((g: VoiceGiftEvent) => g.id)
+      );
       setRoom(data.room);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Katılım başarısız");
@@ -313,12 +345,35 @@ export function NearVoicePanel({
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       setStream(null);
+      setGiftTarget(null);
+      seenGiftsRef.current = new Set();
       setRoom(null);
       await refreshList();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ayrılma başarısız");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function sendRoomGift(toWallet: string, giftId: string) {
+    if (!room || !onGift) return;
+    await onGift(toWallet, giftId);
+    try {
+      const data = await nearFetch("/api/near/voice", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "gift",
+          roomId: room.id,
+          toWallet,
+          giftId,
+          displayName,
+        }),
+      });
+      if (data.gift?.id) seenGiftsRef.current.add(data.gift.id);
+      setRoom(data.room);
+    } catch {
+      /* chain gift already sent — room fan-out best-effort */
     }
   }
 
@@ -459,6 +514,29 @@ export function NearVoicePanel({
         })}
       </div>
 
+      {room.recentGifts?.length ? (
+        <ul className="max-h-20 space-y-1 overflow-y-auto rounded-xl border border-border/70 bg-surface/40 px-3 py-2 text-[11px]">
+          {room.recentGifts.slice(0, 6).map((g) => {
+            const item = GIFT_CATALOG.find((c) => c.id === g.giftId);
+            return (
+              <li key={g.id} className="flex items-center gap-1.5 text-muted">
+                <span>{item?.emoji || "🎁"}</span>
+                <span className="truncate text-foreground">
+                  {g.fromWallet === me ? "Sen" : g.fromName}
+                </span>
+                <span>→</span>
+                <span className="truncate">
+                  {g.toWallet === me ? "sana" : shortAddress(g.toWallet)}
+                </span>
+                <span className="ml-auto font-medium text-accent">
+                  {item?.label || g.giftId}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
       {giftTarget && onGift ? (
         <div className="rounded-xl border border-border bg-surface/50 p-3">
           <p className="mb-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
@@ -471,7 +549,7 @@ export function NearVoicePanel({
                 key={g.id}
                 type="button"
                 disabled={giftBusy}
-                onClick={() => onGift(giftTarget, g.id)}
+                onClick={() => void sendRoomGift(giftTarget, g.id)}
                 className="rounded-full border border-border px-2.5 py-1 text-[11px] hover:border-accent/50"
               >
                 {g.emoji} {g.label}
@@ -481,7 +559,7 @@ export function NearVoicePanel({
         </div>
       ) : (
         <p className="text-center text-[11px] text-muted">
-          Birine dokun → 3D hediye · konuşunca halka yanar
+          Birine dokun → 3D hediye · konuşunca halka yanar · odaya yayınlanır
         </p>
       )}
 

@@ -8,6 +8,7 @@ import {
   leaveVoiceRoom,
   listVoiceRooms,
   pullVoiceSignals,
+  pushVoiceGift,
   pushVoiceSignal,
   setVoiceMute,
   setVoiceSpeaking,
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
       muted?: boolean;
       speaking?: boolean;
       toWallet?: string;
+      giftId?: string;
       kind?: VoiceSignal["kind"];
       payload?: unknown;
       usePresence?: boolean;
@@ -128,6 +130,27 @@ export async function POST(request: Request) {
         }
         const room = setVoiceSpeaking(body.roomId, wallet, body.speaking);
         return Response.json({ room });
+      }
+      case "gift": {
+        if (
+          !body.roomId ||
+          !body.toWallet ||
+          !body.giftId ||
+          !/^0x[a-fA-F0-9]{40}$/.test(body.toWallet)
+        ) {
+          return Response.json(
+            { error: "roomId + toWallet + giftId required" },
+            { status: 400 }
+          );
+        }
+        const room = pushVoiceGift({
+          roomId: body.roomId,
+          fromWallet: wallet,
+          fromName: name,
+          toWallet: body.toWallet,
+          giftId: body.giftId,
+        });
+        return Response.json({ room, gift: room.recentGifts[0] });
       }
       case "signal": {
         if (

@@ -793,7 +793,7 @@ export function NearApp() {
   }
 
   async function sendGift(peer: string, giftId: string) {
-    if (!wallet) return;
+    if (!wallet) throw new Error("Cüzdan yok");
     setBusy(true);
     setError(null);
     try {
@@ -810,6 +810,7 @@ export function NearApp() {
       await refreshDuels();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
+      throw e;
     } finally {
       setBusy(false);
     }
@@ -1511,7 +1512,14 @@ export function NearApp() {
                 avatarEmoji={emoji}
                 geohashHint={roomHash || inviteGeohash}
                 giftBusy={busy}
-                onGift={(w, g) => void sendGift(w, g)}
+                onGift={async (w, g) => {
+                  await sendGift(w, g);
+                }}
+                onRoomGift={(g) => {
+                  giftFx.fire(g.giftId, `${g.fromName} gönderdi`);
+                  setGiftFlash(`${g.fromName} · hediye gösterisi`);
+                  window.setTimeout(() => setGiftFlash(null), 2200);
+                }}
               />
             ) : null}
 
@@ -1956,6 +1964,7 @@ export function NearApp() {
                 ["radar", Radio, "Radar"],
                 ["discover", Compass, "Keşfet"],
                 ["voice", Mic, "Ses"],
+                ["room", MapPin, "Masa"],
                 ["chat", MessageCircle, "Chat"],
                 ["profile", UserRound, "Profil"],
               ] as const
@@ -1964,7 +1973,7 @@ export function NearApp() {
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`relative flex flex-col items-center gap-0.5 rounded-lg px-2.5 py-1.5 text-[10px] sm:px-3 sm:text-[11px] ${
+                className={`relative flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1.5 text-[10px] sm:px-2.5 sm:text-[11px] ${
                   tab === id ? "text-accent" : "text-muted"
                 }`}
               >
