@@ -139,3 +139,53 @@ export async function recentPotEvents(geohash: string, limit = 20) {
     createdAt: row.created_at,
   }));
 }
+
+export type PotDrawResult = {
+  geohash: string;
+  winnerWallet: string;
+  entrants: number;
+  totalWei: string;
+  drawnAt: string;
+  /** Replace with Supra dVRF proof when wired. */
+  entropySource: "node-crypto";
+};
+
+const draws = globalThis as unknown as {
+  __jiyNearDraws?: PotDrawResult[];
+};
+
+function drawLog() {
+  if (!draws.__jiyNearDraws) draws.__jiyNearDraws = [];
+  return draws.__jiyNearDraws;
+}
+
+/**
+ * Fair-ish local draw among unique contributors in this geohash pot.
+ * Production: swap entropy for Supra dVRF callback.
+ */
+export async function drawPotWinner(geohash: string): Promise<PotDrawResult> {
+  const key = geohash.slice(0, 5);
+  const list = await recentPotEvents(key, 200);
+  const unique = [...new Set(list.map((e) => e.fromWallet))];
+  if (unique.length < 1) throw new Error("No entrants in this pot");
+
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  const idx = buf[0]! % unique.length;
+  const pot = await getPot(key);
+  const result: PotDrawResult = {
+    geohash: key,
+    winnerWallet: unique[idx],
+    entrants: unique.length,
+    totalWei: pot.totalWei,
+    drawnAt: now(),
+    entropySource: "node-crypto",
+  };
+  drawLog().unshift(result);
+  return result;
+}
+
+export function lastDraw(geohash: string): PotDrawResult | null {
+  const key = geohash.slice(0, 5);
+  return drawLog().find((d) => d.geohash === key) || null;
+}

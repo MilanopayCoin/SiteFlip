@@ -70,6 +70,7 @@ export function NearApp() {
   const [bio, setBio] = useState("");
   const [emoji, setEmoji] = useState("✨");
   const [pot, setPot] = useState<NearPlacePot | null>(null);
+  const [drawWinner, setDrawWinner] = useState<string | null>(null);
   const [videoPeer, setVideoPeer] = useState<string | null>(null);
   const [answerCall, setAnswerCall] = useState<{
     id: string;
@@ -98,10 +99,27 @@ export function NearApp() {
     try {
       const data = await nearFetch("/api/near/pots");
       setPot(data.pot || null);
+      if (data.draw?.winnerWallet) setDrawWinner(data.draw.winnerWallet);
     } catch {
       setPot(null);
     }
   }, []);
+
+  async function runPotDraw() {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/pots", {
+        method: "POST",
+        body: JSON.stringify({ action: "draw" }),
+      });
+      setDrawWinner(data.draw?.winnerWallet || null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Draw failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const refreshThreads = useCallback(async () => {
     const data = await nearFetch("/api/near/threads");
@@ -340,7 +358,10 @@ export function NearApp() {
       <header className="relative z-10 border-b border-border/80 px-4 py-4">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
-            <Link href="/" className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <Link
+              href="/near"
+              className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent"
+            >
               JIY Near
             </Link>
             <p className="font-display text-xl font-semibold tracking-tight">
@@ -442,6 +463,11 @@ export function NearApp() {
                       Bu bölgeye {pot.giftCount} hediye · geohash{" "}
                       <span className="font-mono text-xs">{pot.geohash}</span>
                     </p>
+                    {drawWinner ? (
+                      <p className="mt-2 text-xs text-success">
+                        Son çekiliş kazananı · {shortAddress(drawWinner)}
+                      </p>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {GIFT_CATALOG.map((g) => (
                         <button
@@ -454,6 +480,14 @@ export function NearApp() {
                           {g.emoji} Kasa · {g.amountSupra}
                         </button>
                       ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || pot.giftCount < 1}
+                        onClick={() => void runPotDraw()}
+                      >
+                        Gece çekilişi
+                      </Button>
                     </div>
                   </div>
                 ) : null}
