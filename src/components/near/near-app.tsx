@@ -80,6 +80,11 @@ export function NearApp() {
   const [roomMsgs, setRoomMsgs] = useState<Msg[]>([]);
   const [roomHash, setRoomHash] = useState<string | null>(null);
   const [roomDraft, setRoomDraft] = useState("");
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    null
+  );
+  const [inviteHint, setInviteHint] = useState<string | null>(null);
 
   const wallet = starkey.account;
 
@@ -97,6 +102,13 @@ export function NearApp() {
   const refreshPeers = useCallback(async () => {
     const data = await nearFetch("/api/near/presence");
     setPeers(data.peers || []);
+    if (data.me?.expiresAt) {
+      setExpiresAt(data.me.expiresAt);
+      setCheckedIn(true);
+    } else if (data.me == null) {
+      // only clear if server explicitly has no presence
+      setExpiresAt(null);
+    }
   }, []);
 
   const refreshPot = useCallback(async () => {
@@ -255,15 +267,21 @@ export function NearApp() {
           timeout: 15000,
         });
       });
-      await nearFetch("/api/near/presence", {
+      const next = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      };
+      const data = await nearFetch("/api/near/presence", {
         method: "POST",
         body: JSON.stringify({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
+          lat: next.lat,
+          lng: next.lng,
           ttlMinutes: 45,
         }),
       });
+      setCoords(next);
       setCheckedIn(true);
+      setExpiresAt(data.presence?.expiresAt || null);
       await refreshPeers();
       await refreshPot();
       await refreshRoom();
@@ -281,12 +299,80 @@ export function NearApp() {
       await nearFetch("/api/near/presence", { method: "DELETE" });
       setCheckedIn(false);
       setPeers([]);
+      setCoords(null);
+      setExpiresAt(null);
+      setRoomMsgs([]);
+      setRoomHash(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Check-out failed");
     } finally {
       setBusy(false);
     }
   }
+
+  /** Keep presence alive while the app is open. */
+  useEffect(() => {
+    if (!sessionReady || !wallet || !checkedIn || !coords) return;
+    const beat = async () => {
+      try {
+        const data = await nearFetch("/api/near/presence", {
+          method: "POST",
+          body: JSON.stringify({
+            lat: coords.lat,
+            lng: coords.lng,
+            ttlMinutes: 45,
+          }),
+        });
+        setExpiresAt(data.presence?.expiresAt || null);
+        await refreshPeers();
+      } catch {
+        // ignore transient heartbeat errors
+      }
+    };
+    const id = window.setInterval(() => void beat(), 10 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, wallet, checkedIn, coords, refreshPeers]);
+
+  async function shareInvite() {
+    const url =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/near/app`
+        : "https://jiy.app/near/app";
+    const text =
+      "JIY Near’da şu an yakınımdayım — StarKey ile check-in yap, radar’da buluşalım.";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "JIY Near", text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        setInviteHint("Davet linki kopyalandı");
+        window.setTimeout(() => setInviteHint(null), 2000);
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(url);
+        setInviteHint("Link kopyalandı");
+        window.setTimeout(() => setInviteHint(null), 2000);
+      } catch {
+        setError("Paylaşım desteklenmiyor");
+      }
+    }
+  }
+
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!expiresAt) return;
+    const id = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, [expiresAt]);
+
+  const minutesLeft = useMemo(() => {
+    if (!expiresAt) return null;
+    void tick;
+    const ms = new Date(expiresAt).getTime() - Date.now();
+    if (ms <= 0) return 0;
+    return Math.ceil(ms / 60_000);
+  }, [expiresAt, tick]);
 
   async function openChat(peer: string) {
     setBusy(true);
@@ -490,6 +576,7 @@ export function NearApp() {
                       onClick={() => void handleCheckOut()}
                     >
                       Check-out
+                      {minutesLeft != null ? ` · ${minutesLeft}dk` : ""}
                     </Button>
                   )}
                   <Button
@@ -502,7 +589,17 @@ export function NearApp() {
                   >
                     Yenile
                   </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void shareInvite()}
+                  >
+                    Davet et
+                  </Button>
                 </div>
+                {inviteHint ? (
+                  <p className="text-xs text-success">{inviteHint}</p>
+                ) : null}
 
                 {checkedIn && pot ? (
                   <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
@@ -732,7 +829,29 @@ export function NearApp() {
                       <p className="text-sm font-medium">Yer odası</p>
                       <p className="font-mono text-[10px] text-muted">
                         geohash {roomHash || "—"} · check-in süresince ortak
+                        {minutesLeft != null ? ` · ${minutesLeft}dk` : ""}
                       </p>
+                      <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                        <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px]">
+                          {emoji} Sen
+                        </span>
+                        {peers.slice(0, 12).map((p) => (
+                          <button
+                            key={p.wallet}
+                            type="button"
+                            onClick={() => void openChat(p.wallet)}
+                            className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted"
+                            title={p.displayName}
+                          >
+                            {p.avatarEmoji} {p.displayName.slice(0, 10)}
+                          </button>
+                        ))}
+                        {peers.length === 0 ? (
+                          <span className="text-[10px] text-muted">
+                            Henüz başka üye yok
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
                       {roomMsgs.length === 0 ? (
