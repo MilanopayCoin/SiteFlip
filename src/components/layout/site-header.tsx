@@ -16,6 +16,7 @@ import {
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 const NAV = [
+  { href: "/near", label: "Near" },
   { href: "/marketplace", label: "Marketplace" },
   { href: "/deals", label: "Deals" },
   { href: "/qr-menu", label: "Menü" },
