@@ -5,6 +5,12 @@ export const ROULETTE_REDS = new Set([
   1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
 ]);
 
+/** Physical European wheel order (clockwise). */
+export const EUROPEAN_WHEEL_ORDER = [
+  0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24,
+  16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
+] as const;
+
 export type RouletteColor = "red" | "black" | "green";
 
 export function colorOf(n: number): RouletteColor {
@@ -13,6 +19,40 @@ export function colorOf(n: number): RouletteColor {
 }
 
 export type RoulettePhase = "lobby" | "betting" | "spinning" | "result";
+
+export type RouletteBetKind =
+  | "straight"
+  | "split"
+  | "street"
+  | "corner"
+  | "line"
+  | "dozen"
+  | "column"
+  | "red"
+  | "black"
+  | "even"
+  | "odd"
+  | "low"
+  | "high";
+
+/** Profit multiplier (stake returned + profit*stake on win). */
+export const PAYOUT: Record<RouletteBetKind, number> = {
+  straight: 35,
+  split: 17,
+  street: 11,
+  corner: 8,
+  line: 5,
+  dozen: 2,
+  column: 2,
+  red: 1,
+  black: 1,
+  even: 1,
+  odd: 1,
+  low: 1,
+  high: 1,
+};
+
+export const CHIP_DENOMS = [10, 25, 50, 100, 250, 500] as const;
 
 export type RouletteSeat = {
   index: number;
@@ -26,8 +66,13 @@ export type RouletteSeat = {
 export type RouletteBet = {
   id: string;
   wallet: string;
-  color: "red" | "black";
+  kind: RouletteBetKind;
+  /** Covered numbers (empty for pure outside when derived). */
+  numbers: number[];
+  /** dozen/column index 1–3 when relevant */
+  meta?: number;
   amount: number;
+  label: string;
   createdAt: string;
 };
 
@@ -49,10 +94,10 @@ export type RouletteTable = {
   bets: RouletteBet[];
   balances: Record<string, number>;
   lastSpin: RouletteSpin | null;
+  history: RouletteSpin[];
   round: number;
   createdAt: string;
   updatedAt: string;
-  /** Hidden until reveal — never send raw seed while betting. */
   _seed?: string;
   _commit?: string;
 };
@@ -71,11 +116,13 @@ export type RouletteSignal = {
   createdAt: string;
 };
 
-const SEAT_COUNT = 6;
-const BETTING_MS = 25_000;
-const SPINNING_MS = 8_000;
-const RESULT_MS = 6_000;
-const START_CHIPS = 1000;
+const SEAT_COUNT = 8;
+const BETTING_MS = 30_000;
+const SPINNING_MS = 9_000;
+const RESULT_MS = 8_000;
+const START_CHIPS = 5_000;
+const MAX_BETS_PER_PLAYER = 40;
+const MAX_TOTAL_STAKE = 2_500;
 
 const g = globalThis as unknown as {
   __jiyRouletteTables?: Map<string, RouletteTable>;
@@ -87,20 +134,16 @@ function tables() {
   if (!g.__jiyRouletteTables) g.__jiyRouletteTables = new Map();
   return g.__jiyRouletteTables;
 }
-
 function signals() {
   if (!g.__jiyRouletteSignals) g.__jiyRouletteSignals = [];
   return g.__jiyRouletteSignals;
 }
-
 function now() {
   return new Date().toISOString();
 }
-
 function norm(w: string) {
   return w.trim().toLowerCase();
 }
-
 function emptySeats(): (RouletteSeat | null)[] {
   return Array.from({ length: SEAT_COUNT }, () => null);
 }
@@ -114,23 +157,136 @@ async function sha256Hex(text: string): Promise<string> {
 }
 
 function numberFromSeed(seed: string): number {
-  // Deterministic 0–36 from seed bytes
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) {
-    h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const data = new TextEncoder().encode(seed);
+  let h = 2166136261;
+  for (let i = 0; i < data.length; i++) {
+    h ^= data[i]!;
+    h = Math.imul(h, 16777619);
   }
-  return h % 37;
+  return (h >>> 0) % 37;
 }
 
 export function toPublic(t: RouletteTable): RoulettePublic {
   const { _seed: _s, _commit: _c, ...rest } = t;
   return {
     ...rest,
+    history: t.history || [],
+    bets: t.bets || [],
     commitHash:
       t.phase === "betting" || t.phase === "spinning" || t.phase === "result"
         ? t._commit || t.lastSpin?.commitHash || null
         : t.lastSpin?.commitHash || null,
   };
+}
+
+function dozenNumbers(d: number): number[] {
+  if (d === 1) return range(1, 12);
+  if (d === 2) return range(13, 24);
+  return range(25, 36);
+}
+
+function columnNumbers(c: number): number[] {
+  if (c === 3) return range(1, 36).filter((n) => n % 3 === 0);
+  return range(1, 36).filter((n) => n % 3 === c);
+}
+
+function range(a: number, b: number) {
+  const out: number[] = [];
+  for (let i = a; i <= b; i++) out.push(i);
+  return out;
+}
+
+export function resolveBetNumbers(bet: Pick<RouletteBet, "kind" | "numbers" | "meta">): number[] {
+  switch (bet.kind) {
+    case "straight":
+    case "split":
+    case "street":
+    case "corner":
+    case "line":
+      return bet.numbers;
+    case "dozen":
+      return dozenNumbers(bet.meta || 1);
+    case "column":
+      return columnNumbers(bet.meta || 1);
+    case "red":
+      return [...ROULETTE_REDS];
+    case "black":
+      return range(1, 36).filter((n) => !ROULETTE_REDS.has(n));
+    case "even":
+      return range(1, 36).filter((n) => n % 2 === 0);
+    case "odd":
+      return range(1, 36).filter((n) => n % 2 === 1);
+    case "low":
+      return range(1, 18);
+    case "high":
+      return range(19, 36);
+    default:
+      return [];
+  }
+}
+
+export function betWins(bet: RouletteBet, n: number): boolean {
+  if (n === 0) {
+    // European: 0 loses outside even-money & dozens/columns; straight 0 wins
+    if (bet.kind === "straight") return bet.numbers.includes(0);
+    if (
+      bet.kind === "split" ||
+      bet.kind === "street" ||
+      bet.kind === "corner" ||
+      bet.kind === "line"
+    ) {
+      return bet.numbers.includes(0);
+    }
+    return false;
+  }
+  return resolveBetNumbers(bet).includes(n);
+}
+
+function validateInside(kind: RouletteBetKind, numbers: number[]): boolean {
+  const uniq = [...new Set(numbers)].filter((n) => n >= 0 && n <= 36);
+  if (kind === "straight") return uniq.length === 1;
+  if (kind === "split") return uniq.length === 2;
+  if (kind === "street") return uniq.length === 3;
+  if (kind === "corner") return uniq.length === 4;
+  if (kind === "line") return uniq.length === 6;
+  return true;
+}
+
+function labelFor(
+  kind: RouletteBetKind,
+  numbers: number[],
+  meta?: number
+): string {
+  switch (kind) {
+    case "straight":
+      return `Düz ${numbers[0]}`;
+    case "split":
+      return `Split ${numbers.join("-")}`;
+    case "street":
+      return `Street ${numbers[0]}-${numbers[2]}`;
+    case "corner":
+      return `Corner ${numbers[0]}`;
+    case "line":
+      return `Line ${numbers[0]}-${numbers[5]}`;
+    case "dozen":
+      return meta === 1 ? "1st 12" : meta === 2 ? "2nd 12" : "3rd 12";
+    case "column":
+      return meta === 1 ? "2:1 Col1" : meta === 2 ? "2:1 Col2" : "2:1 Col3";
+    case "red":
+      return "Kırmızı";
+    case "black":
+      return "Siyah";
+    case "even":
+      return "Çift";
+    case "odd":
+      return "Tek";
+    case "low":
+      return "1–18";
+    case "high":
+      return "19–36";
+    default:
+      return kind;
+  }
 }
 
 export async function createTable(input: {
@@ -144,13 +300,14 @@ export async function createTable(input: {
   const t: RouletteTable = {
     id,
     hostWallet: host,
-    label: (input.label || "Near Rulet").slice(0, 40),
+    label: (input.label || "European Roulette").slice(0, 40),
     phase: "lobby",
     phaseEndsAt: null,
     seats: emptySeats(),
     bets: [],
     balances: { [host]: START_CHIPS },
     lastSpin: null,
+    history: [],
     round: 0,
     createdAt: now(),
     updatedAt: now(),
@@ -171,9 +328,8 @@ export function getTable(id: string): RouletteTable | null {
   return tables().get(id) || null;
 }
 
-export function listOpenTables(limit = 20): RoulettePublic[] {
+export function listOpenTables(limit = 24): RoulettePublic[] {
   return [...tables().values()]
-    .filter((t) => t.phase !== "result" || true)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, limit)
     .map(toPublic);
@@ -191,10 +347,9 @@ export async function joinTable(input: {
   await advancePhase(t);
   const w = norm(input.wallet);
 
-  // Already seated?
   const existing = t.seats.findIndex((s) => s?.wallet === w);
   if (existing >= 0) {
-    if (!t.balances[w]) t.balances[w] = START_CHIPS;
+    if (t.balances[w] == null) t.balances[w] = START_CHIPS;
     t.updatedAt = now();
     return toPublic(t);
   }
@@ -207,7 +362,7 @@ export async function joinTable(input: {
       ? input.seatIndex
       : t.seats.findIndex((s) => s == null);
 
-  if (idx < 0) throw new Error("Masa dolu");
+  if (idx < 0) throw new Error("Masa dolu (8 koltuk)");
 
   t.seats[idx] = {
     index: idx,
@@ -229,11 +384,16 @@ export async function leaveTable(
   const t = tables().get(tableId);
   if (!t) return null;
   const w = norm(wallet);
+  // Refund open bets if leaving mid-betting
+  if (t.phase === "betting") {
+    for (const b of t.bets.filter((x) => x.wallet === w)) {
+      t.balances[w] = (t.balances[w] ?? 0) + b.amount;
+    }
+    t.bets = t.bets.filter((b) => b.wallet !== w);
+  }
   t.seats = t.seats.map((s) => (s?.wallet === w ? null : s));
-  t.bets = t.bets.filter((b) => b.wallet !== w);
   t.updatedAt = now();
-  const occupied = t.seats.some((s) => s);
-  if (!occupied) {
+  if (!t.seats.some(Boolean)) {
     tables().delete(tableId);
     return null;
   }
@@ -252,9 +412,7 @@ export async function setCam(
   const t = tables().get(tableId);
   if (!t) throw new Error("Masa bulunamadı");
   const w = norm(wallet);
-  t.seats = t.seats.map((s) =>
-    s?.wallet === w ? { ...s, camOn } : s
-  );
+  t.seats = t.seats.map((s) => (s?.wallet === w ? { ...s, camOn } : s));
   t.updatedAt = now();
   return toPublic(t);
 }
@@ -270,10 +428,11 @@ export async function startBetting(
   if (t.phase !== "lobby" && t.phase !== "result") {
     throw new Error("Şu an bahis açılamaz");
   }
-  const seated = t.seats.filter(Boolean).length;
-  if (seated < 1) throw new Error("En az bir koltuk dolu olmalı");
+  if (!t.seats.some(Boolean)) throw new Error("Koltuk boş");
 
-  const seed = `${nanoid(24)}:${Date.now()}`;
+  const seedBytes = new Uint8Array(32);
+  crypto.getRandomValues(seedBytes);
+  const seed = [...seedBytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   const commit = await sha256Hex(seed);
   t._seed = seed;
   t._commit = commit;
@@ -288,38 +447,96 @@ export async function startBetting(
 export async function placeBet(input: {
   tableId: string;
   wallet: string;
-  color: "red" | "black";
+  kind: RouletteBetKind;
   amount: number;
+  numbers?: number[];
+  meta?: number;
 }): Promise<RoulettePublic> {
   const t = tables().get(input.tableId);
   if (!t) throw new Error("Masa bulunamadı");
   await advancePhase(t);
   if (t.phase !== "betting") throw new Error("Bahis kapalı");
+
   const w = norm(input.wallet);
-  if (!t.seats.some((s) => s?.wallet === w)) {
-    throw new Error("Önce koltuğa otur");
-  }
+  if (!t.seats.some((s) => s?.wallet === w)) throw new Error("Önce koltuğa otur");
+
   const amount = Math.floor(input.amount);
-  if (!Number.isFinite(amount) || amount < 10 || amount > 500) {
-    throw new Error("Bahis 10–500 chip");
+  if (amount < 10 || amount > 1000) throw new Error("Bahis 10–1000 chip");
+
+  const kind = input.kind;
+  if (!PAYOUT[kind]) throw new Error("Geçersiz bahis türü");
+
+  const numbers = [...new Set(input.numbers || [])].filter(
+    (n) => Number.isInteger(n) && n >= 0 && n <= 36
+  );
+
+  if (["straight", "split", "street", "corner", "line"].includes(kind)) {
+    if (!validateInside(kind, numbers)) throw new Error("Geçersiz sayı kombinasyonu");
   }
+  if (kind === "dozen" || kind === "column") {
+    const m = input.meta;
+    if (m !== 1 && m !== 2 && m !== 3) throw new Error("dozen/column 1–3");
+  }
+
+  const mine = t.bets.filter((b) => b.wallet === w);
+  if (mine.length >= MAX_BETS_PER_PLAYER) throw new Error("Çok fazla bahis");
+  const stake = mine.reduce((s, b) => s + b.amount, 0);
+  if (stake + amount > MAX_TOTAL_STAKE) throw new Error("Tur limit aşıldı");
+
   const bal = t.balances[w] ?? 0;
-  // Replace previous bet this round — refund old
-  const prev = t.bets.find((b) => b.wallet === w);
-  let available = bal;
-  if (prev) {
-    available += prev.amount;
-    t.bets = t.bets.filter((b) => b.wallet !== w);
-  }
-  if (amount > available) throw new Error("Yetersiz chip");
-  t.balances[w] = available - amount;
+  if (amount > bal) throw new Error("Yetersiz chip");
+
+  t.balances[w] = bal - amount;
   t.bets.push({
     id: nanoid(10),
     wallet: w,
-    color: input.color,
+    kind,
+    numbers,
+    meta: input.meta,
     amount,
+    label: labelFor(kind, numbers, input.meta),
     createdAt: now(),
   });
+  t.updatedAt = now();
+  return toPublic(t);
+}
+
+export async function undoBet(
+  tableId: string,
+  wallet: string
+): Promise<RoulettePublic> {
+  const t = tables().get(tableId);
+  if (!t) throw new Error("Masa bulunamadı");
+  await advancePhase(t);
+  if (t.phase !== "betting") throw new Error("Bahis kapalı");
+  const w = norm(wallet);
+  for (let i = t.bets.length - 1; i >= 0; i--) {
+    if (t.bets[i]!.wallet === w) {
+      const [b] = t.bets.splice(i, 1);
+      t.balances[w] = (t.balances[w] ?? 0) + b!.amount;
+      t.updatedAt = now();
+      return toPublic(t);
+    }
+  }
+  throw new Error("Geri alınacak bahis yok");
+}
+
+export async function clearBets(
+  tableId: string,
+  wallet: string
+): Promise<RoulettePublic> {
+  const t = tables().get(tableId);
+  if (!t) throw new Error("Masa bulunamadı");
+  await advancePhase(t);
+  if (t.phase !== "betting") throw new Error("Bahis kapalı");
+  const w = norm(wallet);
+  let refund = 0;
+  t.bets = t.bets.filter((b) => {
+    if (b.wallet !== w) return true;
+    refund += b.amount;
+    return false;
+  });
+  t.balances[w] = (t.balances[w] ?? 0) + refund;
   t.updatedAt = now();
   return toPublic(t);
 }
@@ -330,22 +547,23 @@ async function settleAndSpin(t: RouletteTable): Promise<void> {
   const number = numberFromSeed(seed);
   const color = colorOf(number);
 
-  // Payout: red/black even money (2x stake returned = +stake profit)
   for (const bet of t.bets) {
-    const win = bet.color === color;
-    if (win) {
-      t.balances[bet.wallet] = (t.balances[bet.wallet] ?? 0) + bet.amount * 2;
+    if (betWins(bet, number)) {
+      const mult = PAYOUT[bet.kind];
+      t.balances[bet.wallet] =
+        (t.balances[bet.wallet] ?? 0) + bet.amount * (mult + 1);
     }
-    // losses already deducted at placeBet
   }
 
-  t.lastSpin = {
+  const spin: RouletteSpin = {
     number,
     color,
     commitHash: commit,
     revealSeed: seed,
     spunAt: now(),
   };
+  t.lastSpin = spin;
+  t.history = [spin, ...t.history].slice(0, 24);
   t.phase = "spinning";
   t.phaseEndsAt = new Date(Date.now() + SPINNING_MS).toISOString();
   t.updatedAt = now();
@@ -400,7 +618,6 @@ export function pushRouletteSignal(input: {
     createdAt: now(),
   };
   signals().unshift(sig);
-  // cap
   if (signals().length > 2000) g.__jiyRouletteSignals = signals().slice(0, 1500);
   return sig;
 }
@@ -412,12 +629,7 @@ export function pullRouletteSignals(
 ): RouletteSignal[] {
   const w = norm(wallet);
   return signals()
-    .filter(
-      (s) =>
-        s.tableId === tableId &&
-        s.id > afterId &&
-        s.toWallet === w
-    )
+    .filter((s) => s.tableId === tableId && s.id > afterId && s.toWallet === w)
     .sort((a, b) => a.id - b.id)
     .slice(0, 80);
 }
@@ -428,4 +640,9 @@ export const ROULETTE_CONST = {
   SPINNING_MS,
   RESULT_MS,
   START_CHIPS,
+  MAX_BETS_PER_PLAYER,
+  MAX_TOTAL_STAKE,
+  PAYOUT,
+  CHIP_DENOMS,
+  EUROPEAN_WHEEL_ORDER,
 };

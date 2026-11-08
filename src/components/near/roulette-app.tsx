@@ -3,17 +3,32 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Camera, CameraOff, Spade, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  CameraOff,
+  RotateCcw,
+  Spade,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  RouletteBoard,
+  RouletteHistory,
+} from "@/components/near/roulette-board";
+import { RouletteSeatVideo } from "@/components/near/roulette-seat-video";
 import {
   getNearToken,
   nearFetch,
   setNearToken,
   signInWithStarkey,
 } from "@/lib/near/client";
-import type { RoulettePublic } from "@/lib/near/roulette";
-import { RouletteSeatVideo } from "@/components/near/roulette-seat-video";
+import type {
+  RouletteBetKind,
+  RoulettePublic,
+} from "@/lib/near/roulette";
 import {
   shortAddress,
   STARKEY_INSTALL_URL,
@@ -23,11 +38,14 @@ import {
 const RouletteWheel3D = dynamic(
   () =>
     import("@/components/near/roulette-wheel-3d").then((m) => m.RouletteWheel3D),
-  { ssr: false, loading: () => (
-    <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-white/40">
-      Çark yükleniyor…
-    </div>
-  ) }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[300px] items-center justify-center text-sm text-[#c9a227]/70">
+        European wheel yükleniyor…
+      </div>
+    ),
+  }
 );
 
 export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
@@ -36,13 +54,15 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
   const [sessionReady, setSessionReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
   const [table, setTable] = useState<RoulettePublic | null>(null);
   const [tables, setTables] = useState<RoulettePublic[]>([]);
   const [name, setName] = useState("Oyuncu");
   const [emoji, setEmoji] = useState("🎰");
-  const [betAmt, setBetAmt] = useState(50);
+  const [chip, setChip] = useState(50);
   const [camOn, setCamOn] = useState(false);
   const [joinId, setJoinId] = useState(initialTableId || "");
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     setSessionReady(Boolean(getNearToken()));
@@ -69,7 +89,8 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
     if (!table?.id || !sessionReady) return;
     const id = window.setInterval(() => {
       void refreshTable(table.id).catch(() => undefined);
-    }, 1500);
+      setTick((n) => n + 1);
+    }, 1000);
     return () => window.clearInterval(id);
   }, [table?.id, sessionReady, refreshTable]);
 
@@ -93,6 +114,39 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
       })();
     }
   }, [initialTableId, sessionReady, wallet, table, name, emoji]);
+
+  const secondsLeft = useMemo(() => {
+    void tick;
+    if (!table?.phaseEndsAt) return null;
+    return Math.max(
+      0,
+      Math.ceil((new Date(table.phaseEndsAt).getTime() - Date.now()) / 1000)
+    );
+  }, [table?.phaseEndsAt, tick]);
+
+  const myBal = useMemo(() => {
+    if (!table || !wallet) return 0;
+    return table.balances[wallet.toLowerCase()] ?? 0;
+  }, [table, wallet]);
+
+  const myBets = useMemo(() => {
+    if (!table || !wallet) return [];
+    return table.bets.filter((b) => b.wallet === wallet.toLowerCase());
+  }, [table, wallet]);
+
+  const isHost =
+    !!table && !!wallet && table.hostWallet === wallet.toLowerCase();
+
+  const phaseTitle =
+    table?.phase === "lobby"
+      ? "Lobi"
+      : table?.phase === "betting"
+        ? "Bahisler açık"
+        : table?.phase === "spinning"
+          ? "No more bets"
+          : table?.phase === "result"
+            ? "Sonuç"
+            : "";
 
   async function handleSignIn() {
     setBusy(true);
@@ -121,10 +175,12 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
           action: "create",
           displayName: name,
           avatarEmoji: emoji,
-          label: "Near Rulet",
+          label: "European Roulette",
         }),
       });
       setTable(data.table);
+      setFlash("Masa açıldı · 5.000 demo chip");
+      window.setTimeout(() => setFlash(null), 2200);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Masa açılamadı");
     } finally {
@@ -132,7 +188,7 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
     }
   }
 
-  async function joinTable(id: string) {
+  async function joinTable(id: string, seatIndex?: number) {
     setBusy(true);
     setError(null);
     try {
@@ -143,6 +199,7 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
           tableId: id,
           displayName: name,
           avatarEmoji: emoji,
+          seatIndex,
         }),
       });
       setTable(data.table);
@@ -186,22 +243,59 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
     }
   }
 
-  async function bet(color: "red" | "black") {
+  async function place(
+    input: { kind: RouletteBetKind; numbers?: number[]; meta?: number }
+  ) {
     if (!table) return;
     setBusy(true);
+    setError(null);
     try {
       const data = await nearFetch("/api/near/roulette", {
         method: "POST",
         body: JSON.stringify({
           action: "bet",
           tableId: table.id,
-          color,
-          amount: betAmt,
+          betKind: input.kind,
+          numbers: input.numbers,
+          meta: input.meta,
+          amount: chip,
         }),
       });
       setTable(data.table);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Bahis başarısız");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undo() {
+    if (!table) return;
+    setBusy(true);
+    try {
+      const data = await nearFetch("/api/near/roulette", {
+        method: "POST",
+        body: JSON.stringify({ action: "undo", tableId: table.id }),
+      });
+      setTable(data.table);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Undo failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearAll() {
+    if (!table) return;
+    setBusy(true);
+    try {
+      const data = await nearFetch("/api/near/roulette", {
+        method: "POST",
+        body: JSON.stringify({ action: "clear", tableId: table.id }),
+      });
+      setTable(data.table);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Clear failed");
     } finally {
       setBusy(false);
     }
@@ -226,60 +320,43 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
     }
   }
 
-  const myBal = useMemo(() => {
-    if (!table || !wallet) return 0;
-    return table.balances[wallet.toLowerCase()] ?? 0;
-  }, [table, wallet]);
-
-  const isHost =
-    table && wallet && table.hostWallet === wallet.toLowerCase();
-
-  const phaseLabel =
-    table?.phase === "lobby"
-      ? "Lobi — host turu başlatır"
-      : table?.phase === "betting"
-        ? "Bahis açık"
-        : table?.phase === "spinning"
-          ? "Çark dönüyor…"
-          : table?.phase === "result"
-            ? "Sonuç"
-            : "";
-
   const inviteUrl =
     typeof window !== "undefined" && table
       ? `${window.location.origin}/near/rulet/${table.id}`
       : "";
 
   return (
-    <div className="min-h-[100dvh] bg-[#070908] text-[#f2f2f0]">
+    <div className="min-h-[100dvh] bg-[#06140f] text-[#f3efe6]">
       <div
         className="pointer-events-none fixed inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(212,255,58,0.12), transparent 55%), radial-gradient(ellipse 50% 40% at 80% 80%, rgba(185,28,28,0.12), transparent 50%)",
+            "radial-gradient(ellipse 80% 55% at 50% -10%, rgba(201,162,39,0.16), transparent 55%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(185,28,28,0.1), transparent 45%), linear-gradient(180deg,#06140f,#0a1f16 40%,#06140f)",
         }}
       />
 
-      <header className="relative z-10 border-b border-white/10 px-4 py-4">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+      <header className="relative z-10 border-b border-[#c9a227]/25 bg-black/20 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link
               href="/near"
-              className="rounded-full border border-white/15 p-2 text-white/70 hover:text-white"
+              className="rounded-full border border-[#c9a227]/30 p-2 text-[#c9a227]/80 hover:text-[#ffe566]"
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d4ff3a]">
-                JIY Near · Rulet
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#c9a227]">
+                JIY Near Casino
               </p>
-              <p className="font-semibold tracking-tight">Görüntülü masa</p>
+              <p className="text-lg font-semibold tracking-tight">
+                European Roulette
+              </p>
             </div>
           </div>
           {sessionReady && wallet ? (
             <button
               type="button"
-              className="font-mono text-[11px] text-white/50"
+              className="font-mono text-[11px] text-white/45"
               onClick={() => {
                 setNearToken(null);
                 setSessionReady(false);
@@ -293,33 +370,39 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-3xl px-4 py-5 pb-28">
+      <main className="relative z-10 mx-auto max-w-5xl px-4 py-5 pb-24">
         {error ? (
-          <p className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <p className="mb-3 rounded-lg border border-red-500/40 bg-red-950/40 px-3 py-2 text-sm text-red-200">
             {error}
+          </p>
+        ) : null}
+        {flash ? (
+          <p className="mb-3 rounded-lg border border-[#c9a227]/40 bg-[#c9a227]/10 px-3 py-2 text-sm text-[#ffe566]">
+            {flash}
           </p>
         ) : null}
 
         {!sessionReady || !wallet ? (
-          <section className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <p className="text-sm text-white/60">
-              StarKey ile gir — 3D çark, koltuklar ve görüntülü rulet masası
-              cüzdan kimliğine bağlı. İlk sürümde <strong>demo chip</strong>{" "}
-              (1000) ile oynanır; commit–reveal adil spin.
+          <section className="mx-auto max-w-lg space-y-4 rounded-2xl border border-[#c9a227]/25 bg-black/30 p-6">
+            <p className="text-sm leading-relaxed text-white/65">
+              Profesyonel Avrupa ruleti: tam bahis tahtası (düz, split, street,
+              dozen, kolon, kırmızı/siyah…), 3D çark, görüntülü koltuklar,
+              commit–reveal adil spin. İlk sürüm{" "}
+              <span className="text-[#ffe566]">5.000 demo chip</span> ile.
             </p>
             {starkey.status === "missing" ? (
-              <Button asChild className="w-full bg-[#d4ff3a] text-[#0a0a0b]">
+              <Button asChild className="w-full bg-[#c9a227] text-[#1a1408]">
                 <a href={STARKEY_INSTALL_URL} target="_blank" rel="noreferrer">
                   StarKey indir
                 </a>
               </Button>
             ) : (
               <Button
-                className="w-full bg-[#d4ff3a] text-[#0a0a0b]"
+                className="w-full bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
                 disabled={busy}
                 onClick={() => void handleSignIn()}
               >
-                StarKey ile giriş
+                StarKey ile masaya otur
               </Button>
             )}
           </section>
@@ -330,61 +413,61 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
                 value={name}
                 onChange={(e) => setName(e.target.value.slice(0, 40))}
                 placeholder="İsim"
-                className="max-w-[160px] border-white/15 bg-black/30"
+                className="max-w-[180px] border-[#c9a227]/30 bg-black/40"
               />
               <Input
                 value={emoji}
                 onChange={(e) => setEmoji(e.target.value.slice(0, 4))}
-                className="w-16 border-white/15 bg-black/30"
+                className="w-16 border-[#c9a227]/30 bg-black/40"
               />
             </div>
             <Button
               disabled={busy}
-              className="bg-[#d4ff3a] text-[#0a0a0b]"
+              className="bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
               onClick={() => void createTable()}
             >
               <Spade className="mr-2 h-4 w-4" />
-              Masa aç
+              European masa aç
             </Button>
             <div className="flex gap-2">
               <Input
                 value={joinId}
                 onChange={(e) => setJoinId(e.target.value.trim())}
                 placeholder="Masa kodu"
-                className="border-white/15 bg-black/30 font-mono text-sm"
+                className="border-[#c9a227]/30 bg-black/40 font-mono text-sm"
               />
               <Button
                 variant="outline"
                 disabled={busy || !joinId}
-                className="border-white/20"
+                className="border-[#c9a227]/40"
                 onClick={() => void joinTable(joinId)}
               >
                 Katıl
               </Button>
             </div>
             <div>
-              <p className="mb-2 flex items-center gap-1.5 text-xs text-white/50">
-                <Users className="h-3.5 w-3.5" /> Açık masalar
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-white/45">
+                <Users className="h-3.5 w-3.5" /> Canlı masalar
               </p>
               <ul className="space-y-2">
                 {tables.length === 0 ? (
-                  <li className="text-sm text-white/40">Henüz masa yok</li>
+                  <li className="text-sm text-white/35">Henüz masa yok</li>
                 ) : (
                   tables.map((t) => (
                     <li key={t.id}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between rounded-xl border border-white/10 px-3 py-3 text-left hover:border-[#d4ff3a]/40"
+                        className="flex w-full items-center justify-between rounded-xl border border-[#c9a227]/20 px-3 py-3 text-left hover:border-[#c9a227]/55"
                         onClick={() => void joinTable(t.id)}
                       >
                         <span>
                           {t.label}{" "}
-                          <span className="font-mono text-[10px] text-white/40">
+                          <span className="font-mono text-[10px] text-white/35">
                             {t.id}
                           </span>
                         </span>
-                        <span className="text-xs text-white/50">
-                          {t.seats.filter(Boolean).length}/6 · {t.phase}
+                        <span className="text-xs text-white/45">
+                          {t.seats.filter(Boolean).length}/8 · {t.phase}
                         </span>
                       </button>
                     </li>
@@ -395,18 +478,28 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
           </section>
         ) : (
           <section className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Status bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#c9a227]/25 bg-black/35 px-4 py-3">
               <div>
-                <p className="text-sm font-medium">{table.label}</p>
-                <p className="font-mono text-[10px] text-white/40">
-                  {table.id} · tur #{table.round} · {phaseLabel}
+                <p className="text-[10px] uppercase tracking-[0.18em] text-[#c9a227]">
+                  {phaseTitle}
+                  {secondsLeft != null ? ` · ${secondsLeft}s` : ""}
+                </p>
+                <p className="font-mono text-xs text-white/45">
+                  {table.id} · tur #{table.round}
+                  {table.commitHash
+                    ? ` · commit ${table.commitHash.slice(0, 12)}…`
+                    : ""}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-[#c9a227]/40 px-3 py-1 text-sm font-semibold text-[#ffe566]">
+                  {myBal.toLocaleString("tr-TR")} chip
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-white/20"
+                  className="border-[#c9a227]/35"
                   onClick={() => void toggleCam()}
                 >
                   {camOn ? (
@@ -414,12 +507,12 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
                   ) : (
                     <Camera className="mr-1 h-3.5 w-3.5" />
                   )}
-                  Kamera
+                  Cam
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-white/20"
+                  className="border-[#c9a227]/35"
                   onClick={() => void leave()}
                 >
                   Ayrıl
@@ -427,16 +520,8 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
               </div>
             </div>
 
-            <p className="text-sm text-[#d4ff3a]">
-              Chip · {myBal}
-              {table.commitHash ? (
-                <span className="ml-2 font-mono text-[9px] text-white/35">
-                  commit {table.commitHash.slice(0, 10)}…
-                </span>
-              ) : null}
-            </p>
-
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {/* Seats */}
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
               {table.seats.map((s, i) => {
                 const amSeated = table.seats.some(
                   (x) => x?.wallet === wallet?.toLowerCase()
@@ -457,120 +542,135 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
                 }
                 return (
                   <button
-                    key={`empty-${i}`}
+                    key={`e-${i}`}
                     type="button"
                     disabled={busy || amSeated}
-                    onClick={() => {
-                      void (async () => {
-                        setBusy(true);
-                        try {
-                          const data = await nearFetch("/api/near/roulette", {
-                            method: "POST",
-                            body: JSON.stringify({
-                              action: "join",
-                              tableId: table.id,
-                              displayName: name,
-                              avatarEmoji: emoji,
-                              seatIndex: i,
-                            }),
-                          });
-                          setTable(data.table);
-                        } catch (e) {
-                          setError(
-                            e instanceof Error ? e.message : "Koltuk dolu"
-                          );
-                        } finally {
-                          setBusy(false);
-                        }
-                      })();
-                    }}
-                    className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-white/15 text-[10px] text-white/35"
+                    onClick={() => void joinTable(table.id, i)}
+                    className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-[#c9a227]/25 text-[10px] text-white/30"
                   >
-                    Koltuk {i + 1}
+                    Seat {i + 1}
                   </button>
                 );
               })}
             </div>
 
-            <div className="h-[min(52vw,360px)] overflow-hidden rounded-2xl border border-white/10 bg-black/40">
-              <RouletteWheel3D
-                targetNumber={table.lastSpin?.number ?? null}
-                spinning={table.phase === "spinning"}
-              />
-            </div>
-
-            {table.phase === "result" && table.lastSpin ? (
-              <p className="text-center text-lg">
-                <span
-                  className={
-                    table.lastSpin.color === "red"
-                      ? "text-red-400"
-                      : table.lastSpin.color === "black"
-                        ? "text-white"
-                        : "text-emerald-400"
-                  }
-                >
-                  {table.lastSpin.number} · {table.lastSpin.color}
-                </span>
-              </p>
-            ) : null}
-
-            {table.phase === "betting" ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  type="number"
-                  min={10}
-                  max={500}
-                  value={betAmt}
-                  onChange={(e) => setBetAmt(Number(e.target.value) || 50)}
-                  className="w-24 border-white/15 bg-black/30"
-                />
-                <Button
-                  disabled={busy}
-                  className="bg-red-600 hover:bg-red-500"
-                  onClick={() => void bet("red")}
-                >
-                  Kırmızı
-                </Button>
-                <Button
-                  disabled={busy}
-                  className="bg-zinc-900 hover:bg-zinc-800"
-                  onClick={() => void bet("black")}
-                >
-                  Siyah
-                </Button>
+            <div className="grid gap-4 lg:grid-cols-[1.05fr_1fr]">
+              <div className="space-y-3">
+                <div className="overflow-hidden rounded-2xl border border-[#c9a227]/30 bg-black/40 shadow-[0_0_40px_rgba(201,162,39,0.08)]">
+                  <div className="h-[min(58vw,380px)]">
+                    <RouletteWheel3D
+                      targetNumber={table.lastSpin?.number ?? null}
+                      spinning={table.phase === "spinning"}
+                    />
+                  </div>
+                  {table.phase === "result" && table.lastSpin ? (
+                    <p className="border-t border-[#c9a227]/20 py-3 text-center text-2xl font-semibold tracking-tight">
+                      <span
+                        className={
+                          table.lastSpin.color === "red"
+                            ? "text-red-400"
+                            : table.lastSpin.color === "black"
+                              ? "text-white"
+                              : "text-emerald-400"
+                        }
+                      >
+                        {table.lastSpin.number}
+                      </span>
+                      <span className="ml-2 text-sm font-normal uppercase tracking-[0.16em] text-white/45">
+                        {table.lastSpin.color}
+                      </span>
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="mb-1.5 text-[10px] uppercase tracking-[0.16em] text-[#c9a227]/80">
+                    Last numbers
+                  </p>
+                  <RouletteHistory history={table.history || []} />
+                </div>
               </div>
-            ) : null}
+
+              <div className="space-y-3">
+                <RouletteBoard
+                  disabled={busy || table.phase !== "betting"}
+                  chip={chip}
+                  onChip={setChip}
+                  bets={table.bets}
+                  myWallet={wallet}
+                  onBet={(b) => void place(b)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || table.phase !== "betting"}
+                    className="border-[#c9a227]/35"
+                    onClick={() => void undo()}
+                  >
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    Geri al
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || table.phase !== "betting"}
+                    className="border-[#c9a227]/35"
+                    onClick={() => void clearAll()}
+                  >
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                    Temizle
+                  </Button>
+                </div>
+                {myBets.length > 0 ? (
+                  <ul className="max-h-28 space-y-1 overflow-y-auto text-[11px] text-white/55">
+                    {myBets.map((b) => (
+                      <li key={b.id} className="flex justify-between gap-2">
+                        <span>{b.label}</span>
+                        <span className="font-mono text-[#ffe566]">
+                          {b.amount}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            </div>
 
             {isHost && (table.phase === "lobby" || table.phase === "result") ? (
               <Button
                 disabled={busy}
-                className="w-full bg-[#d4ff3a] text-[#0a0a0b]"
+                className="w-full bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
                 onClick={() => void startRound()}
               >
-                Turu başlat (25sn bahis)
+                Bahisleri aç · 30 sn
               </Button>
+            ) : null}
+
+            {!isHost && table.phase === "lobby" ? (
+              <p className="text-center text-xs text-white/40">
+                Host turu başlatınca bahis tahtası açılır.
+              </p>
             ) : null}
 
             {inviteUrl ? (
               <button
                 type="button"
-                className="w-full truncate text-left font-mono text-[10px] text-white/40 hover:text-[#d4ff3a]"
-                onClick={() => void navigator.clipboard.writeText(inviteUrl)}
+                className="w-full truncate text-left font-mono text-[10px] text-white/35 hover:text-[#ffe566]"
+                onClick={() => {
+                  void navigator.clipboard.writeText(inviteUrl);
+                  setFlash("Davet linki kopyalandı");
+                  window.setTimeout(() => setFlash(null), 1600);
+                }}
               >
                 Davet · {inviteUrl}
               </button>
             ) : null}
 
-            {table.bets.length > 0 ? (
-              <ul className="space-y-1 text-xs text-white/50">
-                {table.bets.map((b) => (
-                  <li key={b.id}>
-                    {shortAddress(b.wallet)} · {b.color} · {b.amount}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <p className="text-[10px] leading-relaxed text-white/30">
+              Ödemeler: düz 35:1 · split 17:1 · street 11:1 · corner 8:1 · line
+              5:1 · dozen/kolon 2:1 · dış bahisler 1:1. 0 dış bahisleri kaybeder.
+              Commit–reveal ile spin kanıtı.
+            </p>
           </section>
         )}
       </main>
