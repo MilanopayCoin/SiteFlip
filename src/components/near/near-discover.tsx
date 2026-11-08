@@ -16,14 +16,16 @@ export function NearDiscover({
   onPass,
   onChat,
   onGift,
+  onMatch,
 }: {
   peers: NearPeer[];
   unlocked: (wallet: string) => boolean;
   busy: boolean;
-  onWave: (wallet: string) => void;
+  onWave: (wallet: string) => Promise<boolean>;
   onPass: (wallet: string) => void;
   onChat: (wallet: string) => void;
   onGift: (wallet: string, giftId: string) => void;
+  onMatch?: (peer: NearPeer) => void;
 }) {
   const [index, setIndex] = useState(0);
   const deck = useMemo(() => peers, [peers]);
@@ -40,9 +42,17 @@ export function NearDiscover({
   }
 
   async function swipe(dir: "like" | "nope") {
-    if (!peer) return;
-    if (dir === "like") onWave(peer.wallet);
-    else onPass(peer.wallet);
+    if (!peer || busy) return;
+    if (dir === "like") {
+      const mutual = await onWave(peer.wallet);
+      if (mutual) {
+        onMatch?.(peer);
+        advance();
+        return;
+      }
+    } else {
+      onPass(peer.wallet);
+    }
     advance();
   }
 

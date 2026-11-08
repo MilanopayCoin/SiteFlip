@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NearDiscover } from "@/components/near/near-discover";
 import { NearGiftFxLayer, useGiftFx } from "@/components/near/near-gift-fx";
+import { NearMatchOverlay } from "@/components/near/near-match";
 import { NearVoicePanel } from "@/components/near/near-voice-room";
 import {
   IncomingCallBanner,
@@ -151,6 +152,7 @@ export function NearApp() {
   const [duels, setDuels] = useState<NearDuel[]>([]);
   const [duelSeconds, setDuelSeconds] = useState(60);
   const giftFx = useGiftFx();
+  const [matchPeer, setMatchPeer] = useState<NearPeer | null>(null);
 
   const wallet = starkey.account;
 
@@ -765,7 +767,7 @@ export function NearApp() {
     }
   }
 
-  async function sendFreeWave(peer: string) {
+  async function sendFreeWave(peer: string): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
@@ -776,12 +778,15 @@ export function NearApp() {
       if (data.summary) applyWaveSummary(data.summary);
       if (data.mutual) {
         setGiftFlash("Karşılıklı Selam — chat ve görüntülü açıldı");
-      } else {
-        setGiftFlash("Selam iletildi — karşılık bekleniyor");
+        window.setTimeout(() => setGiftFlash(null), 2400);
+        return true;
       }
+      setGiftFlash("Selam iletildi — karşılık bekleniyor");
       window.setTimeout(() => setGiftFlash(null), 2400);
+      return false;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Selam failed");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -925,6 +930,22 @@ export function NearApp() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
       <NearGiftFxLayer event={giftFx.event} onDone={giftFx.clear} />
+      {matchPeer ? (
+        <NearMatchOverlay
+          peer={matchPeer}
+          onChat={() => {
+            const w = matchPeer.wallet;
+            setMatchPeer(null);
+            void openChat(w);
+          }}
+          onVideo={() => {
+            const w = matchPeer.wallet;
+            setMatchPeer(null);
+            void startVideo(w);
+          }}
+          onClose={() => setMatchPeer(null)}
+        />
+      ) : null}
       <div
         className="pointer-events-none fixed inset-0"
         style={{
@@ -1475,10 +1496,11 @@ export function NearApp() {
                 peers={rankedPeers}
                 unlocked={isUnlocked}
                 busy={busy}
-                onWave={(w) => void sendFreeWave(w)}
+                onWave={(w) => sendFreeWave(w)}
                 onPass={(w) => hidePeer(w)}
                 onChat={(w) => void openChat(w)}
                 onGift={(w, g) => void sendGift(w, g)}
+                onMatch={(p) => setMatchPeer(p)}
               />
             )}
 
@@ -1488,6 +1510,8 @@ export function NearApp() {
                 displayName={name || shortAddress(wallet)}
                 avatarEmoji={emoji}
                 geohashHint={roomHash || inviteGeohash}
+                giftBusy={busy}
+                onGift={(w, g) => void sendGift(w, g)}
               />
             ) : null}
 

@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, PhoneOff, Radio } from "lucide-react";
+import { Gift, Mic, MicOff, PhoneOff, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nearFetch } from "@/lib/near/client";
+import { GIFT_CATALOG } from "@/lib/near/gifts";
 import type { VoiceParticipant, VoiceRoom } from "@/lib/near/voice";
 import { shortAddress } from "@/lib/starkey";
 
@@ -149,11 +150,15 @@ export function NearVoicePanel({
   displayName,
   avatarEmoji,
   geohashHint,
+  onGift,
+  giftBusy,
 }: {
   wallet: string;
   displayName: string;
   avatarEmoji: string;
   geohashHint?: string | null;
+  onGift?: (toWallet: string, giftId: string) => void;
+  giftBusy?: boolean;
 }) {
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
   const [room, setRoom] = useState<VoiceRoom | null>(null);
@@ -161,8 +166,10 @@ export function NearVoicePanel({
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [label, setLabel] = useState("Near Live");
+  const [giftTarget, setGiftTarget] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const speakingRef = useRef(false);
 
   const refreshList = useCallback(async () => {
     const data = await nearFetch("/api/near/voice");
@@ -193,6 +200,51 @@ export function NearVoicePanel({
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
+
+  /** Local speaking pulse → server ring for other clients. */
+  useEffect(() => {
+    if (!stream || !room || muted) {
+      if (speakingRef.current && room) {
+        speakingRef.current = false;
+        void nearFetch("/api/near/voice", {
+          method: "POST",
+          body: JSON.stringify({
+            action: "speaking",
+            roomId: room.id,
+            speaking: false,
+          }),
+        }).catch(() => undefined);
+      }
+      return;
+    }
+    const ctx = new AudioContext();
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const id = window.setInterval(() => {
+      analyser.getByteFrequencyData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i]!;
+      const avg = sum / data.length;
+      const speaking = avg > 16;
+      if (speaking === speakingRef.current) return;
+      speakingRef.current = speaking;
+      void nearFetch("/api/near/voice", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "speaking",
+          roomId: room.id,
+          speaking,
+        }),
+      }).catch(() => undefined);
+    }, 350);
+    return () => {
+      window.clearInterval(id);
+      void ctx.close();
+    };
+  }, [stream, room?.id, muted, room]);
 
   async function ensureMic() {
     if (streamRef.current) return streamRef.current;
@@ -372,13 +424,19 @@ export function NearVoicePanel({
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {room.participants.map((p) => {
           const me = p.wallet === wallet.toLowerCase();
+          const selected = giftTarget === p.wallet;
           return (
-            <div
+            <button
               key={p.wallet}
-              className={`relative flex aspect-square flex-col items-center justify-center rounded-2xl border p-2 ${
+              type="button"
+              disabled={me}
+              onClick={() => setGiftTarget(me ? null : p.wallet)}
+              className={`relative flex aspect-square flex-col items-center justify-center rounded-2xl border p-2 text-center transition ${
                 p.speaking
                   ? "border-accent bg-accent/10 shadow-[0_0_24px_color-mix(in_srgb,var(--accent)_25%,transparent)]"
-                  : "border-border bg-surface/60"
+                  : selected
+                    ? "border-accent/60 bg-accent/5"
+                    : "border-border bg-surface/60"
               }`}
             >
               <span className="text-3xl">{p.avatarEmoji}</span>
@@ -396,10 +454,36 @@ export function NearVoicePanel({
                   localStream={stream}
                 />
               ) : null}
-            </div>
+            </button>
           );
         })}
       </div>
+
+      {giftTarget && onGift ? (
+        <div className="rounded-xl border border-border bg-surface/50 p-3">
+          <p className="mb-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+            <Gift className="h-3 w-3" />
+            3D hediye · {shortAddress(giftTarget)}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {GIFT_CATALOG.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                disabled={giftBusy}
+                onClick={() => onGift(giftTarget, g.id)}
+                className="rounded-full border border-border px-2.5 py-1 text-[11px] hover:border-accent/50"
+              >
+                {g.emoji} {g.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-center text-[11px] text-muted">
+          Birine dokun → 3D hediye · konuşunca halka yanar
+        </p>
+      )}
 
       <div className="flex justify-center gap-3">
         <Button
@@ -411,9 +495,6 @@ export function NearVoicePanel({
           {muted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
         </Button>
       </div>
-      <p className="text-center text-[11px] text-muted">
-        Telegram tarzı sesli oda · max 12 · hediyeler chat/radar’dan
-      </p>
     </section>
   );
 }
