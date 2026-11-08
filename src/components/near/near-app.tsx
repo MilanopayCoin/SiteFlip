@@ -29,6 +29,13 @@ import {
   signInWithStarkey,
 } from "@/lib/near/client";
 import { GIFT_CATALOG } from "@/lib/near/gifts";
+import {
+  blockWallet,
+  loadBlocked,
+  MOOD_PRESETS,
+  recordLocalReport,
+  unblockWallet,
+} from "@/lib/near/safety";
 import type {
   NearCall,
   NearGiftBoardRow,
@@ -114,6 +121,9 @@ export function NearApp() {
   const [board, setBoard] = useState<NearGiftBoardRow[]>([]);
   const [giftFlash, setGiftFlash] = useState<string | null>(null);
   const [seenMap, setSeenMap] = useState<Record<string, string>>({});
+  const [blocked, setBlocked] = useState<string[]>([]);
+  const [pendingPeer, setPendingPeer] = useState<string | null>(null);
+  const [inviteGeohash, setInviteGeohash] = useState<string | null>(null);
 
   const wallet = starkey.account;
 
@@ -219,6 +229,20 @@ export function NearApp() {
   useEffect(() => {
     setSessionReady(Boolean(getNearToken()));
     setSeenMap(loadSeen());
+    setBlocked(loadBlocked());
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const peer = sp.get("peer");
+      const g = sp.get("g");
+      if (peer && /^0x[a-fA-F0-9]{40}$/.test(peer)) {
+        setPendingPeer(peer.toLowerCase());
+      }
+      if (g && /^[0-9a-z]{3,12}$/i.test(g)) {
+        setInviteGeohash(g.toLowerCase());
+      }
+    } catch {
+      // ignore bad URL
+    }
   }, []);
 
   useEffect(() => {
@@ -345,6 +369,21 @@ export function NearApp() {
       setCoords(next);
       setCheckedIn(true);
       setExpiresAt(data.presence?.expiresAt || null);
+      if (inviteGeohash) {
+        setInviteHint(
+          `Check-in tamam · davet bölgesi ${inviteGeohash}`
+        );
+        window.setTimeout(() => setInviteHint(null), 2500);
+        setInviteGeohash(null);
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("g");
+          url.searchParams.delete("from");
+          window.history.replaceState({}, "", url.pathname + url.search);
+        } catch {
+          // ignore
+        }
+      }
       await refreshPeers();
       await refreshPot();
       await refreshRoom();
@@ -397,12 +436,18 @@ export function NearApp() {
   }, [sessionReady, wallet, checkedIn, coords, refreshPeers]);
 
   async function shareInvite() {
-    const url =
+    const origin =
       typeof window !== "undefined"
-        ? `${window.location.origin}/near/app`
-        : "https://jiy.app/near/app";
-    const text =
-      "JIY Near’da şu an yakınımdayım — StarKey ile check-in yap, radar’da buluşalım.";
+        ? window.location.origin
+        : "https://jiy.app";
+    const params = new URLSearchParams();
+    if (roomHash) params.set("g", roomHash);
+    if (wallet) params.set("from", wallet.slice(0, 10));
+    const qs = params.toString();
+    const url = `${origin}/near/app${qs ? `?${qs}` : ""}`;
+    const text = roomHash
+      ? `JIY Near · ${roomHash} bölgesindeyim — StarKey ile check-in yap, radar’da buluşalım.`
+      : "JIY Near’da şu an yakınımdayım — StarKey ile check-in yap, radar’da buluşalım.";
     try {
       if (navigator.share) {
         await navigator.share({ title: "JIY Near", text, url });
@@ -422,6 +467,19 @@ export function NearApp() {
     }
   }
 
+  function hidePeer(peer: string) {
+    setBlocked(blockWallet(peer));
+    setInviteHint("Kişi gizlendi");
+    window.setTimeout(() => setInviteHint(null), 1800);
+  }
+
+  function reportPeer(peer: string) {
+    recordLocalReport(peer, "user-report");
+    setBlocked(blockWallet(peer));
+    setInviteHint("Bildirildi ve gizlendi");
+    window.setTimeout(() => setInviteHint(null), 2000);
+  }
+
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!expiresAt) return;
@@ -437,7 +495,7 @@ export function NearApp() {
     return Math.ceil(ms / 60_000);
   }, [expiresAt, tick]);
 
-  async function openChat(peer: string) {
+  const openChat = useCallback(async (peer: string) => {
     setBusy(true);
     setError(null);
     try {
@@ -454,7 +512,22 @@ export function NearApp() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [refreshThreads]);
+
+  useEffect(() => {
+    if (!sessionReady || !wallet || !pendingPeer) return;
+    const peer = pendingPeer;
+    setPendingPeer(null);
+    void openChat(peer).then(() => {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("peer");
+        window.history.replaceState({}, "", url.pathname + url.search);
+      } catch {
+        // ignore
+      }
+    });
+  }, [sessionReady, wallet, pendingPeer, openChat]);
 
   async function sendMsg() {
     if (!draft.trim() || (!activeThreadId && !activePeer)) return;
@@ -557,13 +630,16 @@ export function NearApp() {
   }, [board]);
 
   const rankedPeers = useMemo(() => {
-    return [...peers].sort((a, b) => {
-      const sa = scoreByWallet.get(a.wallet) || 0;
-      const sb = scoreByWallet.get(b.wallet) || 0;
-      if (sb !== sa) return sb - sa;
-      return (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9);
-    });
-  }, [peers, scoreByWallet]);
+    const blockedSet = new Set(blocked);
+    return [...peers]
+      .filter((p) => !blockedSet.has(p.wallet.toLowerCase()))
+      .sort((a, b) => {
+        const sa = scoreByWallet.get(a.wallet) || 0;
+        const sb = scoreByWallet.get(b.wallet) || 0;
+        if (sb !== sa) return sb - sa;
+        return (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9);
+      });
+  }, [peers, scoreByWallet, blocked]);
 
   const unreadChat = useMemo(() => {
     return threads.filter((t) => {
@@ -618,6 +694,13 @@ export function NearApp() {
         {giftFlash ? (
           <p className="mb-4 animate-pulse rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent">
             {giftFlash}
+          </p>
+        ) : null}
+        {inviteGeohash && !checkedIn ? (
+          <p className="mb-4 rounded-lg border border-border bg-surface/70 px-3 py-2 text-sm">
+            Davet · bölge{" "}
+            <span className="font-mono text-accent">{inviteGeohash}</span> —
+            check-in yapınca aynı radar’da buluşursunuz.
           </p>
         ) : null}
 
@@ -856,6 +939,22 @@ export function NearApp() {
                             </button>
                           ))}
                         </div>
+                        <div className="mt-2 flex gap-3 text-[10px] text-muted">
+                          <button
+                            type="button"
+                            className="hover:text-foreground"
+                            onClick={() => hidePeer(p.wallet)}
+                          >
+                            Gizle
+                          </button>
+                          <button
+                            type="button"
+                            className="hover:text-danger"
+                            onClick={() => reportPeer(p.wallet)}
+                          >
+                            Bildir
+                          </button>
+                        </div>
                       </li>
                       );
                     })}
@@ -990,7 +1089,7 @@ export function NearApp() {
                         <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px]">
                           {emoji} Sen
                         </span>
-                        {peers.slice(0, 12).map((p) => (
+                        {rankedPeers.slice(0, 12).map((p) => (
                           <button
                             key={p.wallet}
                             type="button"
@@ -1001,7 +1100,7 @@ export function NearApp() {
                             {p.avatarEmoji} {p.displayName.slice(0, 10)}
                           </button>
                         ))}
-                        {peers.length === 0 ? (
+                        {rankedPeers.length === 0 ? (
                           <span className="text-[10px] text-muted">
                             Henüz başka üye yok
                           </span>
@@ -1080,7 +1179,47 @@ export function NearApp() {
                     placeholder="Kahve / sohbet / …"
                     maxLength={48}
                   />
+                  <div className="flex flex-wrap gap-1.5">
+                    {MOOD_PRESETS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMood(m)}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                          mood === m
+                            ? "border-accent/50 bg-accent/10 text-accent"
+                            : "border-border text-muted"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {blocked.length > 0 ? (
+                  <div className="space-y-2 rounded-xl border border-border p-3">
+                    <p className="text-xs text-muted">
+                      Gizlenen ({blocked.length})
+                    </p>
+                    <ul className="space-y-1">
+                      {blocked.map((w) => (
+                        <li
+                          key={w}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="font-mono">{shortAddress(w)}</span>
+                          <button
+                            type="button"
+                            className="text-accent"
+                            onClick={() => setBlocked(unblockWallet(w))}
+                          >
+                            Göster
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="space-y-2">
                   <label className="text-xs text-muted">Bio</label>
                   <Textarea
