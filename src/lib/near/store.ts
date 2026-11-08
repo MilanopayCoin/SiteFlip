@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { coarseCoord, distanceMeters, encodeGeohash } from "@/lib/near/geohash";
 import { getGift, giftScore } from "@/lib/near/gifts";
+import { recordWave } from "@/lib/near/waves";
 import type {
   NearGiftBoardRow,
   NearGiftInboxItem,
@@ -527,6 +528,12 @@ export async function recordGift(input: {
       tx_hash: rec.txHash,
       created_at: rec.createdAt,
     });
+  }
+  // Any catalog gift counts as a Selam unlock edge (Wave is the cheap path).
+  try {
+    await recordWave(rec.fromWallet, rec.toWallet, "gift");
+  } catch {
+    // non-fatal
   }
   return rec;
 }

@@ -49,6 +49,17 @@ export async function POST(request: Request) {
   };
 
   if (body.peerWallet && !body.callId) {
+    const { isMutualWave } = await import("@/lib/near/waves");
+    if (!(await isMutualWave(wallet, body.peerWallet))) {
+      return Response.json(
+        {
+          error:
+            "Karşılıklı Selam gerekli — görüntülü için iki taraf da Selam atmalı.",
+          code: "MUTUAL_WAVE_REQUIRED",
+        },
+        { status: 403 }
+      );
+    }
     const call = await createCall(wallet, body.peerWallet);
     return Response.json({ call });
   }

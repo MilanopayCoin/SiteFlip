@@ -128,8 +128,41 @@ export function NearApp() {
   const [inviteGeohash, setInviteGeohash] = useState<string | null>(null);
   const [hotZones, setHotZones] = useState<NearHotZone[]>([]);
   const [inbox, setInbox] = useState<NearGiftInboxItem[]>([]);
+  const [waveOut, setWaveOut] = useState<Set<string>>(() => new Set());
+  const [waveIn, setWaveIn] = useState<Set<string>>(() => new Set());
+  const [waveMutual, setWaveMutual] = useState<Set<string>>(
+    () => new Set()
+  );
 
   const wallet = starkey.account;
+
+  const applyWaveSummary = useCallback(
+    (summary: {
+      outgoing?: string[];
+      incoming?: string[];
+      mutual?: string[];
+    }) => {
+      setWaveOut(new Set((summary.outgoing || []).map((w) => w.toLowerCase())));
+      setWaveIn(new Set((summary.incoming || []).map((w) => w.toLowerCase())));
+      setWaveMutual(
+        new Set((summary.mutual || []).map((w) => w.toLowerCase()))
+      );
+    },
+    []
+  );
+
+  const refreshWaves = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/waves");
+      if (data.summary) applyWaveSummary(data.summary);
+    } catch {
+      // ignore
+    }
+  }, [applyWaveSummary]);
+
+  function isUnlocked(peer: string) {
+    return waveMutual.has(peer.toLowerCase());
+  }
 
   const refreshProfile = useCallback(async () => {
     const data = await nearFetch("/api/near/profile");
@@ -268,6 +301,7 @@ export function NearApp() {
         await refreshThreads();
         await refreshBoard();
         await refreshInbox();
+        await refreshWaves();
         setError(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Load failed";
@@ -289,6 +323,7 @@ export function NearApp() {
     refreshThreads,
     refreshBoard,
     refreshInbox,
+    refreshWaves,
   ]);
 
   useEffect(() => {
@@ -297,9 +332,17 @@ export function NearApp() {
       void refreshThreads();
       void refreshBoard();
       void refreshInbox();
+      void refreshWaves();
     }, 12_000);
     return () => window.clearInterval(id);
-  }, [sessionReady, wallet, refreshThreads, refreshBoard, refreshInbox]);
+  }, [
+    sessionReady,
+    wallet,
+    refreshThreads,
+    refreshBoard,
+    refreshInbox,
+    refreshWaves,
+  ]);
 
   useEffect(() => {
     if (!activeThreadId || !sessionReady) return;
@@ -573,6 +616,28 @@ export function NearApp() {
     }
   }
 
+  async function sendFreeWave(peer: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/waves", {
+        method: "POST",
+        body: JSON.stringify({ toWallet: peer }),
+      });
+      if (data.summary) applyWaveSummary(data.summary);
+      if (data.mutual) {
+        setGiftFlash("Karşılıklı Selam — chat ve görüntülü açıldı");
+      } else {
+        setGiftFlash("Selam iletildi — karşılık bekleniyor");
+      }
+      window.setTimeout(() => setGiftFlash(null), 2400);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Selam failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function sendGift(peer: string, giftId: string) {
     if (!wallet) return;
     setBusy(true);
@@ -586,11 +651,20 @@ export function NearApp() {
       window.setTimeout(() => setGiftFlash(null), 2200);
       await refreshBoard();
       await refreshInbox();
+      await refreshWaves();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function startVideo(peer: string) {
+    if (!isUnlocked(peer)) {
+      setError("Görüntülü için karşılıklı Selam gerekli");
+      return;
+    }
+    setVideoPeer(peer);
   }
 
   async function sendIcebreaker(text: string) {
@@ -848,6 +922,34 @@ export function NearApp() {
                   </div>
                 ) : null}
 
+                {checkedIn &&
+                [...waveIn].filter((w) => !waveMutual.has(w)).length > 0 ? (
+                  <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                      Gelen selam
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {rankedPeers
+                        .filter(
+                          (p) =>
+                            waveIn.has(p.wallet.toLowerCase()) &&
+                            !waveMutual.has(p.wallet.toLowerCase())
+                        )
+                        .map((p) => (
+                          <button
+                            key={p.wallet}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void sendFreeWave(p.wallet)}
+                            className="rounded-full border border-accent/40 px-2.5 py-1 text-[11px]"
+                          >
+                            {p.avatarEmoji} {p.displayName.slice(0, 12)} · dön
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 {inbox.length > 0 ? (
                   <div className="rounded-xl border border-border bg-surface/50 p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
@@ -1000,23 +1102,54 @@ export function NearApp() {
                             </p>
                           </div>
                           <div className="flex flex-col gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void openChat(p.wallet)}
-                            >
-                              <MessageCircle className="mr-1 h-3.5 w-3.5" />
-                              Chat
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => setVideoPeer(p.wallet)}
-                            >
-                              <Video className="mr-1 h-3.5 w-3.5" />
-                              Görüntülü
-                            </Button>
+                            {isUnlocked(p.wallet) ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => void openChat(p.wallet)}
+                                >
+                                  <MessageCircle className="mr-1 h-3.5 w-3.5" />
+                                  Chat
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => void startVideo(p.wallet)}
+                                >
+                                  <Video className="mr-1 h-3.5 w-3.5" />
+                                  Görüntülü
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => void sendFreeWave(p.wallet)}
+                              >
+                                👋{" "}
+                                {waveOut.has(p.wallet.toLowerCase())
+                                  ? "Bekleniyor…"
+                                  : waveIn.has(p.wallet.toLowerCase())
+                                    ? "Selam dön"
+                                    : "Selam at"}
+                              </Button>
+                            )}
                           </div>
                         </div>
+                        {!isUnlocked(p.wallet) ? (
+                          <p className="mt-2 text-[11px] text-muted">
+                            {waveOut.has(p.wallet.toLowerCase()) &&
+                            !waveIn.has(p.wallet.toLowerCase())
+                              ? "Selamın iletildi — karşı taraf Selam atınca chat açılır."
+                              : waveIn.has(p.wallet.toLowerCase())
+                                ? "Sana Selam attı — sen de at, kilit açılsın."
+                                : "Chat / görüntülü için karşılıklı Selam veya Wave hediyesi."}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-[11px] text-accent">
+                            Karşılıklı Selam · açık
+                          </p>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           {GIFT_CATALOG.map((g) => (
                             <button
@@ -1116,7 +1249,30 @@ export function NearApp() {
                       </button>
                     </div>
                     <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
-                      {msgs.length === 0 ? (
+                      {activePeer && !isUnlocked(activePeer) ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-3 px-2 text-center">
+                          <p className="text-sm text-muted">
+                            Bu sohbet kilitli — karşılıklı Selam gerekir.
+                          </p>
+                          <Button
+                            disabled={busy}
+                            onClick={() => void sendFreeWave(activePeer)}
+                          >
+                            👋{" "}
+                            {waveOut.has(activePeer.toLowerCase())
+                              ? "Selam iletildi"
+                              : "Selam at (ücretsiz)"}
+                          </Button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="text-[11px] text-accent"
+                            onClick={() => void sendGift(activePeer, "wave")}
+                          >
+                            veya Wave hediyesi gönder (0.1 SUPRA)
+                          </button>
+                        </div>
+                      ) : msgs.length === 0 ? (
                         <div className="space-y-2">
                           <p className="text-center text-xs text-muted">
                             İlk mesajı sen at — hazır cümleler:
@@ -1150,34 +1306,47 @@ export function NearApp() {
                         ))
                       )}
                     </div>
-                    <div className="flex gap-2 border-t border-border p-2">
-                      <Input
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        placeholder="Mesaj…"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") void sendMsg();
-                        }}
-                      />
-                      <Button disabled={busy} onClick={() => void sendMsg()}>
-                        Gönder
-                      </Button>
-                    </div>
-                    {activePeer ? (
-                      <div className="flex flex-wrap gap-1 border-t border-border px-2 py-2">
-                        {GIFT_CATALOG.map((g) => (
-                          <button
-                            key={g.id}
-                            type="button"
+                    {activePeer && isUnlocked(activePeer) ? (
+                      <>
+                        <div className="flex gap-2 border-t border-border p-2">
+                          <Input
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            placeholder="Mesaj…"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void sendMsg();
+                            }}
+                          />
+                          <Button
                             disabled={busy}
-                            onClick={() => void sendGift(activePeer, g.id)}
-                            className="rounded-full border border-border px-2 py-0.5 text-[11px]"
+                            onClick={() => void sendMsg()}
                           >
-                            <Gift className="mr-1 inline h-3 w-3" />
-                            {g.emoji} {g.amountSupra}
-                          </button>
-                        ))}
-                      </div>
+                            Gönder
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 border-t border-border px-2 py-2">
+                          {GIFT_CATALOG.map((g) => (
+                            <button
+                              key={g.id}
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void sendGift(activePeer, g.id)}
+                              className="rounded-full border border-border px-2 py-0.5 text-[11px]"
+                            >
+                              <Gift className="mr-1 inline h-3 w-3" />
+                              {g.emoji} {g.amountSupra}
+                            </button>
+                          ))}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void startVideo(activePeer)}
+                          >
+                            <Video className="mr-1 h-3.5 w-3.5" />
+                            Görüntülü
+                          </Button>
+                        </div>
+                      </>
                     ) : null}
                   </div>
                 )}
