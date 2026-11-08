@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Gift, Mic, MicOff, PhoneOff, Radio } from "lucide-react";
+import { Gift, Mic, MicOff, PhoneOff, Radio, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nearFetch } from "@/lib/near/client";
@@ -154,6 +154,8 @@ export function NearVoicePanel({
   displayName,
   avatarEmoji,
   geohashHint,
+  autoJoinRoomId,
+  onAutoJoinConsumed,
   onGift,
   onRoomGift,
   giftBusy,
@@ -162,6 +164,9 @@ export function NearVoicePanel({
   displayName: string;
   avatarEmoji: string;
   geohashHint?: string | null;
+  /** Deep-link room id from `?v=` */
+  autoJoinRoomId?: string | null;
+  onAutoJoinConsumed?: () => void;
   onGift?: (toWallet: string, giftId: string) => void | Promise<void>;
   /** Fired for gifts from other participants (TikTok-style room show). */
   onRoomGift?: (gift: VoiceGiftEvent) => void;
@@ -174,10 +179,12 @@ export function NearVoicePanel({
   const [muted, setMuted] = useState(false);
   const [label, setLabel] = useState("Near Live");
   const [giftTarget, setGiftTarget] = useState<string | null>(null);
+  const [shareHint, setShareHint] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const speakingRef = useRef(false);
   const seenGiftsRef = useRef<Set<string>>(new Set());
+  const autoJoinTried = useRef(false);
   const me = wallet.toLowerCase();
 
   const ingestGifts = useCallback(
@@ -334,6 +341,50 @@ export function NearVoicePanel({
     }
   }
 
+  useEffect(() => {
+    if (!autoJoinRoomId || room || autoJoinTried.current) return;
+    autoJoinTried.current = true;
+    void join(autoJoinRoomId).finally(() => onAutoJoinConsumed?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link
+  }, [autoJoinRoomId, room]);
+
+  async function shareRoom() {
+    if (!room) return;
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://jiy.app";
+    const url = `${origin}/near/app?v=${encodeURIComponent(room.id)}`;
+    const text = `JIY Near sesli oda · ${room.label} — StarKey ile katıl`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "JIY Near Live", text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        setShareHint("Oda linki kopyalandı");
+        window.setTimeout(() => setShareHint(null), 2000);
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareHint("Link kopyalandı");
+        window.setTimeout(() => setShareHint(null), 2000);
+      } catch {
+        setError("Paylaşım desteklenmiyor");
+      }
+    }
+  }
+
+  const sortedRooms = [...rooms].sort((a, b) => {
+    const hint = geohashHint?.slice(0, 5) || "";
+    if (hint) {
+      const an = a.geohash === hint ? 0 : 1;
+      const bn = b.geohash === hint ? 0 : 1;
+      if (an !== bn) return an - bn;
+    }
+    return b.participants.length - a.participants.length;
+  });
+
   async function leave() {
     if (!room) return;
     setBusy(true);
@@ -429,28 +480,43 @@ export function NearVoicePanel({
           </Button>
         </div>
         <ul className="space-y-2">
-          {rooms.length === 0 ? (
+          {sortedRooms.length === 0 ? (
             <li className="text-sm text-muted">Henüz sesli oda yok</li>
           ) : (
-            rooms.map((r) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between rounded-xl border border-border px-3 py-3 text-left hover:border-accent/40"
-                  onClick={() => void join(r.id)}
-                >
-                  <span>
-                    🎙️ {r.label}{" "}
-                    <span className="font-mono text-[10px] text-muted">
-                      {r.id}
+            sortedRooms.map((r) => {
+              const near =
+                geohashHint &&
+                r.geohash &&
+                r.geohash === geohashHint.slice(0, 5);
+              return (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    className={`flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left hover:border-accent/40 ${
+                      near
+                        ? "border-accent/40 bg-accent/5"
+                        : "border-border"
+                    }`}
+                    onClick={() => void join(r.id)}
+                  >
+                    <span>
+                      🎙️ {r.label}{" "}
+                      {near ? (
+                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                          yakın
+                        </span>
+                      ) : null}
+                      <span className="ml-1 font-mono text-[10px] text-muted">
+                        {r.id}
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-xs text-muted">
-                    {r.participants.length}/12
-                  </span>
-                </button>
-              </li>
-            ))
+                    <span className="text-xs text-muted">
+                      {r.participants.length}/12
+                    </span>
+                  </button>
+                </li>
+              );
+            })
           )}
         </ul>
       </section>
@@ -469,11 +535,20 @@ export function NearVoicePanel({
             {room.geohash ? ` · ${room.geohash}` : ""}
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => void leave()}>
-          <PhoneOff className="mr-1 h-3.5 w-3.5" />
-          Çık
-        </Button>
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="outline" onClick={() => void shareRoom()}>
+            <Share2 className="mr-1 h-3.5 w-3.5" />
+            Davet
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void leave()}>
+            <PhoneOff className="mr-1 h-3.5 w-3.5" />
+            Çık
+          </Button>
+        </div>
       </div>
+      {shareHint ? (
+        <p className="text-xs text-success">{shareHint}</p>
+      ) : null}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

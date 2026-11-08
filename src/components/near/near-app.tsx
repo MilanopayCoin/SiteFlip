@@ -19,6 +19,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NearDiscover } from "@/components/near/near-discover";
 import { NearGiftFxLayer, useGiftFx } from "@/components/near/near-gift-fx";
+import {
+  buildLiveTicker,
+  NearLiveTicker,
+} from "@/components/near/near-live-ticker";
 import { NearMatchOverlay } from "@/components/near/near-match";
 import { NearVoicePanel } from "@/components/near/near-voice-room";
 import {
@@ -138,6 +142,7 @@ export function NearApp() {
   const [blocked, setBlocked] = useState<string[]>([]);
   const [pendingPeer, setPendingPeer] = useState<string | null>(null);
   const [inviteGeohash, setInviteGeohash] = useState<string | null>(null);
+  const [pendingVoiceId, setPendingVoiceId] = useState<string | null>(null);
   const [hotZones, setHotZones] = useState<NearHotZone[]>([]);
   const [inbox, setInbox] = useState<NearGiftInboxItem[]>([]);
   const [waveOut, setWaveOut] = useState<Set<string>>(() => new Set());
@@ -369,6 +374,11 @@ export function NearApp() {
       }
       if (g && /^[0-9a-z]{3,12}$/i.test(g)) {
         setInviteGeohash(g.toLowerCase());
+      }
+      const voice = sp.get("v") || sp.get("voice");
+      if (voice && /^[A-Za-z0-9_-]{6,24}$/.test(voice)) {
+        setPendingVoiceId(voice);
+        setTab("voice");
       }
     } catch {
       // ignore bad URL
@@ -909,15 +919,39 @@ export function NearApp() {
 
   const rankedPeers = useMemo(() => {
     const blockedSet = new Set(blocked);
+    const rank = (w: string) => {
+      const key = w.toLowerCase();
+      if (waveIn.has(key) && !waveMutual.has(key)) return 0; // pending Selam first
+      if (waveMutual.has(key)) return 1;
+      return 2;
+    };
     return [...peers]
       .filter((p) => !blockedSet.has(p.wallet.toLowerCase()))
       .sort((a, b) => {
+        const ra = rank(a.wallet);
+        const rb = rank(b.wallet);
+        if (ra !== rb) return ra - rb;
         const sa = scoreByWallet.get(a.wallet) || 0;
         const sb = scoreByWallet.get(b.wallet) || 0;
         if (sb !== sa) return sb - sa;
         return (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9);
       });
-  }, [peers, scoreByWallet, blocked]);
+  }, [peers, scoreByWallet, blocked, waveIn, waveMutual]);
+
+  const pendingSelamCount = useMemo(
+    () => [...waveIn].filter((w) => !waveMutual.has(w)).length,
+    [waveIn, waveMutual]
+  );
+
+  const liveTickerItems = useMemo(
+    () =>
+      buildLiveTicker({
+        inbox,
+        hotZones,
+        pendingWaves: pendingSelamCount,
+      }),
+    [inbox, hotZones, pendingSelamCount]
+  );
 
   const unreadChat = useMemo(() => {
     return threads.filter((t) => {
@@ -1178,6 +1212,12 @@ export function NearApp() {
                 </div>
                 {inviteHint ? (
                   <p className="text-xs text-success">{inviteHint}</p>
+                ) : null}
+                {sessionReady && liveTickerItems.length > 0 ? (
+                  <NearLiveTicker
+                    items={liveTickerItems}
+                    onTapWave={() => setTab("discover")}
+                  />
                 ) : null}
                 {checkedIn && streak && streak.count > 0 ? (
                   <p className="text-xs text-muted">
@@ -1511,6 +1551,22 @@ export function NearApp() {
                 displayName={name || shortAddress(wallet)}
                 avatarEmoji={emoji}
                 geohashHint={roomHash || inviteGeohash}
+                autoJoinRoomId={pendingVoiceId}
+                onAutoJoinConsumed={() => {
+                  setPendingVoiceId(null);
+                  try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("v");
+                    url.searchParams.delete("voice");
+                    window.history.replaceState(
+                      {},
+                      "",
+                      url.pathname + url.search
+                    );
+                  } catch {
+                    // ignore
+                  }
+                }}
                 giftBusy={busy}
                 onGift={async (w, g) => {
                   await sendGift(w, g);
@@ -1982,6 +2038,11 @@ export function NearApp() {
                   {id === "chat" && unreadChat > 0 ? (
                     <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-bold text-accent-ink">
                       {unreadChat > 9 ? "9+" : unreadChat}
+                    </span>
+                  ) : null}
+                  {id === "discover" && pendingSelamCount > 0 ? (
+                    <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-bold text-accent-ink">
+                      {pendingSelamCount > 9 ? "9+" : pendingSelamCount}
                     </span>
                   ) : null}
                 </span>

@@ -85,6 +85,11 @@ export function NearDiscover({
     <section className="mx-auto w-full max-w-sm space-y-4">
       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
         Keşfet · Tinder × Near
+        {deck.length > 0 ? (
+          <span className="ml-2 font-normal normal-case tracking-normal text-muted">
+            · önce gelen Selamlar
+          </span>
+        ) : null}
       </p>
       <div className="relative h-[min(62dvh,460px)]">
         <motion.div
