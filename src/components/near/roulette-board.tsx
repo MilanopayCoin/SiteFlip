@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CHIP_DENOMS,
   colorOf,
@@ -13,6 +13,8 @@ const GRID: number[][] = [
   [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35],
   [1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34],
 ];
+
+const DESIGN_W = 720;
 
 function cellClass(n: number) {
   const c = colorOf(n);
@@ -34,7 +36,7 @@ function chipsOn(
 function ChipStack({ amount }: { amount: number }) {
   if (amount <= 0) return null;
   return (
-    <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-[#f5e6a3] bg-gradient-to-b from-[#ffe566] to-[#c9a227] px-1 text-[9px] font-bold text-[#1a1408] shadow">
+    <span className="pointer-events-none absolute -right-0.5 -top-0.5 z-10 flex h-4 min-w-4 items-center justify-center rounded-full border border-[#f5e6a3] bg-gradient-to-b from-[#ffe566] to-[#c9a227] px-0.5 text-[8px] font-bold text-[#1a1408] shadow">
       {amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : amount}
     </span>
   );
@@ -60,11 +62,27 @@ export function RouletteBoard({
   }) => void;
 }) {
   const me = myWallet?.toLowerCase() || null;
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
 
-  const streetFor = (row: number, col: number) => {
-    // three numbers in a column of the layout (vertical street on real table is horizontal row)
-    return [GRID[0]![col]!, GRID[1]![col]!, GRID[2]![col]!];
-  };
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el) return;
+    const fit = () => {
+      const w = el.clientWidth;
+      setScale(Math.min(1, w / DESIGN_W));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const streetFor = (col: number) => [
+    GRID[0]![col]!,
+    GRID[1]![col]!,
+    GRID[2]![col]!,
+  ];
 
   const myStake = useMemo(
     () =>
@@ -72,10 +90,12 @@ export function RouletteBoard({
     [bets, me]
   );
 
+  const boardH = 268;
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[#c9a227]">
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span className="shrink-0 text-[9px] uppercase tracking-[0.16em] text-[#c9a227]">
           Chip
         </span>
         {CHIP_DENOMS.map((d) => (
@@ -84,183 +104,182 @@ export function RouletteBoard({
             type="button"
             disabled={disabled}
             onClick={() => onChip(d)}
-            className={`h-9 min-w-9 rounded-full border text-xs font-bold transition ${
+            className={`h-8 w-8 shrink-0 rounded-full border text-[10px] font-bold transition active:scale-95 ${
               chip === d
-                ? "border-[#ffe566] bg-[#c9a227] text-[#1a1408] scale-110"
-                : "border-[#c9a227]/50 bg-[#1a1408] text-[#f5e6a3] hover:border-[#ffe566]"
+                ? "border-[#ffe566] bg-[#c9a227] text-[#1a1408] ring-2 ring-[#ffe566]/40"
+                : "border-[#c9a227]/50 bg-[#1a1408] text-[#f5e6a3]"
             }`}
           >
             {d}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-white/50">
-          Bahsin · {myStake}
+        <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] text-white/50">
+          Bahis · {myStake}
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-[#2a5a3c] bg-[#0d3d2a] p-2 shadow-inner">
-        <div className="inline-flex min-w-[640px] gap-1">
-          {/* Zero */}
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onBet({ kind: "straight", numbers: [0] })}
-            className="relative flex w-10 flex-col justify-center rounded-md bg-emerald-700 text-sm font-semibold text-white"
-          >
-            0
-            <ChipStack
-              amount={chipsOn(
-                bets,
-                me,
-                (b) => b.kind === "straight" && b.numbers[0] === 0
-              )}
-            />
-          </button>
+      {/* Scale-to-fit: full European layout always visible on phone */}
+      <div
+        ref={shellRef}
+        className="w-full overflow-hidden rounded-xl border border-[#2a5a3c] bg-[#0d3d2a] shadow-inner"
+        style={{ height: boardH * scale }}
+      >
+        <div
+          style={{
+            width: DESIGN_W,
+            height: boardH,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+          className="p-2"
+        >
+          <div className="flex gap-1">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onBet({ kind: "straight", numbers: [0] })}
+              className="relative flex w-9 shrink-0 flex-col justify-center rounded-md bg-emerald-700 text-sm font-semibold text-white active:brightness-110"
+              style={{ minHeight: 118 }}
+            >
+              0
+              <ChipStack
+                amount={chipsOn(
+                  bets,
+                  me,
+                  (b) => b.kind === "straight" && b.numbers[0] === 0
+                )}
+              />
+            </button>
 
-          <div className="flex-1 space-y-1">
-            {GRID.map((row, ri) => (
-              <div key={ri} className="grid grid-cols-12 gap-1">
-                {row.map((n, ci) => (
+            <div className="min-w-0 flex-1 space-y-1">
+              {GRID.map((row, ri) => (
+                <div key={ri} className="grid grid-cols-12 gap-0.5">
+                  {row.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => onBet({ kind: "straight", numbers: [n] })}
+                      className={`relative flex h-9 items-center justify-center rounded-sm text-[11px] font-semibold active:brightness-125 ${cellClass(n)}`}
+                    >
+                      {n}
+                      <ChipStack
+                        amount={chipsOn(
+                          bets,
+                          me,
+                          (b) => b.kind === "straight" && b.numbers[0] === n
+                        )}
+                      />
+                    </button>
+                  ))}
+                </div>
+              ))}
+
+              <div className="grid grid-cols-3 gap-0.5 pt-0.5">
+                {[1, 2, 3].map((d) => (
                   <button
-                    key={n}
+                    key={d}
                     type="button"
                     disabled={disabled}
-                    onClick={() => onBet({ kind: "straight", numbers: [n] })}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      if (disabled) return;
-                      // right-click: split with left neighbor if any
-                      if (ci > 0) {
-                        onBet({
-                          kind: "split",
-                          numbers: [row[ci - 1]!, n],
-                        });
-                      }
-                    }}
-                    className={`relative flex h-9 items-center justify-center rounded-sm text-xs font-semibold ${cellClass(n)} hover:ring-1 hover:ring-[#ffe566]/60`}
+                    onClick={() => onBet({ kind: "dozen", meta: d })}
+                    className="relative rounded-sm border border-[#2f6b48] bg-[#0f4a32] py-1.5 text-[10px] font-semibold text-[#d7ffe6] active:brightness-110"
                   >
-                    {n}
+                    {d === 1 ? "1st 12" : d === 2 ? "2nd 12" : "3rd 12"}
                     <ChipStack
                       amount={chipsOn(
                         bets,
                         me,
-                        (b) => b.kind === "straight" && b.numbers[0] === n
+                        (b) => b.kind === "dozen" && b.meta === d
                       )}
                     />
                   </button>
                 ))}
               </div>
-            ))}
 
-            {/* Dozens */}
-            <div className="grid grid-cols-3 gap-1 pt-1">
-              {[1, 2, 3].map((d) => (
+              <div className="grid grid-cols-6 gap-0.5 pt-0.5">
+                {(
+                  [
+                    ["low", "1–18"],
+                    ["even", "Çift"],
+                    ["red", "Kırmızı"],
+                    ["black", "Siyah"],
+                    ["odd", "Tek"],
+                    ["high", "19–36"],
+                  ] as const
+                ).map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onBet({ kind })}
+                    className={`relative rounded-sm border py-1.5 text-[9px] font-semibold active:brightness-110 ${
+                      kind === "red"
+                        ? "border-red-800 bg-red-800/90 text-white"
+                        : kind === "black"
+                          ? "border-zinc-700 bg-zinc-950 text-white"
+                          : "border-[#2f6b48] bg-[#0f4a32] text-[#d7ffe6]"
+                    }`}
+                  >
+                    {label}
+                    <ChipStack
+                      amount={chipsOn(bets, me, (b) => b.kind === kind)}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex w-9 shrink-0 flex-col gap-0.5">
+              {[3, 2, 1].map((c) => (
                 <button
-                  key={d}
+                  key={c}
                   type="button"
                   disabled={disabled}
-                  onClick={() => onBet({ kind: "dozen", meta: d })}
-                  className="relative rounded-sm border border-[#2f6b48] bg-[#0f4a32] py-2 text-[11px] font-semibold text-[#d7ffe6]"
+                  onClick={() => onBet({ kind: "column", meta: c })}
+                  className="relative flex flex-1 items-center justify-center rounded-md border border-[#2f6b48] bg-[#0f4a32] text-[9px] font-semibold text-[#d7ffe6] active:brightness-110"
                 >
-                  {d === 1 ? "1st 12" : d === 2 ? "2nd 12" : "3rd 12"}
+                  2:1
                   <ChipStack
                     amount={chipsOn(
                       bets,
                       me,
-                      (b) => b.kind === "dozen" && b.meta === d
+                      (b) => b.kind === "column" && b.meta === c
                     )}
                   />
                 </button>
               ))}
             </div>
+          </div>
 
-            {/* Outside even money */}
-            <div className="grid grid-cols-6 gap-1 pt-1">
-              {(
-                [
-                  ["low", "1–18"],
-                  ["even", "Çift"],
-                  ["red", "Kırmızı"],
-                  ["black", "Siyah"],
-                  ["odd", "Tek"],
-                  ["high", "19–36"],
-                ] as const
-              ).map(([kind, label]) => (
+          <div className="mt-1.5 flex flex-wrap items-center gap-0.5">
+            <span className="mr-1 text-[8px] uppercase tracking-wide text-[#8fceb0]">
+              Street
+            </span>
+            {Array.from({ length: 12 }, (_, ci) => {
+              const nums = streetFor(ci);
+              return (
                 <button
-                  key={kind}
+                  key={ci}
                   type="button"
                   disabled={disabled}
-                  onClick={() => onBet({ kind })}
-                  className={`relative rounded-sm border py-2 text-[10px] font-semibold ${
-                    kind === "red"
-                      ? "border-red-800 bg-red-800/80 text-white"
-                      : kind === "black"
-                        ? "border-zinc-700 bg-zinc-950 text-white"
-                        : "border-[#2f6b48] bg-[#0f4a32] text-[#d7ffe6]"
-                  }`}
+                  onClick={() => onBet({ kind: "street", numbers: nums })}
+                  className="relative rounded border border-[#2f6b48]/80 px-1 py-0.5 font-mono text-[8px] text-[#b8e6cc] active:brightness-110"
                 >
-                  {label}
+                  {nums[2]}-{nums[0]}
                   <ChipStack
-                    amount={chipsOn(bets, me, (b) => b.kind === kind)}
+                    amount={chipsOn(
+                      bets,
+                      me,
+                      (b) =>
+                        b.kind === "street" &&
+                        b.numbers.length === 3 &&
+                        b.numbers[0] === nums[0]
+                    )}
                   />
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
-
-          {/* Columns 2:1 */}
-          <div className="flex w-11 flex-col gap-1">
-            {/* Top row is 3,6,9… → column 3 */}
-            {[3, 2, 1].map((c) => (
-              <button
-                key={c}
-                type="button"
-                disabled={disabled}
-                onClick={() => onBet({ kind: "column", meta: c })}
-                className="relative flex flex-1 items-center justify-center rounded-md border border-[#2f6b48] bg-[#0f4a32] text-[10px] font-semibold text-[#d7ffe6]"
-              >
-                2:1
-                <ChipStack
-                  amount={chipsOn(
-                    bets,
-                    me,
-                    (b) => b.kind === "column" && b.meta === c
-                  )}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Quick streets */}
-        <div className="mt-2 flex flex-wrap gap-1">
-          <span className="mr-1 self-center text-[9px] uppercase tracking-wide text-[#8fceb0]">
-            Street
-          </span>
-          {Array.from({ length: 12 }, (_, ci) => {
-            const nums = streetFor(0, ci);
-            return (
-              <button
-                key={ci}
-                type="button"
-                disabled={disabled}
-                onClick={() => onBet({ kind: "street", numbers: nums })}
-                className="relative rounded border border-[#2f6b48]/80 px-1.5 py-0.5 font-mono text-[9px] text-[#b8e6cc]"
-              >
-                {nums[2]}-{nums[0]}
-                <ChipStack
-                  amount={chipsOn(
-                    bets,
-                    me,
-                    (b) =>
-                      b.kind === "street" &&
-                      b.numbers.length === 3 &&
-                      b.numbers[0] === nums[0]
-                  )}
-                />
-              </button>
-            );
-          })}
         </div>
       </div>
     </div>
@@ -278,7 +297,7 @@ export function RouletteHistory({
     );
   }
   return (
-    <div className="flex gap-1 overflow-x-auto pb-1">
+    <div className="flex gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {history.map((h, i) => (
         <span
           key={`${h.number}-${i}`}

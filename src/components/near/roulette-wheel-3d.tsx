@@ -14,6 +14,22 @@ function segColor(n: number): number {
   return ROULETTE_REDS.has(n) ? 0xc41e1e : 0x0a0a0a;
 }
 
+function makeLabelTexture(num: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 26px system-ui,sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(num), 32, 34);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export function RouletteWheel3D({
   targetNumber,
   spinning,
@@ -25,7 +41,6 @@ export function RouletteWheel3D({
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const wheelRef = useRef<THREE.Group | null>(null);
-  const ballRef = useRef<THREE.Mesh | null>(null);
   const animRef = useRef<number>(0);
   const spinState = useRef({
     active: false,
@@ -39,39 +54,43 @@ export function RouletteWheel3D({
     const mount = mountRef.current;
     if (!mount) return;
 
-    const w = mount.clientWidth || 360;
-    const h = mount.clientHeight || 360;
+    const textures: THREE.CanvasTexture[] = [];
+    const w = Math.max(280, mount.clientWidth || 320);
+    const h = Math.max(280, mount.clientHeight || 320);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(32, w / h, 0.1, 100);
-    camera.position.set(0, 3.1, 3.6);
-    camera.lookAt(0, 0, 0);
+    const camera = new THREE.PerspectiveCamera(38, w / h, 0.1, 100);
+    // Centered framing — wheel fully in view on narrow phones
+    camera.position.set(0, 3.4, 3.5);
+    camera.lookAt(0, 0.05, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(w, h);
+    renderer.setSize(w, h, false);
     renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
+    renderer.domElement.style.display = "block";
     mount.appendChild(renderer.domElement);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.45));
-    const key = new THREE.SpotLight(0xffe566, 1.4, 30, 0.55, 0.35);
-    key.position.set(2.5, 6, 3);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const key = new THREE.SpotLight(0xffe566, 1.25, 30, 0.55, 0.35);
+    key.position.set(1.5, 5.5, 2.5);
     scene.add(key);
-    const rimL = new THREE.DirectionalLight(0x88ccff, 0.35);
-    rimL.position.set(-4, 2, -2);
-    scene.add(rimL);
+    const fill = new THREE.DirectionalLight(0x88ccff, 0.3);
+    fill.position.set(-3, 2, -1);
+    scene.add(fill);
 
     const root = new THREE.Group();
-    root.rotation.x = -Math.PI / 2.35;
+    root.rotation.x = -Math.PI / 2.45;
     scene.add(root);
 
     const wheel = new THREE.Group();
     root.add(wheel);
     wheelRef.current = wheel;
 
-    // Wood bowl
     const bowl = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.7, 1.85, 0.35, 64, 1, true),
+      new THREE.CylinderGeometry(1.55, 1.7, 0.32, 64, 1, true),
       new THREE.MeshStandardMaterial({
         color: 0x5c3a1e,
         metalness: 0.2,
@@ -80,31 +99,32 @@ export function RouletteWheel3D({
       })
     );
     bowl.rotation.x = Math.PI / 2;
-    bowl.position.z = -0.15;
+    bowl.position.z = -0.14;
     root.add(bowl);
 
-    const outerRim = new THREE.Mesh(
-      new THREE.TorusGeometry(1.42, 0.07, 14, 80),
-      new THREE.MeshStandardMaterial({
-        color: 0xd4af37,
-        metalness: 0.9,
-        roughness: 0.22,
-      })
+    wheel.add(
+      new THREE.Mesh(
+        new THREE.TorusGeometry(1.32, 0.065, 12, 72),
+        new THREE.MeshStandardMaterial({
+          color: 0xd4af37,
+          metalness: 0.9,
+          roughness: 0.22,
+        })
+      )
     );
-    wheel.add(outerRim);
-
-    const innerRim = new THREE.Mesh(
-      new THREE.TorusGeometry(0.38, 0.04, 12, 48),
-      new THREE.MeshStandardMaterial({
-        color: 0xd4af37,
-        metalness: 0.85,
-        roughness: 0.25,
-      })
+    wheel.add(
+      new THREE.Mesh(
+        new THREE.TorusGeometry(0.36, 0.035, 10, 40),
+        new THREE.MeshStandardMaterial({
+          color: 0xd4af37,
+          metalness: 0.85,
+          roughness: 0.25,
+        })
+      )
     );
-    wheel.add(innerRim);
 
     const hub = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.2, 0.28, 0.18, 28),
+      new THREE.CylinderGeometry(0.18, 0.26, 0.16, 24),
       new THREE.MeshStandardMaterial({
         color: 0xf0e6c8,
         metalness: 0.7,
@@ -115,7 +135,7 @@ export function RouletteWheel3D({
     wheel.add(hub);
 
     const felt = new THREE.Mesh(
-      new THREE.CircleGeometry(1.55, 72),
+      new THREE.CircleGeometry(1.45, 64),
       new THREE.MeshStandardMaterial({
         color: 0x0b3d28,
         roughness: 0.92,
@@ -126,19 +146,13 @@ export function RouletteWheel3D({
     root.add(felt);
 
     const seg = (Math.PI * 2) / ORDER.length;
-    const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext("2d")!;
-
     ORDER.forEach((num, i) => {
       const shape = new THREE.Shape();
       shape.moveTo(0, 0);
-      shape.absarc(0, 0, 1.28, i * seg + 0.01, (i + 1) * seg - 0.01, false);
+      shape.absarc(0, 0, 1.2, i * seg + 0.008, (i + 1) * seg - 0.008, false);
       shape.lineTo(0, 0);
-      const geo = new THREE.ShapeGeometry(shape);
       const mesh = new THREE.Mesh(
-        geo,
+        new THREE.ShapeGeometry(shape),
         new THREE.MeshStandardMaterial({
           color: segColor(num),
           metalness: 0.12,
@@ -149,16 +163,10 @@ export function RouletteWheel3D({
       mesh.position.z = 0.03;
       wheel.add(mesh);
 
-      // Number label sprite-like plane
-      ctx.clearRect(0, 0, 64, 64);
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 28px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(String(num), 32, 32);
-      const tex = new THREE.CanvasTexture(canvas);
+      const tex = makeLabelTexture(num);
+      textures.push(tex);
       const label = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.14, 0.14),
+        new THREE.PlaneGeometry(0.13, 0.13),
         new THREE.MeshBasicMaterial({
           map: tex,
           transparent: true,
@@ -166,32 +174,32 @@ export function RouletteWheel3D({
         })
       );
       const mid = i * seg + seg / 2;
-      const r = 1.05;
-      label.position.set(Math.cos(mid) * r, Math.sin(mid) * r, 0.06);
+      const r = 0.98;
+      label.position.set(Math.cos(mid) * r, Math.sin(mid) * r, 0.055);
       label.rotation.z = mid + Math.PI / 2;
       wheel.add(label);
     });
 
     const ball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 20, 20),
+      new THREE.SphereGeometry(0.05, 16, 16),
       new THREE.MeshStandardMaterial({
         color: 0xf8f5ef,
         metalness: 0.35,
         roughness: 0.35,
       })
     );
-    ball.position.set(1.12, 0, 0.14);
+    ball.position.set(1.05, 0, 0.12);
     wheel.add(ball);
-    ballRef.current = ball;
 
-    const onResize = () => {
-      const nw = mount.clientWidth;
-      const nh = mount.clientHeight;
+    const syncSize = () => {
+      const nw = Math.max(200, mount.clientWidth);
+      const nh = Math.max(200, mount.clientHeight);
       camera.aspect = nw / nh;
       camera.updateProjectionMatrix();
-      renderer.setSize(nw, nh);
+      renderer.setSize(nw, nh, false);
     };
-    window.addEventListener("resize", onResize);
+    const ro = new ResizeObserver(syncSize);
+    ro.observe(mount);
 
     const tick = (t: number) => {
       animRef.current = requestAnimationFrame(tick);
@@ -201,13 +209,13 @@ export function RouletteWheel3D({
         const ease = 1 - Math.pow(1 - p, 3.2);
         wheel.rotation.z = st.from + (st.to - st.from) * ease;
         const ballSpin = -wheel.rotation.z * 1.55 + (1 - ease) * Math.PI * 14;
-        const br = 1.18 - ease * 0.22;
+        const br = 1.1 - ease * 0.2;
         ball.position.x = Math.cos(ballSpin) * br;
         ball.position.y = Math.sin(ballSpin) * br;
-        ball.position.z = 0.14 + Math.sin(ease * Math.PI) * 0.05;
+        ball.position.z = 0.12 + Math.sin(ease * Math.PI) * 0.04;
         if (p >= 1) st.active = false;
       } else {
-        wheel.rotation.z += 0.0015;
+        wheel.rotation.z += 0.0012;
       }
       renderer.render(scene, camera);
     };
@@ -215,13 +223,13 @@ export function RouletteWheel3D({
 
     return () => {
       cancelAnimationFrame(animRef.current);
-      window.removeEventListener("resize", onResize);
+      ro.disconnect();
+      textures.forEach((t) => t.dispose());
       renderer.dispose();
       if (mount.contains(renderer.domElement)) {
         mount.removeChild(renderer.domElement);
       }
       wheelRef.current = null;
-      ballRef.current = null;
     };
   }, []);
 
@@ -249,7 +257,12 @@ export function RouletteWheel3D({
     <div
       ref={mountRef}
       className={className}
-      style={{ width: "100%", height: "100%", minHeight: 300 }}
+      style={{
+        width: "100%",
+        height: "100%",
+        minHeight: 240,
+        overflow: "hidden",
+      }}
     />
   );
 }
