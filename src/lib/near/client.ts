@@ -1,5 +1,6 @@
 "use client";
 
+import { stringToHex } from "viem";
 import {
   ensureSupraEvmDevnet,
   getStarkeyEthereum,
@@ -49,9 +50,12 @@ export async function signInWithStarkey(wallet: string): Promise<string> {
   const challenge = await nearFetch(
     `/api/near/session?wallet=${encodeURIComponent(wallet)}`
   );
+  // StarKey (ethers) requires hex-encoded UTF-8 for personal_sign — plain
+  // strings throw INVALID_ARGUMENT / invalid BytesLike value.
+  const hexMessage = stringToHex(challenge.message as string);
   const signature = (await provider.request({
     method: "personal_sign",
-    params: [challenge.message, wallet],
+    params: [hexMessage, wallet],
   })) as string;
 
   const { session } = await nearFetch("/api/near/session", {
