@@ -143,7 +143,7 @@ export function NearLanding() {
               {
                 icon: Video,
                 title: "Canlı",
-                body: "Chat veya görüntülü. StarKey imzası olmadan odaya girilmez.",
+                body: "DM, yer odası veya görüntülü. StarKey imzası olmadan girilmez.",
               },
               {
                 icon: Gift,

@@ -7,6 +7,7 @@ import {
   MapPin,
   MessageCircle,
   Radio,
+  Users,
   UserRound,
   Video,
   Wallet,
@@ -35,7 +36,7 @@ import {
   useStarkeyEvm,
 } from "@/lib/starkey";
 
-type Tab = "radar" | "chat" | "profile";
+type Tab = "radar" | "room" | "chat" | "profile";
 
 type ThreadRow = {
   id: string;
@@ -76,6 +77,9 @@ export function NearApp() {
     id: string;
     from: string;
   } | null>(null);
+  const [roomMsgs, setRoomMsgs] = useState<Msg[]>([]);
+  const [roomHash, setRoomHash] = useState<string | null>(null);
+  const [roomDraft, setRoomDraft] = useState("");
 
   const wallet = starkey.account;
 
@@ -105,6 +109,17 @@ export function NearApp() {
     }
   }, []);
 
+  const refreshRoom = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/rooms");
+      setRoomMsgs(data.messages || []);
+      setRoomHash(data.geohash || null);
+    } catch {
+      setRoomMsgs([]);
+      setRoomHash(null);
+    }
+  }, []);
+
   async function runPotDraw() {
     setBusy(true);
     setError(null);
@@ -120,6 +135,31 @@ export function NearApp() {
       setBusy(false);
     }
   }
+
+  async function sendRoomMsg() {
+    if (!roomDraft.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await nearFetch("/api/near/rooms", {
+        method: "POST",
+        body: JSON.stringify({ text: roomDraft }),
+      });
+      setRoomDraft("");
+      await refreshRoom();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Room send failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!sessionReady || !wallet || tab !== "room" || !checkedIn) return;
+    void refreshRoom();
+    const id = window.setInterval(() => void refreshRoom(), 4000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, wallet, tab, checkedIn, refreshRoom]);
 
   const refreshThreads = useCallback(async () => {
     const data = await nearFetch("/api/near/threads");
@@ -226,6 +266,7 @@ export function NearApp() {
       setCheckedIn(true);
       await refreshPeers();
       await refreshPot();
+      await refreshRoom();
       setTab("radar");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Check-in failed");
@@ -507,9 +548,24 @@ export function NearApp() {
                     Süre dolunca radar’dan düşersin.
                   </p>
                 ) : peers.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
-                    Henüz yakında kimse yok — arkadaşını davet et.
-                  </p>
+                  <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
+                    <p className="text-sm text-muted">
+                      Henüz yakında kimse yok.
+                    </p>
+                    <p className="mt-2 text-xs text-muted">
+                      Linki paylaş — aynı bölgede check-in yapan StarKey
+                      kullanıcıları burada görünür. Yer odasına da yazabilirsin.
+                    </p>
+                    <Button
+                      className="mt-4"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTab("room")}
+                    >
+                      <Users className="mr-1.5 h-3.5 w-3.5" />
+                      Yer odasını aç
+                    </Button>
+                  </div>
                 ) : (
                   <ul className="space-y-3">
                     {peers.map((p) => (
@@ -664,6 +720,66 @@ export function NearApp() {
               </section>
             )}
 
+            {tab === "room" && (
+              <section className="space-y-3">
+                {!checkedIn ? (
+                  <p className="text-sm text-muted">
+                    Yer odası için önce radar’dan check-in yap.
+                  </p>
+                ) : (
+                  <div className="flex h-[55dvh] flex-col rounded-xl border border-border">
+                    <div className="border-b border-border px-3 py-2">
+                      <p className="text-sm font-medium">Yer odası</p>
+                      <p className="font-mono text-[10px] text-muted">
+                        geohash {roomHash || "—"} · check-in süresince ortak
+                      </p>
+                    </div>
+                    <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+                      {roomMsgs.length === 0 ? (
+                        <p className="text-center text-xs text-muted">
+                          İlk mesajı sen yaz — yakındakiler görür.
+                        </p>
+                      ) : (
+                        roomMsgs.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                              m.fromWallet === wallet
+                                ? "ml-auto bg-accent text-accent-ink"
+                                : "bg-surface text-foreground"
+                            }`}
+                          >
+                            {m.fromWallet !== wallet ? (
+                              <p className="mb-0.5 font-mono text-[10px] opacity-70">
+                                {shortAddress(m.fromWallet)}
+                              </p>
+                            ) : null}
+                            {m.body}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="flex gap-2 border-t border-border p-2">
+                      <Input
+                        value={roomDraft}
+                        onChange={(e) => setRoomDraft(e.target.value)}
+                        placeholder="Yer odasına yaz…"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void sendRoomMsg();
+                        }}
+                      />
+                      <Button
+                        disabled={busy}
+                        onClick={() => void sendRoomMsg()}
+                      >
+                        Gönder
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
             {tab === "profile" && (
               <section className="space-y-4">
                 <div className="space-y-2">
@@ -721,6 +837,7 @@ export function NearApp() {
             {(
               [
                 ["radar", Radio, "Radar"],
+                ["room", Users, "Oda"],
                 ["chat", MessageCircle, "Chat"],
                 ["profile", UserRound, "Profil"],
               ] as const
