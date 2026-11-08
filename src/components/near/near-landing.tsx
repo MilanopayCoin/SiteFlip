@@ -137,18 +137,18 @@ export function NearLanding() {
             {[
               {
                 icon: Radio,
-                title: "Radar",
-                body: "Konumunu kaba geohash ile aç. 45 dakika — sonra düşersin.",
+                title: "Kör radar",
+                body: "Önce sadece sinyal ve mesafe. Karşılıklı Selam ile profil açılır.",
               },
               {
                 icon: Video,
                 title: "Canlı",
-                body: "DM, yer odası veya görüntülü. StarKey imzası olmadan girilmez.",
+                body: "Mutual Selam sonrası DM ve görüntülü. Yer odası check-in’le açık.",
               },
               {
                 icon: Gift,
                 title: "Hediye",
-                body: "Selam, Boost, Spotlight — SUPRA ile. Yer kasasına da bırak.",
+                body: "Ücretsiz Selam veya SUPRA Wave/Boost — kilit ve gece tahtı.",
               },
             ].map((item, i) => (
               <motion.li

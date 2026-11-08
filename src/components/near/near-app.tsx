@@ -30,10 +30,14 @@ import {
 } from "@/lib/near/client";
 import { GIFT_CATALOG, ICEBREAKERS } from "@/lib/near/gifts";
 import {
+  blindLabel,
   blockWallet,
   loadBlocked,
+  loadStreak,
   MOOD_PRESETS,
+  recordCheckInStreak,
   recordLocalReport,
+  type NearStreak,
   unblockWallet,
 } from "@/lib/near/safety";
 import type {
@@ -133,6 +137,7 @@ export function NearApp() {
   const [waveMutual, setWaveMutual] = useState<Set<string>>(
     () => new Set()
   );
+  const [streak, setStreak] = useState<NearStreak | null>(null);
 
   const wallet = starkey.account;
 
@@ -277,6 +282,7 @@ export function NearApp() {
     setSessionReady(Boolean(getNearToken()));
     setSeenMap(loadSeen());
     setBlocked(loadBlocked());
+    setStreak(loadStreak());
     try {
       const sp = new URLSearchParams(window.location.search);
       const peer = sp.get("peer");
@@ -429,6 +435,9 @@ export function NearApp() {
       setCoords(next);
       setCheckedIn(true);
       setExpiresAt(data.presence?.expiresAt || null);
+      if (data.presence?.geohash) {
+        setStreak(recordCheckInStreak(data.presence.geohash));
+      }
       if (inviteGeohash) {
         setInviteHint(
           `Check-in tamam · davet bölgesi ${inviteGeohash}`
@@ -903,6 +912,15 @@ export function NearApp() {
                 {inviteHint ? (
                   <p className="text-xs text-success">{inviteHint}</p>
                 ) : null}
+                {checkedIn && streak && streak.count > 0 ? (
+                  <p className="text-xs text-muted">
+                    Check-in serisi ·{" "}
+                    <span className="text-accent">{streak.count} gece</span>
+                    {streak.geohash ? (
+                      <span className="font-mono"> · {streak.geohash}</span>
+                    ) : null}
+                  </p>
+                ) : null}
 
                 {checkedIn && hotZones.length > 0 ? (
                   <div className="flex gap-2 overflow-x-auto pb-1">
@@ -943,7 +961,11 @@ export function NearApp() {
                             onClick={() => void sendFreeWave(p.wallet)}
                             className="rounded-full border border-accent/40 px-2.5 py-1 text-[11px]"
                           >
-                            {p.avatarEmoji} {p.displayName.slice(0, 12)} · dön
+                            ◎{" "}
+                            {p.distanceM != null
+                              ? `≈${p.distanceM}m`
+                              : blindLabel(p.wallet)}{" "}
+                            · dön
                           </button>
                         ))}
                     </div>
@@ -1070,6 +1092,7 @@ export function NearApp() {
                     {rankedPeers.map((p) => {
                       const score = scoreByWallet.get(p.wallet) || 0;
                       const boosted = score >= 10;
+                      const open = isUnlocked(p.wallet);
                       return (
                       <li
                         key={p.wallet}
@@ -1082,16 +1105,22 @@ export function NearApp() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-lg">
-                              <span className="mr-2">{p.avatarEmoji}</span>
-                              {p.displayName}
+                              <span className="mr-2">
+                                {open ? p.avatarEmoji : "◎"}
+                              </span>
+                              {open ? p.displayName : blindLabel(p.wallet)}
                               {boosted ? (
                                 <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-accent">
                                   Boost
                                 </span>
                               ) : null}
                             </p>
-                            {p.mood ? (
+                            {open && p.mood ? (
                               <p className="text-sm text-muted">{p.mood}</p>
+                            ) : !open ? (
+                              <p className="text-sm text-muted">
+                                Kör radar — Selam ile profil açılır
+                              </p>
                             ) : null}
                             <p className="mt-1 flex items-center gap-1 text-[11px] text-muted">
                               <MapPin className="h-3 w-3" />
@@ -1371,17 +1400,26 @@ export function NearApp() {
                         <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px]">
                           {emoji} Sen
                         </span>
-                        {rankedPeers.slice(0, 12).map((p) => (
+                        {rankedPeers.slice(0, 12).map((p) => {
+                          const open = isUnlocked(p.wallet);
+                          return (
                           <button
                             key={p.wallet}
                             type="button"
-                            onClick={() => void openChat(p.wallet)}
+                            onClick={() =>
+                              open
+                                ? void openChat(p.wallet)
+                                : void sendFreeWave(p.wallet)
+                            }
                             className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted"
-                            title={p.displayName}
+                            title={open ? p.displayName : "Selam ile aç"}
                           >
-                            {p.avatarEmoji} {p.displayName.slice(0, 10)}
+                            {open
+                              ? `${p.avatarEmoji} ${p.displayName.slice(0, 10)}`
+                              : `◎ ${blindLabel(p.wallet)}`}
                           </button>
-                        ))}
+                          );
+                        })}
                         {rankedPeers.length === 0 ? (
                           <span className="text-[10px] text-muted">
                             Henüz başka üye yok
@@ -1515,6 +1553,17 @@ export function NearApp() {
                   <UserRound className="mr-2 h-4 w-4" />
                   Kaydet
                 </Button>
+                {streak ? (
+                  <p className="text-sm text-muted">
+                    Check-in serisi:{" "}
+                    <span className="font-medium text-accent">
+                      {streak.count} gece
+                    </span>
+                    {streak.count >= 3
+                      ? " · gece canavarı 🔥"
+                      : " — ardışık gecelerde buradasın"}
+                  </p>
+                ) : null}
                 {profile ? (
                   <p className="font-mono text-[11px] text-muted">
                     {profile.wallet}
