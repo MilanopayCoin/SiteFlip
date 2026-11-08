@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { StarkeyConnect } from "@/components/qr-menu/starkey-connect";
 import type { MenuCategory } from "@/lib/qr-menu/types";
 
 type EditorMenu = {
@@ -225,7 +226,8 @@ function EditorInner() {
             Free forever. Changes go live when you save.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-start justify-end gap-2">
+          <StarkeyConnect />
           <Button type="button" variant="outline" asChild>
             <a href={publicUrl} target="_blank" rel="noreferrer">
               <ExternalLink className="mr-1 h-4 w-4" />
@@ -238,6 +240,11 @@ function EditorInner() {
           </Button>
         </div>
       </header>
+
+      <p className="mt-3 text-xs text-muted">
+        StarKey (Supra) is optional for owners — guest menus stay wallet-free.
+        Connect now to prepare venue claim & tips (coming next).
+      </p>
 
       {(error || savedAt) && (
         <p
