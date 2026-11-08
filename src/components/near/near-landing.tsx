@@ -53,12 +53,20 @@ export function NearLanding() {
         >
           JIY Near
         </p>
-        <Link
-          href="/near/app"
-          className="text-sm text-[#a1a1aa] transition-colors hover:text-[#f2f2f0]"
-        >
-          Uygulamaya gir
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/near/rulet"
+            className="text-sm text-[#a1a1aa] transition-colors hover:text-[#f2f2f0]"
+          >
+            Rulet
+          </Link>
+          <Link
+            href="/near/app"
+            className="text-sm text-[#a1a1aa] transition-colors hover:text-[#f2f2f0]"
+          >
+            Uygulamaya gir
+          </Link>
+        </div>
       </header>
 
       {/* Hero — one composition: brand, headline, line, CTA */}

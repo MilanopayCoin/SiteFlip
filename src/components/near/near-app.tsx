@@ -937,6 +937,12 @@ export function NearApp() {
             <p className="font-display text-xl font-semibold tracking-tight">
               Şu an yakınımda
             </p>
+            <Link
+              href="/near/rulet"
+              className="text-[11px] text-muted hover:text-accent"
+            >
+              Görüntülü rulet →
+            </Link>
           </div>
           {sessionReady && wallet ? (
             <button
