@@ -28,7 +28,7 @@ import {
   setNearToken,
   signInWithStarkey,
 } from "@/lib/near/client";
-import { GIFT_CATALOG } from "@/lib/near/gifts";
+import { GIFT_CATALOG, ICEBREAKERS } from "@/lib/near/gifts";
 import {
   blockWallet,
   loadBlocked,
@@ -39,6 +39,8 @@ import {
 import type {
   NearCall,
   NearGiftBoardRow,
+  NearGiftInboxItem,
+  NearHotZone,
   NearPeer,
   NearPlacePot,
   NearProfile,
@@ -124,6 +126,8 @@ export function NearApp() {
   const [blocked, setBlocked] = useState<string[]>([]);
   const [pendingPeer, setPendingPeer] = useState<string | null>(null);
   const [inviteGeohash, setInviteGeohash] = useState<string | null>(null);
+  const [hotZones, setHotZones] = useState<NearHotZone[]>([]);
+  const [inbox, setInbox] = useState<NearGiftInboxItem[]>([]);
 
   const wallet = starkey.account;
 
@@ -141,12 +145,22 @@ export function NearApp() {
   const refreshPeers = useCallback(async () => {
     const data = await nearFetch("/api/near/presence");
     setPeers(data.peers || []);
+    setHotZones(data.hotZones || []);
     if (data.me?.expiresAt) {
       setExpiresAt(data.me.expiresAt);
       setCheckedIn(true);
     } else if (data.me == null) {
       // only clear if server explicitly has no presence
       setExpiresAt(null);
+    }
+  }, []);
+
+  const refreshInbox = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/gifts?inbox=1");
+      setInbox(data.inbox || []);
+    } catch {
+      setInbox([]);
     }
   }, []);
 
@@ -253,6 +267,7 @@ export function NearApp() {
         await refreshPeers();
         await refreshThreads();
         await refreshBoard();
+        await refreshInbox();
         setError(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Load failed";
@@ -273,6 +288,7 @@ export function NearApp() {
     refreshPeers,
     refreshThreads,
     refreshBoard,
+    refreshInbox,
   ]);
 
   useEffect(() => {
@@ -280,9 +296,10 @@ export function NearApp() {
     const id = window.setInterval(() => {
       void refreshThreads();
       void refreshBoard();
+      void refreshInbox();
     }, 12_000);
     return () => window.clearInterval(id);
-  }, [sessionReady, wallet, refreshThreads, refreshBoard]);
+  }, [sessionReady, wallet, refreshThreads, refreshBoard, refreshInbox]);
 
   useEffect(() => {
     if (!activeThreadId || !sessionReady) return;
@@ -568,8 +585,38 @@ export function NearApp() {
       );
       window.setTimeout(() => setGiftFlash(null), 2200);
       await refreshBoard();
+      await refreshInbox();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendIcebreaker(text: string) {
+    setDraft(text);
+    // auto-send for one-tap feel
+    if (!activeThreadId && !activePeer) return;
+    setBusy(true);
+    try {
+      await nearFetch("/api/near/threads", {
+        method: "POST",
+        body: JSON.stringify({
+          threadId: activeThreadId || undefined,
+          peerWallet: activePeer || undefined,
+          text,
+        }),
+      });
+      setDraft("");
+      if (activeThreadId) {
+        const data = await nearFetch(
+          `/api/near/threads?threadId=${encodeURIComponent(activeThreadId)}`
+        );
+        setMsgs(data.messages || []);
+      }
+      await refreshThreads();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Send failed");
     } finally {
       setBusy(false);
     }
@@ -781,6 +828,51 @@ export function NearApp() {
                 </div>
                 {inviteHint ? (
                   <p className="text-xs text-success">{inviteHint}</p>
+                ) : null}
+
+                {checkedIn && hotZones.length > 0 ? (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {hotZones.map((z) => (
+                      <span
+                        key={z.geohash}
+                        className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10px] ${
+                          z.mine
+                            ? "border-accent/50 bg-accent/10 text-accent"
+                            : "border-border text-muted"
+                        }`}
+                      >
+                        {z.mine ? "Sen · " : ""}
+                        {z.geohash} · {z.count} aktif
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                {inbox.length > 0 ? (
+                  <div className="rounded-xl border border-border bg-surface/50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                      Bana gelen hediyeler
+                    </p>
+                    <ul className="mt-2 space-y-1.5">
+                      {inbox.slice(0, 5).map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <button
+                            type="button"
+                            className="truncate text-left hover:text-accent"
+                            onClick={() => void openChat(item.fromWallet)}
+                          >
+                            {item.giftEmoji} {item.fromEmoji} {item.fromName}
+                          </button>
+                          <span className="shrink-0 font-mono text-[10px] text-muted">
+                            {item.giftLabel} · {item.amountSupra}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : null}
 
                 {checkedIn && board.length > 0 ? (
@@ -1024,18 +1116,39 @@ export function NearApp() {
                       </button>
                     </div>
                     <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
-                      {msgs.map((m) => (
-                        <div
-                          key={m.id}
-                          className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
-                            m.fromWallet === wallet
-                              ? "ml-auto bg-accent text-accent-ink"
-                              : "bg-surface text-foreground"
-                          }`}
-                        >
-                          {m.body}
+                      {msgs.length === 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-center text-xs text-muted">
+                            İlk mesajı sen at — hazır cümleler:
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-1.5">
+                            {ICEBREAKERS.map((line) => (
+                              <button
+                                key={line}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void sendIcebreaker(line)}
+                                className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted hover:border-accent/40 hover:text-foreground"
+                              >
+                                {line}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      ))}
+                      ) : (
+                        msgs.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                              m.fromWallet === wallet
+                                ? "ml-auto bg-accent text-accent-ink"
+                                : "bg-surface text-foreground"
+                            }`}
+                          >
+                            {m.body}
+                          </div>
+                        ))
+                      )}
                     </div>
                     <div className="flex gap-2 border-t border-border p-2">
                       <Input

@@ -56,6 +56,15 @@ export function getGift(id: string): GiftCatalogItem | undefined {
   return GIFT_CATALOG.find((g) => g.id === id);
 }
 
+/** One-tap openers for empty nearby chats. */
+export const ICEBREAKERS = [
+  "Bu civarda favori mekanın?",
+  "Ne içiyorsun / yiyorsun?",
+  "Kaç dakikandır buradasın?",
+  "Radar’da mıydın yoksa davetle mi geldin?",
+  "Bir boost hak ediyorum 🔥 — sen?",
+] as const;
+
 /** Convert SUPRA amount to wei string (18 decimals). */
 export function supraToWei(amount: number): string {
   const whole = Math.floor(amount);

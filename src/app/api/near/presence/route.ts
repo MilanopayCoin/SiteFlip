@@ -1,6 +1,12 @@
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { walletFromAuthHeader } from "@/lib/near/auth";
-import { checkIn, checkOut, getPresence, listNearby } from "@/lib/near/store";
+import {
+  checkIn,
+  checkOut,
+  getPresence,
+  listHotZones,
+  listNearby,
+} from "@/lib/near/store";
 
 export const runtime = "nodejs";
 
@@ -14,11 +20,12 @@ export async function GET(request: Request) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
     const max = Number(new URL(request.url).searchParams.get("maxM") || 2500);
-    const [peers, me] = await Promise.all([
+    const [peers, me, hotZones] = await Promise.all([
       listNearby(wallet, Math.min(8000, Math.max(200, max))),
       getPresence(wallet),
+      listHotZones(wallet),
     ]);
-    return Response.json({ peers, me });
+    return Response.json({ peers, me, hotZones });
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "Presence failed" },

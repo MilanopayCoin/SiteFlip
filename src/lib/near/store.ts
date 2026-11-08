@@ -2,10 +2,12 @@ import { nanoid } from "nanoid";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { coarseCoord, distanceMeters, encodeGeohash } from "@/lib/near/geohash";
-import { giftScore } from "@/lib/near/gifts";
+import { getGift, giftScore } from "@/lib/near/gifts";
 import type {
   NearGiftBoardRow,
+  NearGiftInboxItem,
   NearGiftRecord,
+  NearHotZone,
   NearMessage,
   NearPeer,
   NearPresence,
@@ -628,4 +630,81 @@ export async function listGiftLeaderboard(
 
 function shortWallet(w: string) {
   return `${w.slice(0, 6)}…${w.slice(-4)}`;
+}
+
+/** Gifts received by wallet — TikTok-style inbox. */
+export async function listGiftInbox(
+  wallet: string,
+  limit = 20
+): Promise<NearGiftInboxItem[]> {
+  const w = normWallet(wallet);
+  const all = await listGiftsFor(w, 80);
+  const received = all.filter((g) => g.toWallet === w).slice(0, limit);
+  const items: NearGiftInboxItem[] = [];
+  for (const g of received) {
+    const from = await getProfile(g.fromWallet);
+    const catalog = getGift(g.giftId);
+    items.push({
+      id: g.id,
+      fromWallet: g.fromWallet,
+      fromName: from?.displayName || shortWallet(g.fromWallet),
+      fromEmoji: from?.avatarEmoji || "✨",
+      giftId: g.giftId,
+      giftLabel: catalog?.label || g.giftId,
+      giftEmoji: catalog?.emoji || "🎁",
+      amountSupra: catalog?.amountSupra ?? 0,
+      txHash: g.txHash,
+      createdAt: g.createdAt,
+    });
+  }
+  return items;
+}
+
+/**
+ * Active check-in density near the viewer (same 4-char geohash prefix).
+ * Coarse only — no exact coords leaked.
+ */
+export async function listHotZones(wallet: string): Promise<NearHotZone[]> {
+  const me = await getPresence(wallet);
+  if (!me) return [];
+  const prefix = me.geohash.slice(0, 4);
+  const mine = me.geohash.slice(0, 5);
+  const nowMs = Date.now();
+  /** geohash5 → set of wallets (deduped across memory + DB). */
+  const zones = new Map<string, Set<string>>();
+
+  const bump = (hash: string, walletId: string) => {
+    if (!hash.startsWith(prefix)) return;
+    const key = hash.slice(0, 5);
+    if (!zones.has(key)) zones.set(key, new Set());
+    zones.get(key)!.add(normWallet(walletId));
+  };
+
+  for (const p of presenceMap().values()) {
+    if (new Date(p.expiresAt).getTime() < nowMs) continue;
+    bump(p.geohash, p.wallet);
+  }
+
+  const client = await db();
+  if (client) {
+    const { data, error } = await client
+      .from("near_presence")
+      .select("geohash,wallet")
+      .like("geohash", `${prefix}%`)
+      .gt("expires_at", now());
+    if (!error || !isSchemaGap(error)) {
+      for (const row of data || []) bump(row.geohash, row.wallet);
+    }
+  }
+
+  bump(me.geohash, me.wallet);
+
+  return [...zones.entries()]
+    .map(([geohash, set]) => ({
+      geohash,
+      count: set.size,
+      mine: geohash === mine,
+    }))
+    .sort((a, b) => b.count - a.count || a.geohash.localeCompare(b.geohash))
+    .slice(0, 8);
 }

@@ -2,6 +2,7 @@ import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { walletFromAuthHeader } from "@/lib/near/auth";
 import { GIFT_CATALOG, getGift, supraToWei } from "@/lib/near/gifts";
 import {
+  listGiftInbox,
   listGiftLeaderboard,
   listGiftsFor,
   recordGift,
@@ -15,13 +16,22 @@ export async function GET(request: Request) {
     const wallet = await walletFromAuthHeader(
       request.headers.get("authorization")
     );
-    const board = new URL(request.url).searchParams.get("board");
+    const sp = new URL(request.url).searchParams;
+    const board = sp.get("board");
+    const inbox = sp.get("inbox");
     if (board === "1" || board === "true") {
       if (!wallet) {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
       const leaderboard = await listGiftLeaderboard(15);
       return Response.json({ catalog: GIFT_CATALOG, leaderboard });
+    }
+    if (inbox === "1" || inbox === "true") {
+      if (!wallet) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      const items = await listGiftInbox(wallet, 25);
+      return Response.json({ catalog: GIFT_CATALOG, inbox: items });
     }
     if (!wallet) {
       return Response.json({ catalog: GIFT_CATALOG });

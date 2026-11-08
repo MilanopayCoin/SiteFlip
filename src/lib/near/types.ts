@@ -60,6 +60,25 @@ export type NearGiftBoardRow = {
   score: number;
 };
 
+export type NearHotZone = {
+  geohash: string;
+  count: number;
+  mine: boolean;
+};
+
+export type NearGiftInboxItem = {
+  id: string;
+  fromWallet: string;
+  fromName: string;
+  fromEmoji: string;
+  giftId: string;
+  giftLabel: string;
+  giftEmoji: string;
+  amountSupra: number;
+  txHash: string | null;
+  createdAt: string;
+};
+
 export type GiftCatalogItem = {
   id: string;
   label: string;
