@@ -40,6 +40,7 @@ import {
   type NearStreak,
   unblockWallet,
 } from "@/lib/near/safety";
+import type { NearTableClaim } from "@/lib/near/claims";
 import type {
   NearCall,
   NearGiftBoardRow,
@@ -138,6 +139,9 @@ export function NearApp() {
     () => new Set()
   );
   const [streak, setStreak] = useState<NearStreak | null>(null);
+  const [claims, setClaims] = useState<NearTableClaim[]>([]);
+  const [mineClaim, setMineClaim] = useState<NearTableClaim | null>(null);
+  const [claimLabel, setClaimLabel] = useState("Masa");
 
   const wallet = starkey.account;
 
@@ -217,9 +221,13 @@ export function NearApp() {
       const data = await nearFetch("/api/near/rooms");
       setRoomMsgs(data.messages || []);
       setRoomHash(data.geohash || null);
+      setClaims(data.claims || []);
+      setMineClaim(data.mineClaim || null);
     } catch {
       setRoomMsgs([]);
       setRoomHash(null);
+      setClaims([]);
+      setMineClaim(null);
     }
   }, []);
 
@@ -261,6 +269,39 @@ export function NearApp() {
       await refreshRoom();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Room send failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pinTable() {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/claims", {
+        method: "POST",
+        body: JSON.stringify({ label: claimLabel || "Masa" }),
+      });
+      setMineClaim(data.claim || null);
+      setClaims(data.claims || []);
+      setGiftFlash(`📌 ${data.claim?.label || "Masa"} sabitlendi · 45dk`);
+      window.setTimeout(() => setGiftFlash(null), 2200);
+      await refreshRoom();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Claim failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unpinTable() {
+    setBusy(true);
+    try {
+      const data = await nearFetch("/api/near/claims", { method: "DELETE" });
+      setMineClaim(null);
+      setClaims(data.claims || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Release failed");
     } finally {
       setBusy(false);
     }
@@ -908,6 +949,28 @@ export function NearApp() {
                   >
                     Davet et
                   </Button>
+                  {checkedIn ? (
+                    mineClaim ? (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void unpinTable()}
+                      >
+                        📌 {mineClaim.label}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          setTab("room");
+                          void pinTable();
+                        }}
+                      >
+                        📌 Masa sabitle
+                      </Button>
+                    )
+                  ) : null}
                 </div>
                 {inviteHint ? (
                   <p className="text-xs text-success">{inviteHint}</p>
@@ -1425,6 +1488,81 @@ export function NearApp() {
                             Henüz başka üye yok
                           </span>
                         ) : null}
+                      </div>
+                      <div className="mt-2 space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                          Masa pinleri
+                        </p>
+                        {claims.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {claims.map((c) => {
+                              const open = isUnlocked(c.wallet);
+                              const mine =
+                                wallet &&
+                                c.wallet === wallet.toLowerCase();
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  disabled={busy || Boolean(mine)}
+                                  onClick={() => {
+                                    if (mine) return;
+                                    if (open) void openChat(c.wallet);
+                                    else void sendFreeWave(c.wallet);
+                                  }}
+                                  className={`rounded-lg border px-2 py-1 text-left text-[11px] ${
+                                    mine
+                                      ? "border-accent/50 bg-accent/10 text-accent"
+                                      : "border-border text-muted"
+                                  }`}
+                                >
+                                  📌 {c.label}
+                                  <span className="ml-1 font-mono text-[9px] opacity-70">
+                                    {mine
+                                      ? "sen"
+                                      : open
+                                        ? shortAddress(c.wallet)
+                                        : "◎"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-muted">
+                            Henüz pin yok — masanı 45 dk sabitle.
+                          </p>
+                        )}
+                        <div className="flex gap-1.5">
+                          {mineClaim ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void unpinTable()}
+                            >
+                              Pin kaldır · {mineClaim.label}
+                            </Button>
+                          ) : (
+                            <>
+                              <Input
+                                value={claimLabel}
+                                onChange={(e) =>
+                                  setClaimLabel(e.target.value.slice(0, 32))
+                                }
+                                placeholder="Masa 4 / Bar / …"
+                                className="h-8 text-xs"
+                              />
+                              <Button
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => void pinTable()}
+                              >
+                                Sabitle
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">

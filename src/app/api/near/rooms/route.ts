@@ -1,5 +1,6 @@
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { walletFromAuthHeader } from "@/lib/near/auth";
+import { listClaims, myClaim } from "@/lib/near/claims";
 import { listRoomMessages, postRoomMessage } from "@/lib/near/rooms";
 import { getPresence } from "@/lib/near/store";
 
@@ -19,13 +20,21 @@ export async function GET(request: Request) {
       return Response.json({
         messages: [],
         geohash: null,
+        claims: [],
+        mineClaim: null,
         hint: "Check-in required for place room",
       });
     }
-    const messages = await listRoomMessages(presence.geohash);
+    const [messages, claims, mineClaim] = await Promise.all([
+      listRoomMessages(presence.geohash),
+      listClaims(presence.geohash),
+      myClaim(wallet),
+    ]);
     return Response.json({
       messages,
       geohash: presence.geohash.slice(0, 5),
+      claims,
+      mineClaim,
     });
   } catch (e) {
     return Response.json(

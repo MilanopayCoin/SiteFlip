@@ -29,6 +29,7 @@ const FILES = [
   "011_near_calls_pots.sql",
   "012_near_rooms.sql",
   "013_near_waves.sql",
+  "014_near_claims.sql",
 ];
 
 /** Postgres codes we treat as "already applied" (non-destructive continue). */
