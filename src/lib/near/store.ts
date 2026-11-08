@@ -2,7 +2,9 @@ import { nanoid } from "nanoid";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { coarseCoord, distanceMeters, encodeGeohash } from "@/lib/near/geohash";
+import { giftScore } from "@/lib/near/gifts";
 import type {
+  NearGiftBoardRow,
   NearGiftRecord,
   NearMessage,
   NearPeer,
@@ -533,12 +535,13 @@ export async function listGiftsFor(wallet: string, limit = 30) {
   if (mem.length) return mem.slice(0, limit);
   const client = await db();
   if (!client) return [];
-  const { data } = await client
+  const { data, error } = await client
     .from("near_gifts")
     .select("*")
     .or(`to_wallet.eq.${w},from_wallet.eq.${w}`)
     .order("created_at", { ascending: false })
     .limit(limit);
+  if (error && isSchemaGap(error)) return mem.slice(0, limit);
   return (data || []).map((row) => ({
     id: row.id,
     fromWallet: row.from_wallet,
@@ -548,4 +551,81 @@ export async function listGiftsFor(wallet: string, limit = 30) {
     txHash: row.tx_hash,
     createdAt: row.created_at,
   })) as NearGiftRecord[];
+}
+
+async function loadRecentGifts(limit = 400): Promise<NearGiftRecord[]> {
+  const mem = gifts();
+  const client = await db();
+  if (!client) return mem.slice(0, limit);
+  const { data, error } = await client
+    .from("near_gifts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error && isSchemaGap(error)) return mem.slice(0, limit);
+  const rows = (data || []).map((row) => ({
+    id: row.id,
+    fromWallet: row.from_wallet,
+    toWallet: row.to_wallet,
+    giftId: row.gift_id,
+    amountWei: row.amount_wei,
+    txHash: row.tx_hash,
+    createdAt: row.created_at,
+  })) as NearGiftRecord[];
+  // Prefer memory for same-isolate freshness, then DB.
+  const seen = new Set(mem.map((g) => g.id));
+  return [...mem, ...rows.filter((r) => !seen.has(r.id))].slice(0, limit);
+}
+
+/** Top gift receivers — powers radar boost + night board UI. */
+export async function listGiftLeaderboard(
+  limit = 15
+): Promise<NearGiftBoardRow[]> {
+  const all = await loadRecentGifts(500);
+  const agg = new Map<
+    string,
+    { count: number; wei: bigint; score: number }
+  >();
+  for (const g of all) {
+    const cur = agg.get(g.toWallet) || {
+      count: 0,
+      wei: BigInt(0),
+      score: 0,
+    };
+    cur.count += 1;
+    try {
+      cur.wei += BigInt(g.amountWei || "0");
+    } catch {
+      // ignore bad wei
+    }
+    cur.score += giftScore(g.giftId);
+    agg.set(g.toWallet, cur);
+  }
+  const wallets = [...agg.keys()];
+  const profilesByWallet = new Map<string, NearProfile>();
+  await Promise.all(
+    wallets.map(async (w) => {
+      const p = await getProfile(w);
+      if (p) profilesByWallet.set(w, p);
+    })
+  );
+  return wallets
+    .map((wallet) => {
+      const a = agg.get(wallet)!;
+      const p = profilesByWallet.get(wallet);
+      return {
+        wallet,
+        displayName: p?.displayName || shortWallet(wallet),
+        avatarEmoji: p?.avatarEmoji || "✨",
+        receivedCount: a.count,
+        receivedWei: a.wei.toString(),
+        score: a.score,
+      } satisfies NearGiftBoardRow;
+    })
+    .sort((a, b) => b.score - a.score || b.receivedCount - a.receivedCount)
+    .slice(0, limit);
+}
+
+function shortWallet(w: string) {
+  return `${w.slice(0, 6)}…${w.slice(-4)}`;
 }

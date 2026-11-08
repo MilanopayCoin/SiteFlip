@@ -49,6 +49,17 @@ export type NearGiftRecord = {
   createdAt: string;
 };
 
+/** Aggregated gift score for radar / night board. */
+export type NearGiftBoardRow = {
+  wallet: string;
+  displayName: string;
+  avatarEmoji: string;
+  receivedCount: number;
+  receivedWei: string;
+  /** Weighted score: wave=1, boost=10, spotlight=50, heart=5, crown=100 */
+  score: number;
+};
+
 export type GiftCatalogItem = {
   id: string;
   label: string;

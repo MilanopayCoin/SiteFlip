@@ -29,7 +29,13 @@ import {
   signInWithStarkey,
 } from "@/lib/near/client";
 import { GIFT_CATALOG } from "@/lib/near/gifts";
-import type { NearCall, NearPeer, NearPlacePot, NearProfile } from "@/lib/near/types";
+import type {
+  NearCall,
+  NearGiftBoardRow,
+  NearPeer,
+  NearPlacePot,
+  NearProfile,
+} from "@/lib/near/types";
 import {
   shortAddress,
   STARKEY_INSTALL_URL,
@@ -51,6 +57,26 @@ type Msg = {
   body: string;
   createdAt: string;
 };
+
+const SEEN_KEY = "jiy-near-thread-seen";
+
+function loadSeen(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || "{}") as Record<
+      string,
+      string
+    >;
+  } catch {
+    return {};
+  }
+}
+
+function markThreadSeen(threadId: string, at: string) {
+  const seen = loadSeen();
+  seen[threadId] = at;
+  localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+}
 
 export function NearApp() {
   const starkey = useStarkeyEvm();
@@ -85,6 +111,9 @@ export function NearApp() {
     null
   );
   const [inviteHint, setInviteHint] = useState<string | null>(null);
+  const [board, setBoard] = useState<NearGiftBoardRow[]>([]);
+  const [giftFlash, setGiftFlash] = useState<string | null>(null);
+  const [seenMap, setSeenMap] = useState<Record<string, string>>({});
 
   const wallet = starkey.account;
 
@@ -129,6 +158,15 @@ export function NearApp() {
     } catch {
       setRoomMsgs([]);
       setRoomHash(null);
+    }
+  }, []);
+
+  const refreshBoard = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/gifts?board=1");
+      setBoard(data.leaderboard || []);
+    } catch {
+      setBoard([]);
     }
   }, []);
 
@@ -180,6 +218,7 @@ export function NearApp() {
 
   useEffect(() => {
     setSessionReady(Boolean(getNearToken()));
+    setSeenMap(loadSeen());
   }, []);
 
   useEffect(() => {
@@ -189,6 +228,7 @@ export function NearApp() {
         await refreshProfile();
         await refreshPeers();
         await refreshThreads();
+        await refreshBoard();
         setError(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Load failed";
@@ -202,7 +242,23 @@ export function NearApp() {
         setError(msg);
       }
     })();
-  }, [sessionReady, wallet, refreshProfile, refreshPeers, refreshThreads]);
+  }, [
+    sessionReady,
+    wallet,
+    refreshProfile,
+    refreshPeers,
+    refreshThreads,
+    refreshBoard,
+  ]);
+
+  useEffect(() => {
+    if (!sessionReady || !wallet) return;
+    const id = window.setInterval(() => {
+      void refreshThreads();
+      void refreshBoard();
+    }, 12_000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, wallet, refreshThreads, refreshBoard]);
 
   useEffect(() => {
     if (!activeThreadId || !sessionReady) return;
@@ -212,7 +268,14 @@ export function NearApp() {
         const data = await nearFetch(
           `/api/near/threads?threadId=${encodeURIComponent(activeThreadId)}`
         );
-        if (!stop) setMsgs(data.messages || []);
+        if (!stop) {
+          setMsgs(data.messages || []);
+          const last =
+            data.messages?.[data.messages.length - 1]?.createdAt ||
+            new Date().toISOString();
+          markThreadSeen(activeThreadId, last);
+          setSeenMap(loadSeen());
+        }
       } catch {
         // ignore poll errors
       }
@@ -426,6 +489,12 @@ export function NearApp() {
     setError(null);
     try {
       await sendGiftOnChain({ from: wallet, to: peer, giftId });
+      const item = GIFT_CATALOG.find((g) => g.id === giftId);
+      setGiftFlash(
+        `${item?.emoji || "🎁"} ${item?.label || "Hediye"} gönderildi`
+      );
+      window.setTimeout(() => setGiftFlash(null), 2200);
+      await refreshBoard();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
     } finally {
@@ -481,6 +550,30 @@ export function NearApp() {
     return p?.displayName || shortAddress(activePeer);
   }, [activePeer, peers]);
 
+  const scoreByWallet = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of board) m.set(row.wallet, row.score);
+    return m;
+  }, [board]);
+
+  const rankedPeers = useMemo(() => {
+    return [...peers].sort((a, b) => {
+      const sa = scoreByWallet.get(a.wallet) || 0;
+      const sb = scoreByWallet.get(b.wallet) || 0;
+      if (sb !== sa) return sb - sa;
+      return (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9);
+    });
+  }, [peers, scoreByWallet]);
+
+  const unreadChat = useMemo(() => {
+    return threads.filter((t) => {
+      if (t.id === activeThreadId) return false;
+      const seen = seenMap[t.id];
+      if (!seen) return Boolean(t.updatedAt);
+      return new Date(t.updatedAt).getTime() > new Date(seen).getTime();
+    }).length;
+  }, [threads, seenMap, activeThreadId]);
+
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
       <div
@@ -520,6 +613,11 @@ export function NearApp() {
         {error ? (
           <p className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
+          </p>
+        ) : null}
+        {giftFlash ? (
+          <p className="mb-4 animate-pulse rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent">
+            {giftFlash}
           </p>
         ) : null}
 
@@ -585,6 +683,7 @@ export function NearApp() {
                     onClick={() => {
                       void refreshPeers();
                       void refreshPot();
+                      void refreshBoard();
                     }}
                   >
                     Yenile
@@ -599,6 +698,32 @@ export function NearApp() {
                 </div>
                 {inviteHint ? (
                   <p className="text-xs text-success">{inviteHint}</p>
+                ) : null}
+
+                {checkedIn && board.length > 0 ? (
+                  <div className="rounded-xl border border-border bg-surface/50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                      Gece tahtı · hediye skoru
+                    </p>
+                    <ol className="mt-2 space-y-1.5">
+                      {board.slice(0, 5).map((row, i) => (
+                        <li
+                          key={row.wallet}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <span className="truncate">
+                            <span className="mr-1.5 font-mono text-[10px] text-muted">
+                              #{i + 1}
+                            </span>
+                            {row.avatarEmoji} {row.displayName}
+                          </span>
+                          <span className="shrink-0 font-mono text-[11px] text-accent">
+                            {row.score} pts · {row.receivedCount}×
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
                 ) : null}
 
                 {checkedIn && pot ? (
@@ -665,16 +790,28 @@ export function NearApp() {
                   </div>
                 ) : (
                   <ul className="space-y-3">
-                    {peers.map((p) => (
+                    {rankedPeers.map((p) => {
+                      const score = scoreByWallet.get(p.wallet) || 0;
+                      const boosted = score >= 10;
+                      return (
                       <li
                         key={p.wallet}
-                        className="rounded-xl border border-border bg-surface/60 p-4"
+                        className={`rounded-xl border bg-surface/60 p-4 ${
+                          boosted
+                            ? "border-accent/50 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_25%,transparent)]"
+                            : "border-border"
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-lg">
                               <span className="mr-2">{p.avatarEmoji}</span>
                               {p.displayName}
+                              {boosted ? (
+                                <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                                  Boost
+                                </span>
+                              ) : null}
                             </p>
                             {p.mood ? (
                               <p className="text-sm text-muted">{p.mood}</p>
@@ -684,6 +821,7 @@ export function NearApp() {
                               {p.distanceM != null
                                 ? `≈ ${p.distanceM} m`
                                 : "yakın"}
+                              {score > 0 ? ` · ${score} pts` : ""}
                             </p>
                           </div>
                           <div className="flex flex-col gap-1.5">
@@ -719,7 +857,8 @@ export function NearApp() {
                           ))}
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
               </section>
@@ -734,24 +873,40 @@ export function NearApp() {
                         Henüz sohbet yok — radar’dan birine yaz.
                       </p>
                     ) : (
-                      threads.map((t) => (
+                      threads.map((t) => {
+                        const unread =
+                          t.id !== activeThreadId &&
+                          (!seenMap[t.id] ||
+                            new Date(t.updatedAt).getTime() >
+                              new Date(seenMap[t.id]).getTime());
+                        return (
                         <button
                           key={t.id}
                           type="button"
-                          className="flex w-full flex-col rounded-xl border border-border px-3 py-3 text-left hover:border-accent/40"
+                          className={`flex w-full flex-col rounded-xl border px-3 py-3 text-left hover:border-accent/40 ${
+                            unread
+                              ? "border-accent/40 bg-accent/5"
+                              : "border-border"
+                          }`}
                           onClick={() => {
                             setActiveThreadId(t.id);
                             setActivePeer(t.peerWallet);
+                            markThreadSeen(t.id, t.updatedAt || new Date().toISOString());
+                            setSeenMap(loadSeen());
                           }}
                         >
-                          <span className="font-medium">
+                          <span className="flex items-center justify-between gap-2 font-medium">
                             {shortAddress(t.peerWallet)}
+                            {unread ? (
+                              <span className="h-2 w-2 shrink-0 rounded-full bg-accent" />
+                            ) : null}
                           </span>
                           <span className="truncate text-xs text-muted">
                             {t.lastBody || "—"}
                           </span>
                         </button>
-                      ))
+                        );
+                      })
                     )}
                   </ul>
                 ) : (
@@ -965,11 +1120,18 @@ export function NearApp() {
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`flex flex-col items-center gap-0.5 rounded-lg px-4 py-1.5 text-[11px] ${
+                className={`relative flex flex-col items-center gap-0.5 rounded-lg px-4 py-1.5 text-[11px] ${
                   tab === id ? "text-accent" : "text-muted"
                 }`}
               >
-                <Icon className="h-5 w-5" />
+                <span className="relative">
+                  <Icon className="h-5 w-5" />
+                  {id === "chat" && unreadChat > 0 ? (
+                    <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-bold text-accent-ink">
+                      {unreadChat > 9 ? "9+" : unreadChat}
+                    </span>
+                  ) : null}
+                </span>
                 {label}
               </button>
             ))}

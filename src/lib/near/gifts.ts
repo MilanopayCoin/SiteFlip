@@ -10,6 +10,13 @@ export const GIFT_CATALOG: GiftCatalogItem[] = [
     blurb: "İlk merhaba — radar’da nazik sinyal",
   },
   {
+    id: "heart",
+    label: "Kalp",
+    emoji: "💗",
+    amountSupra: 0.5,
+    blurb: "Yumuşak vurgu — skor +5",
+  },
+  {
     id: "boost",
     label: "Boost",
     emoji: "🔥",
@@ -23,7 +30,27 @@ export const GIFT_CATALOG: GiftCatalogItem[] = [
     amountSupra: 5,
     blurb: "Odaya animasyon + sesli vurgu",
   },
+  {
+    id: "crown",
+    label: "Taç",
+    emoji: "👑",
+    amountSupra: 10,
+    blurb: "Gece tahtı — liderlik board’unda zirve",
+  },
 ];
+
+/** Leaderboard weights — higher gifts dominate the board. */
+export const GIFT_SCORE: Record<string, number> = {
+  wave: 1,
+  heart: 5,
+  boost: 10,
+  spotlight: 50,
+  crown: 100,
+};
+
+export function giftScore(giftId: string): number {
+  return GIFT_SCORE[giftId] ?? 1;
+}
 
 export function getGift(id: string): GiftCatalogItem | undefined {
   return GIFT_CATALOG.find((g) => g.id === id);
