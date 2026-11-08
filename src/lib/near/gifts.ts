@@ -37,6 +37,20 @@ export const GIFT_CATALOG: GiftCatalogItem[] = [
     amountSupra: 10,
     blurb: "Gece tahtı — liderlik board’unda zirve",
   },
+  {
+    id: "rocket",
+    label: "Roket",
+    emoji: "🚀",
+    amountSupra: 25,
+    blurb: "TikTok vibe — 3D sahne + sesli odada patlama",
+  },
+  {
+    id: "universe",
+    label: "Evren",
+    emoji: "🌌",
+    amountSupra: 50,
+    blurb: "Mega gift — tüm odaya full-screen 3D show",
+  },
 ];
 
 /** Leaderboard weights — higher gifts dominate the board. */
@@ -46,6 +60,8 @@ export const GIFT_SCORE: Record<string, number> = {
   boost: 10,
   spotlight: 50,
   crown: 100,
+  rocket: 250,
+  universe: 500,
 };
 
 export function giftScore(giftId: string): number {

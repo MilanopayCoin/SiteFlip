@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Compass,
   Gift,
   MapPin,
   MessageCircle,
+  Mic,
   Radio,
   Users,
   UserRound,
@@ -15,6 +17,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { NearDiscover } from "@/components/near/near-discover";
+import { NearGiftFxLayer, useGiftFx } from "@/components/near/near-gift-fx";
+import { NearVoicePanel } from "@/components/near/near-voice-room";
 import {
   IncomingCallBanner,
   VideoCallAnswer,
@@ -57,7 +62,7 @@ import {
   useStarkeyEvm,
 } from "@/lib/starkey";
 
-type Tab = "radar" | "room" | "chat" | "profile";
+type Tab = "radar" | "discover" | "voice" | "chat" | "profile" | "room";
 
 type ThreadRow = {
   id: string;
@@ -145,6 +150,7 @@ export function NearApp() {
   const [claimLabel, setClaimLabel] = useState("Masa");
   const [duels, setDuels] = useState<NearDuel[]>([]);
   const [duelSeconds, setDuelSeconds] = useState(60);
+  const giftFx = useGiftFx();
 
   const wallet = starkey.account;
 
@@ -788,6 +794,7 @@ export function NearApp() {
     try {
       await sendGiftOnChain({ from: wallet, to: peer, giftId });
       const item = GIFT_CATALOG.find((g) => g.id === giftId);
+      giftFx.fire(giftId, "Sen gönderdin");
       setGiftFlash(
         `${item?.emoji || "🎁"} ${item?.label || "Hediye"} gönderildi`
       );
@@ -917,6 +924,7 @@ export function NearApp() {
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
+      <NearGiftFxLayer event={giftFx.event} onDone={giftFx.clear} />
       <div
         className="pointer-events-none fixed inset-0"
         style={{
@@ -932,17 +940,30 @@ export function NearApp() {
               href="/near"
               className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent"
             >
-              JIY Near
+              JIY Near · Live Social
             </Link>
             <p className="font-display text-xl font-semibold tracking-tight">
               Şu an yakınımda
             </p>
-            <Link
-              href="/near/rulet"
-              className="text-[11px] text-muted hover:text-accent"
-            >
-              Görüntülü rulet →
-            </Link>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+              <Link href="/near/rulet" className="hover:text-accent">
+                Rulet →
+              </Link>
+              <button
+                type="button"
+                className="hover:text-accent"
+                onClick={() => setTab("discover")}
+              >
+                Keşfet
+              </button>
+              <button
+                type="button"
+                className="hover:text-accent"
+                onClick={() => setTab("voice")}
+              >
+                Sesli oda
+              </button>
+            </div>
           </div>
           {sessionReady && wallet ? (
             <button
@@ -1449,6 +1470,27 @@ export function NearApp() {
               </section>
             )}
 
+            {tab === "discover" && (
+              <NearDiscover
+                peers={rankedPeers}
+                unlocked={isUnlocked}
+                busy={busy}
+                onWave={(w) => void sendFreeWave(w)}
+                onPass={(w) => hidePeer(w)}
+                onChat={(w) => void openChat(w)}
+                onGift={(w, g) => void sendGift(w, g)}
+              />
+            )}
+
+            {tab === "voice" && wallet ? (
+              <NearVoicePanel
+                wallet={wallet}
+                displayName={name || shortAddress(wallet)}
+                avatarEmoji={emoji}
+                geohashHint={roomHash || inviteGeohash}
+              />
+            ) : null}
+
             {tab === "chat" && (
               <section className="space-y-3">
                 {!activeThreadId ? (
@@ -1888,7 +1930,8 @@ export function NearApp() {
             {(
               [
                 ["radar", Radio, "Radar"],
-                ["room", Users, "Oda"],
+                ["discover", Compass, "Keşfet"],
+                ["voice", Mic, "Ses"],
                 ["chat", MessageCircle, "Chat"],
                 ["profile", UserRound, "Profil"],
               ] as const
@@ -1897,7 +1940,7 @@ export function NearApp() {
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`relative flex flex-col items-center gap-0.5 rounded-lg px-4 py-1.5 text-[11px] ${
+                className={`relative flex flex-col items-center gap-0.5 rounded-lg px-2.5 py-1.5 text-[10px] sm:px-3 sm:text-[11px] ${
                   tab === id ? "text-accent" : "text-muted"
                 }`}
               >

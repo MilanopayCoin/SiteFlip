@@ -93,8 +93,8 @@ export function NearLanding() {
             transition={{ duration: 0.55, delay: 0.2 }}
             className="mt-4 max-w-md text-base leading-relaxed text-[#9ca3af] sm:text-lg"
           >
-            Ephemeral radar, StarKey chat, görüntülü ve SUPRA hediyeler. Kaçırınca
-            kaybolur — bu yüzden şimdi.
+            Keşfet swipe, sesli odalar, 3D hediyeler, görüntülü rulet. StarKey
+            kimliğin — kaçırınca kaybolur.
           </motion.p>
           <motion.div
             {...fade}
@@ -145,18 +145,18 @@ export function NearLanding() {
             {[
               {
                 icon: Radio,
-                title: "Kör radar",
-                body: "Önce sadece sinyal ve mesafe. Karşılıklı Selam ile profil açılır.",
+                title: "Keşfet",
+                body: "Tinder gibi kaydır — kör kartlar, Selam ile açılan profiller.",
               },
               {
                 icon: Video,
-                title: "Canlı",
-                body: "Mutual Selam sonrası DM ve görüntülü. Yer odası check-in’le açık.",
+                title: "Ses + görüntü",
+                body: "Telegram tarzı sesli odalar, DM, görüntülü ve rulet masası.",
               },
               {
                 icon: Gift,
-                title: "Hediye",
-                body: "Ücretsiz Selam veya SUPRA Wave/Boost — kilit ve gece tahtı.",
+                title: "3D hediyeler",
+                body: "TikTok vibe SUPRA gift’ler — full-screen 3D show, gece tahtı.",
               },
             ].map((item, i) => (
               <motion.li
