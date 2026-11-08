@@ -47,6 +47,9 @@ export async function signInWithStarkey(wallet: string): Promise<string> {
   const provider = getStarkeyEthereum();
   if (!provider) throw new Error("StarKey not installed");
 
+  // Drop legacy memory-session tokens before minting HMAC session
+  setNearToken(null);
+
   const challenge = await nearFetch(
     `/api/near/session?wallet=${encodeURIComponent(wallet)}`
   );
@@ -63,6 +66,7 @@ export async function signInWithStarkey(wallet: string): Promise<string> {
     body: JSON.stringify({
       wallet,
       nonce: challenge.nonce,
+      issuedAt: challenge.issuedAt,
       signature,
     }),
   });

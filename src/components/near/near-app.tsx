@@ -137,8 +137,17 @@ export function NearApp() {
         await refreshProfile();
         await refreshPeers();
         await refreshThreads();
+        setError(null);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Load failed");
+        const msg = e instanceof Error ? e.message : "Load failed";
+        // Stale pre-HMAC tokens → force re-auth
+        if (/unauthorized/i.test(msg)) {
+          setNearToken(null);
+          setSessionReady(false);
+          setError("Oturum süresi doldu — StarKey ile tekrar giriş yap.");
+          return;
+        }
+        setError(msg);
       }
     })();
   }, [sessionReady, wallet, refreshProfile, refreshPeers, refreshThreads]);

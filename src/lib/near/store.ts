@@ -49,6 +49,20 @@ async function db() {
   return createServiceClient();
 }
 
+/** Missing Near tables / PostgREST schema cache — fall back to memory. */
+function isSchemaGap(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  const msg = String(err.message || "").toLowerCase();
+  return (
+    err.code === "42P01" ||
+    err.code === "PGRST205" ||
+    err.code === "PGRST204" ||
+    msg.includes("does not exist") ||
+    msg.includes("could not find the table") ||
+    msg.includes("schema cache")
+  );
+}
+
 function normWallet(w: string) {
   return w.trim().toLowerCase();
 }
@@ -93,7 +107,7 @@ export async function upsertProfile(
       created_at: profile.createdAt,
       updated_at: profile.updatedAt,
     });
-    if (error) throw new Error(error.message);
+    if (error && !isSchemaGap(error)) throw new Error(error.message);
   }
   return profile;
 }
@@ -104,11 +118,12 @@ export async function getProfile(wallet: string): Promise<NearProfile | null> {
   if (mem) return mem;
   const client = await db();
   if (!client) return null;
-  const { data } = await client
+  const { data, error } = await client
     .from("near_profiles")
     .select("*")
     .eq("wallet", w)
     .maybeSingle();
+  if (error && isSchemaGap(error)) return null;
   if (!data) return null;
   const p: NearProfile = {
     wallet: data.wallet,
@@ -160,7 +175,7 @@ export async function checkIn(
       expires_at: expiresAt,
       updated_at: ts,
     });
-    if (error) throw new Error(error.message);
+    if (error && !isSchemaGap(error)) throw new Error(error.message);
   }
   return presence;
 }
@@ -336,7 +351,9 @@ export async function getOrCreateThread(
       created_at: ts,
       updated_at: ts,
     });
-    if (error && error.code !== "23505") throw new Error(error.message);
+    if (error && error.code !== "23505" && !isSchemaGap(error)) {
+      throw new Error(error.message);
+    }
   }
   return t;
 }
