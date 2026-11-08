@@ -689,18 +689,8 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
 
             {isHost ? (
               <div className="flex flex-col gap-2">
-                {(table.phase === "lobby" || table.phase === "result") &&
-                !table.autoStart ? (
-                  <Button
-                    disabled={busy}
-                    className="w-full bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
-                    onClick={() => void startRound()}
-                  >
-                    Bahisleri aç · 30 sn
-                  </Button>
-                ) : null}
-                {(table.phase === "lobby" || table.phase === "result") &&
-                table.autoStart ? (
+                {table.autoStart &&
+                (table.phase === "lobby" || table.phase === "result") ? (
                   <p className="text-center text-[11px] text-[#c9a227]/80">
                     Otomatik tur açık — sonuç bitince bahisler yeniden açılır
                   </p>
@@ -716,17 +706,18 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
                 >
                   Otomatik tur · {table.autoStart ? "Açık" : "Kapalı"}
                 </button>
-                {table.phase === "lobby" ? (
+                {(table.phase === "lobby" ||
+                  (table.phase === "result" && !table.autoStart)) && (
                   <Button
                     disabled={busy}
                     className="w-full bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
                     onClick={() => void startRound()}
                   >
-                    {table.autoStart
+                    {table.phase === "lobby" && table.autoStart
                       ? "İlk turu şimdi başlat"
                       : "Bahisleri aç · 30 sn"}
                   </Button>
-                ) : null}
+                )}
               </div>
             ) : null}
 
