@@ -17,24 +17,32 @@ export async function GET(request: Request) {
   return Response.json(challenge);
 }
 
-/** POST { wallet, nonce, signature } → session token. */
+/** POST { wallet, nonce, issuedAt, signature } → HMAC session token. */
 export async function POST(request: Request) {
   await ensureCloudflareEnv();
   const body = (await request.json()) as {
     wallet?: string;
     nonce?: string;
+    issuedAt?: string;
     signature?: string;
   };
-  if (!body.wallet || !body.nonce || !body.signature) {
-    return Response.json({ error: "wallet, nonce, signature required" }, { status: 400 });
+  if (!body.wallet || !body.nonce || !body.issuedAt || !body.signature) {
+    return Response.json(
+      { error: "wallet, nonce, issuedAt, signature required" },
+      { status: 400 }
+    );
   }
   const session = await verifyAndCreateSession({
     wallet: body.wallet,
     nonce: body.nonce,
+    issuedAt: body.issuedAt,
     signature: body.signature as `0x${string}`,
   });
   if (!session) {
-    return Response.json({ error: "Invalid signature or expired nonce" }, { status: 401 });
+    return Response.json(
+      { error: "Invalid signature or expired challenge" },
+      { status: 401 }
+    );
   }
   return Response.json({ session });
 }

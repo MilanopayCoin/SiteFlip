@@ -15,6 +15,15 @@ export const MIGRATION_FILES = [
   "004_mollie_payments.sql",
   "005_fix_profiles_rls_recursion.sql",
   "006_marketplace_core.sql",
+  "007_quote_orders.sql",
+  "008_qr_menus.sql",
+  "009_qr_menu_venue.sql",
+  "010_near.sql",
+  "011_near_calls_pots.sql",
+  "012_near_rooms.sql",
+  "013_near_waves.sql",
+  "014_near_claims.sql",
+  "015_near_duels.sql",
 ] as const;
 
 export const MARKETPLACE_CORE_TABLES = [

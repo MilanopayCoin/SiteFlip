@@ -3,32 +3,71 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Compass,
   Gift,
   MapPin,
   MessageCircle,
+  Mic,
   Radio,
+  Users,
   UserRound,
+  Video,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { NearDiscover } from "@/components/near/near-discover";
+import { NearGiftFxLayer, useGiftFx } from "@/components/near/near-gift-fx";
 import {
+  buildLiveTicker,
+  NearLiveTicker,
+} from "@/components/near/near-live-ticker";
+import { NearMatchOverlay } from "@/components/near/near-match";
+import { NearVoicePanel } from "@/components/near/near-voice-room";
+import {
+  IncomingCallBanner,
+  VideoCallAnswer,
+  VideoCallPanel,
+} from "@/components/near/video-call";
+import {
+  contributePlacePot,
   getNearToken,
   nearFetch,
   sendGiftOnChain,
   setNearToken,
   signInWithStarkey,
 } from "@/lib/near/client";
-import { GIFT_CATALOG } from "@/lib/near/gifts";
-import type { NearPeer, NearProfile } from "@/lib/near/types";
+import { GIFT_CATALOG, ICEBREAKERS } from "@/lib/near/gifts";
+import {
+  blindLabel,
+  blockWallet,
+  loadBlocked,
+  loadStreak,
+  MOOD_PRESETS,
+  recordCheckInStreak,
+  recordLocalReport,
+  type NearStreak,
+  unblockWallet,
+} from "@/lib/near/safety";
+import type { NearTableClaim } from "@/lib/near/claims";
+import type { NearDuel } from "@/lib/near/duels";
+import type {
+  NearCall,
+  NearGiftBoardRow,
+  NearGiftInboxItem,
+  NearHotZone,
+  NearPeer,
+  NearPlacePot,
+  NearProfile,
+} from "@/lib/near/types";
 import {
   shortAddress,
   STARKEY_INSTALL_URL,
   useStarkeyEvm,
 } from "@/lib/starkey";
 
-type Tab = "radar" | "chat" | "profile";
+type Tab = "radar" | "discover" | "voice" | "chat" | "profile" | "room";
 
 type ThreadRow = {
   id: string;
@@ -43,6 +82,26 @@ type Msg = {
   body: string;
   createdAt: string;
 };
+
+const SEEN_KEY = "jiy-near-thread-seen";
+
+function loadSeen(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || "{}") as Record<
+      string,
+      string
+    >;
+  } catch {
+    return {};
+  }
+}
+
+function markThreadSeen(threadId: string, at: string) {
+  const seen = loadSeen();
+  seen[threadId] = at;
+  localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+}
 
 export function NearApp() {
   const starkey = useStarkeyEvm();
@@ -62,8 +121,98 @@ export function NearApp() {
   const [mood, setMood] = useState("");
   const [bio, setBio] = useState("");
   const [emoji, setEmoji] = useState("✨");
+  const [pot, setPot] = useState<NearPlacePot | null>(null);
+  const [drawWinner, setDrawWinner] = useState<string | null>(null);
+  const [videoPeer, setVideoPeer] = useState<string | null>(null);
+  const [answerCall, setAnswerCall] = useState<{
+    id: string;
+    from: string;
+  } | null>(null);
+  const [roomMsgs, setRoomMsgs] = useState<Msg[]>([]);
+  const [roomHash, setRoomHash] = useState<string | null>(null);
+  const [roomDraft, setRoomDraft] = useState("");
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    null
+  );
+  const [inviteHint, setInviteHint] = useState<string | null>(null);
+  const [board, setBoard] = useState<NearGiftBoardRow[]>([]);
+  const [giftFlash, setGiftFlash] = useState<string | null>(null);
+  const [seenMap, setSeenMap] = useState<Record<string, string>>({});
+  const [blocked, setBlocked] = useState<string[]>([]);
+  const [pendingPeer, setPendingPeer] = useState<string | null>(null);
+  const [inviteGeohash, setInviteGeohash] = useState<string | null>(null);
+  const [pendingVoiceId, setPendingVoiceId] = useState<string | null>(null);
+  const [hotZones, setHotZones] = useState<NearHotZone[]>([]);
+  const [inbox, setInbox] = useState<NearGiftInboxItem[]>([]);
+  const [waveOut, setWaveOut] = useState<Set<string>>(() => new Set());
+  const [waveIn, setWaveIn] = useState<Set<string>>(() => new Set());
+  const [waveMutual, setWaveMutual] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [streak, setStreak] = useState<NearStreak | null>(null);
+  const [claims, setClaims] = useState<NearTableClaim[]>([]);
+  const [mineClaim, setMineClaim] = useState<NearTableClaim | null>(null);
+  const [claimLabel, setClaimLabel] = useState("Masa");
+  const [duels, setDuels] = useState<NearDuel[]>([]);
+  const [duelSeconds, setDuelSeconds] = useState(60);
+  const giftFx = useGiftFx();
+  const [matchPeer, setMatchPeer] = useState<NearPeer | null>(null);
 
   const wallet = starkey.account;
+
+  const applyWaveSummary = useCallback(
+    (summary: {
+      outgoing?: string[];
+      incoming?: string[];
+      mutual?: string[];
+    }) => {
+      setWaveOut(new Set((summary.outgoing || []).map((w) => w.toLowerCase())));
+      setWaveIn(new Set((summary.incoming || []).map((w) => w.toLowerCase())));
+      setWaveMutual(
+        new Set((summary.mutual || []).map((w) => w.toLowerCase()))
+      );
+    },
+    []
+  );
+
+  const refreshWaves = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/waves");
+      if (data.summary) applyWaveSummary(data.summary);
+    } catch {
+      // ignore
+    }
+  }, [applyWaveSummary]);
+
+  const refreshDuels = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/duels");
+      setDuels(data.duels || []);
+      if (data.duelSeconds) setDuelSeconds(data.duelSeconds);
+    } catch {
+      setDuels([]);
+    }
+  }, []);
+
+  function isUnlocked(peer: string) {
+    return waveMutual.has(peer.toLowerCase());
+  }
+
+  const activeDuel = useMemo(() => {
+    const recentDone = duels.find(
+      (d) =>
+        d.status === "done" &&
+        d.endsAt &&
+        Date.now() - new Date(d.endsAt).getTime() < 120_000
+    );
+    return (
+      duels.find((d) => d.status === "active") ||
+      duels.find((d) => d.status === "pending") ||
+      recentDone ||
+      null
+    );
+  }, [duels]);
 
   const refreshProfile = useCallback(async () => {
     const data = await nearFetch("/api/near/profile");
@@ -79,7 +228,132 @@ export function NearApp() {
   const refreshPeers = useCallback(async () => {
     const data = await nearFetch("/api/near/presence");
     setPeers(data.peers || []);
+    setHotZones(data.hotZones || []);
+    if (data.me?.expiresAt) {
+      setExpiresAt(data.me.expiresAt);
+      setCheckedIn(true);
+    } else if (data.me == null) {
+      // only clear if server explicitly has no presence
+      setExpiresAt(null);
+    }
   }, []);
+
+  const refreshInbox = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/gifts?inbox=1");
+      setInbox(data.inbox || []);
+    } catch {
+      setInbox([]);
+    }
+  }, []);
+
+  const refreshPot = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/pots");
+      setPot(data.pot || null);
+      if (data.draw?.winnerWallet) setDrawWinner(data.draw.winnerWallet);
+    } catch {
+      setPot(null);
+    }
+  }, []);
+
+  const refreshRoom = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/rooms");
+      setRoomMsgs(data.messages || []);
+      setRoomHash(data.geohash || null);
+      setClaims(data.claims || []);
+      setMineClaim(data.mineClaim || null);
+    } catch {
+      setRoomMsgs([]);
+      setRoomHash(null);
+      setClaims([]);
+      setMineClaim(null);
+    }
+  }, []);
+
+  const refreshBoard = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/gifts?board=1");
+      setBoard(data.leaderboard || []);
+    } catch {
+      setBoard([]);
+    }
+  }, []);
+
+  async function runPotDraw() {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/pots", {
+        method: "POST",
+        body: JSON.stringify({ action: "draw" }),
+      });
+      setDrawWinner(data.draw?.winnerWallet || null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Draw failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendRoomMsg() {
+    if (!roomDraft.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await nearFetch("/api/near/rooms", {
+        method: "POST",
+        body: JSON.stringify({ text: roomDraft }),
+      });
+      setRoomDraft("");
+      await refreshRoom();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Room send failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pinTable() {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/claims", {
+        method: "POST",
+        body: JSON.stringify({ label: claimLabel || "Masa" }),
+      });
+      setMineClaim(data.claim || null);
+      setClaims(data.claims || []);
+      setGiftFlash(`📌 ${data.claim?.label || "Masa"} sabitlendi · 45dk`);
+      window.setTimeout(() => setGiftFlash(null), 2200);
+      await refreshRoom();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Claim failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unpinTable() {
+    setBusy(true);
+    try {
+      const data = await nearFetch("/api/near/claims", { method: "DELETE" });
+      setMineClaim(null);
+      setClaims(data.claims || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Release failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!sessionReady || !wallet || tab !== "room" || !checkedIn) return;
+    void refreshRoom();
+    const id = window.setInterval(() => void refreshRoom(), 4000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, wallet, tab, checkedIn, refreshRoom]);
 
   const refreshThreads = useCallback(async () => {
     const data = await nearFetch("/api/near/threads");
@@ -88,6 +362,27 @@ export function NearApp() {
 
   useEffect(() => {
     setSessionReady(Boolean(getNearToken()));
+    setSeenMap(loadSeen());
+    setBlocked(loadBlocked());
+    setStreak(loadStreak());
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const peer = sp.get("peer");
+      const g = sp.get("g");
+      if (peer && /^0x[a-fA-F0-9]{40}$/.test(peer)) {
+        setPendingPeer(peer.toLowerCase());
+      }
+      if (g && /^[0-9a-z]{3,12}$/i.test(g)) {
+        setInviteGeohash(g.toLowerCase());
+      }
+      const voice = sp.get("v") || sp.get("voice");
+      if (voice && /^[A-Za-z0-9_-]{6,24}$/.test(voice)) {
+        setPendingVoiceId(voice);
+        setTab("voice");
+      }
+    } catch {
+      // ignore bad URL
+    }
   }, []);
 
   useEffect(() => {
@@ -97,11 +392,61 @@ export function NearApp() {
         await refreshProfile();
         await refreshPeers();
         await refreshThreads();
+        await refreshBoard();
+        await refreshInbox();
+        await refreshWaves();
+        await refreshDuels();
+        setError(null);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Load failed");
+        const msg = e instanceof Error ? e.message : "Load failed";
+        // Stale pre-HMAC tokens → force re-auth
+        if (/unauthorized/i.test(msg)) {
+          setNearToken(null);
+          setSessionReady(false);
+          setError("Oturum süresi doldu — StarKey ile tekrar giriş yap.");
+          return;
+        }
+        setError(msg);
       }
     })();
-  }, [sessionReady, wallet, refreshProfile, refreshPeers, refreshThreads]);
+  }, [
+    sessionReady,
+    wallet,
+    refreshProfile,
+    refreshPeers,
+    refreshThreads,
+    refreshBoard,
+    refreshInbox,
+    refreshWaves,
+    refreshDuels,
+  ]);
+
+  useEffect(() => {
+    if (!sessionReady || !wallet) return;
+    const id = window.setInterval(() => {
+      void refreshThreads();
+      void refreshBoard();
+      void refreshInbox();
+      void refreshWaves();
+      void refreshDuels();
+    }, 12_000);
+    return () => window.clearInterval(id);
+  }, [
+    sessionReady,
+    wallet,
+    refreshThreads,
+    refreshBoard,
+    refreshInbox,
+    refreshWaves,
+    refreshDuels,
+  ]);
+
+  useEffect(() => {
+    if (!sessionReady || !wallet) return;
+    if (!activeDuel || activeDuel.status !== "active") return;
+    const id = window.setInterval(() => void refreshDuels(), 2000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, wallet, activeDuel, refreshDuels]);
 
   useEffect(() => {
     if (!activeThreadId || !sessionReady) return;
@@ -111,7 +456,14 @@ export function NearApp() {
         const data = await nearFetch(
           `/api/near/threads?threadId=${encodeURIComponent(activeThreadId)}`
         );
-        if (!stop) setMsgs(data.messages || []);
+        if (!stop) {
+          setMsgs(data.messages || []);
+          const last =
+            data.messages?.[data.messages.length - 1]?.createdAt ||
+            new Date().toISOString();
+          markThreadSeen(activeThreadId, last);
+          setSeenMap(loadSeen());
+        }
       } catch {
         // ignore poll errors
       }
@@ -166,16 +518,42 @@ export function NearApp() {
           timeout: 15000,
         });
       });
-      await nearFetch("/api/near/presence", {
+      const next = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      };
+      const data = await nearFetch("/api/near/presence", {
         method: "POST",
         body: JSON.stringify({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
+          lat: next.lat,
+          lng: next.lng,
           ttlMinutes: 45,
         }),
       });
+      setCoords(next);
       setCheckedIn(true);
+      setExpiresAt(data.presence?.expiresAt || null);
+      if (data.presence?.geohash) {
+        setStreak(recordCheckInStreak(data.presence.geohash));
+      }
+      if (inviteGeohash) {
+        setInviteHint(
+          `Check-in tamam · davet bölgesi ${inviteGeohash}`
+        );
+        window.setTimeout(() => setInviteHint(null), 2500);
+        setInviteGeohash(null);
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("g");
+          url.searchParams.delete("from");
+          window.history.replaceState({}, "", url.pathname + url.search);
+        } catch {
+          // ignore
+        }
+      }
       await refreshPeers();
+      await refreshPot();
+      await refreshRoom();
       setTab("radar");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Check-in failed");
@@ -190,6 +568,10 @@ export function NearApp() {
       await nearFetch("/api/near/presence", { method: "DELETE" });
       setCheckedIn(false);
       setPeers([]);
+      setCoords(null);
+      setExpiresAt(null);
+      setRoomMsgs([]);
+      setRoomHash(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Check-out failed");
     } finally {
@@ -197,7 +579,144 @@ export function NearApp() {
     }
   }
 
-  async function openChat(peer: string) {
+  /** Keep presence alive while the app is open. */
+  useEffect(() => {
+    if (!sessionReady || !wallet || !checkedIn || !coords) return;
+    const beat = async () => {
+      try {
+        const data = await nearFetch("/api/near/presence", {
+          method: "POST",
+          body: JSON.stringify({
+            lat: coords.lat,
+            lng: coords.lng,
+            ttlMinutes: 45,
+          }),
+        });
+        setExpiresAt(data.presence?.expiresAt || null);
+        await refreshPeers();
+      } catch {
+        // ignore transient heartbeat errors
+      }
+    };
+    const id = window.setInterval(() => void beat(), 10 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, wallet, checkedIn, coords, refreshPeers]);
+
+  async function shareInvite() {
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://jiy.app";
+    const params = new URLSearchParams();
+    if (roomHash) params.set("g", roomHash);
+    if (wallet) params.set("from", wallet.slice(0, 10));
+    const qs = params.toString();
+    const url = `${origin}/near/app${qs ? `?${qs}` : ""}`;
+    const text = roomHash
+      ? `JIY Near · ${roomHash} bölgesindeyim — StarKey ile check-in yap, radar’da buluşalım.`
+      : "JIY Near’da şu an yakınımdayım — StarKey ile check-in yap, radar’da buluşalım.";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "JIY Near", text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        setInviteHint("Davet linki kopyalandı");
+        window.setTimeout(() => setInviteHint(null), 2000);
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(url);
+        setInviteHint("Link kopyalandı");
+        window.setTimeout(() => setInviteHint(null), 2000);
+      } catch {
+        setError("Paylaşım desteklenmiyor");
+      }
+    }
+  }
+
+  function hidePeer(peer: string) {
+    setBlocked(blockWallet(peer));
+    setInviteHint("Kişi gizlendi");
+    window.setTimeout(() => setInviteHint(null), 1800);
+  }
+
+  function reportPeer(peer: string) {
+    recordLocalReport(peer, "user-report");
+    setBlocked(blockWallet(peer));
+    setInviteHint("Bildirildi ve gizlendi");
+    window.setTimeout(() => setInviteHint(null), 2000);
+  }
+
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!expiresAt && !(activeDuel?.status === "active")) return;
+    const ms = activeDuel?.status === "active" ? 1000 : 30_000;
+    const id = window.setInterval(() => setTick((n) => n + 1), ms);
+    return () => window.clearInterval(id);
+  }, [expiresAt, activeDuel?.status]);
+
+  const minutesLeft = useMemo(() => {
+    if (!expiresAt) return null;
+    void tick;
+    const ms = new Date(expiresAt).getTime() - Date.now();
+    if (ms <= 0) return 0;
+    return Math.ceil(ms / 60_000);
+  }, [expiresAt, tick]);
+
+  const duelLeftSec = useMemo(() => {
+    void tick;
+    if (!activeDuel?.endsAt || activeDuel.status !== "active") return null;
+    const ms = new Date(activeDuel.endsAt).getTime() - Date.now();
+    return Math.max(0, Math.ceil(ms / 1000));
+  }, [activeDuel, tick]);
+
+  async function challengePeer(peer: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/duels", {
+        method: "POST",
+        body: JSON.stringify({ peerWallet: peer }),
+      });
+      setDuels((prev) => {
+        const rest = prev.filter((d) => d.id !== data.duel.id);
+        return [data.duel, ...rest];
+      });
+      setGiftFlash(`Düello isteği · ${duelSeconds}sn hazır`);
+      window.setTimeout(() => setGiftFlash(null), 2000);
+      await refreshDuels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Duel failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function respondDuel(duelId: string, action: "accept" | "decline") {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/duels", {
+        method: "POST",
+        body: JSON.stringify({ duelId, action }),
+      });
+      setDuels((prev) => {
+        const rest = prev.filter((d) => d.id !== data.duel.id);
+        return [data.duel, ...rest];
+      });
+      if (action === "accept") {
+        setGiftFlash(`Düello başladı · ${duelSeconds}sn! Hediyeyle skor yap`);
+        window.setTimeout(() => setGiftFlash(null), 2500);
+      }
+      await refreshDuels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Duel respond failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const openChat = useCallback(async (peer: string) => {
     setBusy(true);
     setError(null);
     try {
@@ -214,7 +733,22 @@ export function NearApp() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [refreshThreads]);
+
+  useEffect(() => {
+    if (!sessionReady || !wallet || !pendingPeer) return;
+    const peer = pendingPeer;
+    setPendingPeer(null);
+    void openChat(peer).then(() => {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("peer");
+        window.history.replaceState({}, "", url.pathname + url.search);
+      } catch {
+        // ignore
+      }
+    });
+  }, [sessionReady, wallet, pendingPeer, openChat]);
 
   async function sendMsg() {
     if (!draft.trim() || (!activeThreadId && !activePeer)) return;
@@ -243,14 +777,101 @@ export function NearApp() {
     }
   }
 
+  async function sendFreeWave(peer: string): Promise<boolean> {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/waves", {
+        method: "POST",
+        body: JSON.stringify({ toWallet: peer }),
+      });
+      if (data.summary) applyWaveSummary(data.summary);
+      if (data.mutual) {
+        setGiftFlash("Karşılıklı Selam — chat ve görüntülü açıldı");
+        window.setTimeout(() => setGiftFlash(null), 2400);
+        return true;
+      }
+      setGiftFlash("Selam iletildi — karşılık bekleniyor");
+      window.setTimeout(() => setGiftFlash(null), 2400);
+      return false;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Selam failed");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function sendGift(peer: string, giftId: string) {
-    if (!wallet) return;
+    if (!wallet) throw new Error("Cüzdan yok");
     setBusy(true);
     setError(null);
     try {
       await sendGiftOnChain({ from: wallet, to: peer, giftId });
+      const item = GIFT_CATALOG.find((g) => g.id === giftId);
+      giftFx.fire(giftId, "Sen gönderdin");
+      setGiftFlash(
+        `${item?.emoji || "🎁"} ${item?.label || "Hediye"} gönderildi`
+      );
+      window.setTimeout(() => setGiftFlash(null), 2200);
+      await refreshBoard();
+      await refreshInbox();
+      await refreshWaves();
+      await refreshDuels();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startVideo(peer: string) {
+    if (!isUnlocked(peer)) {
+      setError("Görüntülü için karşılıklı Selam gerekli");
+      return;
+    }
+    setVideoPeer(peer);
+  }
+
+  async function sendIcebreaker(text: string) {
+    setDraft(text);
+    // auto-send for one-tap feel
+    if (!activeThreadId && !activePeer) return;
+    setBusy(true);
+    try {
+      await nearFetch("/api/near/threads", {
+        method: "POST",
+        body: JSON.stringify({
+          threadId: activeThreadId || undefined,
+          peerWallet: activePeer || undefined,
+          text,
+        }),
+      });
+      setDraft("");
+      if (activeThreadId) {
+        const data = await nearFetch(
+          `/api/near/threads?threadId=${encodeURIComponent(activeThreadId)}`
+        );
+        setMsgs(data.messages || []);
+      }
+      await refreshThreads();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Send failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendToPot(giftId: string) {
+    if (!wallet) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await contributePlacePot({ from: wallet, giftId });
+      await refreshPot();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Pot gift failed");
     } finally {
       setBusy(false);
     }
@@ -290,8 +911,76 @@ export function NearApp() {
     return p?.displayName || shortAddress(activePeer);
   }, [activePeer, peers]);
 
+  const scoreByWallet = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of board) m.set(row.wallet, row.score);
+    return m;
+  }, [board]);
+
+  const rankedPeers = useMemo(() => {
+    const blockedSet = new Set(blocked);
+    const rank = (w: string) => {
+      const key = w.toLowerCase();
+      if (waveIn.has(key) && !waveMutual.has(key)) return 0; // pending Selam first
+      if (waveMutual.has(key)) return 1;
+      return 2;
+    };
+    return [...peers]
+      .filter((p) => !blockedSet.has(p.wallet.toLowerCase()))
+      .sort((a, b) => {
+        const ra = rank(a.wallet);
+        const rb = rank(b.wallet);
+        if (ra !== rb) return ra - rb;
+        const sa = scoreByWallet.get(a.wallet) || 0;
+        const sb = scoreByWallet.get(b.wallet) || 0;
+        if (sb !== sa) return sb - sa;
+        return (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9);
+      });
+  }, [peers, scoreByWallet, blocked, waveIn, waveMutual]);
+
+  const pendingSelamCount = useMemo(
+    () => [...waveIn].filter((w) => !waveMutual.has(w)).length,
+    [waveIn, waveMutual]
+  );
+
+  const liveTickerItems = useMemo(
+    () =>
+      buildLiveTicker({
+        inbox,
+        hotZones,
+        pendingWaves: pendingSelamCount,
+      }),
+    [inbox, hotZones, pendingSelamCount]
+  );
+
+  const unreadChat = useMemo(() => {
+    return threads.filter((t) => {
+      if (t.id === activeThreadId) return false;
+      const seen = seenMap[t.id];
+      if (!seen) return Boolean(t.updatedAt);
+      return new Date(t.updatedAt).getTime() > new Date(seen).getTime();
+    }).length;
+  }, [threads, seenMap, activeThreadId]);
+
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
+      <NearGiftFxLayer event={giftFx.event} onDone={giftFx.clear} />
+      {matchPeer ? (
+        <NearMatchOverlay
+          peer={matchPeer}
+          onChat={() => {
+            const w = matchPeer.wallet;
+            setMatchPeer(null);
+            void openChat(w);
+          }}
+          onVideo={() => {
+            const w = matchPeer.wallet;
+            setMatchPeer(null);
+            void startVideo(w);
+          }}
+          onClose={() => setMatchPeer(null)}
+        />
+      ) : null}
       <div
         className="pointer-events-none fixed inset-0"
         style={{
@@ -303,12 +992,34 @@ export function NearApp() {
       <header className="relative z-10 border-b border-border/80 px-4 py-4">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
-            <Link href="/" className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
-              JIY Near
+            <Link
+              href="/near"
+              className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent"
+            >
+              JIY Near · Live Social
             </Link>
             <p className="font-display text-xl font-semibold tracking-tight">
               Şu an yakınımda
             </p>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+              <Link href="/near/rulet" className="hover:text-accent">
+                Rulet →
+              </Link>
+              <button
+                type="button"
+                className="hover:text-accent"
+                onClick={() => setTab("discover")}
+              >
+                Keşfet
+              </button>
+              <button
+                type="button"
+                className="hover:text-accent"
+                onClick={() => setTab("voice")}
+              >
+                Sesli oda
+              </button>
+            </div>
           </div>
           {sessionReady && wallet ? (
             <button
@@ -327,6 +1038,88 @@ export function NearApp() {
           <p className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
           </p>
+        ) : null}
+        {giftFlash ? (
+          <p className="mb-4 animate-pulse rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent">
+            {giftFlash}
+          </p>
+        ) : null}
+        {sessionReady && wallet && activeDuel ? (
+          <div className="mb-4 rounded-xl border border-accent/40 bg-accent/5 px-3 py-3">
+            {activeDuel.status === "pending" &&
+            activeDuel.bWallet === wallet.toLowerCase() ? (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  Düello isteği · {shortAddress(activeDuel.aWallet)}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void respondDuel(activeDuel.id, "accept")}
+                  >
+                    Kabul · {duelSeconds}sn
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void respondDuel(activeDuel.id, "decline")}
+                  >
+                    Reddet
+                  </Button>
+                </div>
+              </div>
+            ) : activeDuel.status === "pending" ? (
+              <p className="text-sm text-muted">
+                Düello bekleniyor · {shortAddress(activeDuel.bWallet)}
+              </p>
+            ) : activeDuel.status === "active" ? (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                  Hediye düellosu · {duelLeftSec ?? "—"}s
+                </p>
+                <p className="mt-1 font-mono text-sm">
+                  Sen{" "}
+                  {activeDuel.aWallet === wallet.toLowerCase()
+                    ? activeDuel.aScore
+                    : activeDuel.bScore}{" "}
+                  — rakip{" "}
+                  {activeDuel.aWallet === wallet.toLowerCase()
+                    ? activeDuel.bScore
+                    : activeDuel.aScore}
+                </p>
+                <p className="mt-1 text-[11px] text-muted">
+                  Rakibe hediye gönder — skor Wave=1 … Crown=100
+                </p>
+              </div>
+            ) : activeDuel.status === "done" ? (
+              <p className="text-sm">
+                Düello bitti ·{" "}
+                {activeDuel.winnerWallet
+                  ? activeDuel.winnerWallet === wallet.toLowerCase()
+                    ? "Kazandın 👑"
+                    : `Kazanan ${shortAddress(activeDuel.winnerWallet)}`
+                  : "Berabere"}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {inviteGeohash && !checkedIn ? (
+          <p className="mb-4 rounded-lg border border-border bg-surface/70 px-3 py-2 text-sm">
+            Davet · bölge{" "}
+            <span className="font-mono text-accent">{inviteGeohash}</span> —
+            check-in yapınca aynı radar’da buluşursunuz.
+          </p>
+        ) : null}
+
+        {sessionReady && wallet ? (
+          <IncomingCallBanner
+            myWallet={wallet}
+            onAccept={(call: NearCall) => {
+              setAnswerCall({ id: call.id, from: call.fromWallet });
+            }}
+          />
         ) : null}
 
         {!sessionReady || !wallet ? (
@@ -373,59 +1166,334 @@ export function NearApp() {
                       onClick={() => void handleCheckOut()}
                     >
                       Check-out
+                      {minutesLeft != null ? ` · ${minutesLeft}dk` : ""}
                     </Button>
                   )}
                   <Button
                     variant="outline"
                     disabled={busy}
-                    onClick={() => void refreshPeers()}
+                    onClick={() => {
+                      void refreshPeers();
+                      void refreshPot();
+                      void refreshBoard();
+                    }}
                   >
                     Yenile
                   </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void shareInvite()}
+                  >
+                    Davet et
+                  </Button>
+                  {checkedIn ? (
+                    mineClaim ? (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void unpinTable()}
+                      >
+                        📌 {mineClaim.label}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          setTab("room");
+                          void pinTable();
+                        }}
+                      >
+                        📌 Masa sabitle
+                      </Button>
+                    )
+                  ) : null}
                 </div>
+                {inviteHint ? (
+                  <p className="text-xs text-success">{inviteHint}</p>
+                ) : null}
+                {sessionReady && liveTickerItems.length > 0 ? (
+                  <NearLiveTicker
+                    items={liveTickerItems}
+                    onTapWave={() => setTab("discover")}
+                  />
+                ) : null}
+                {checkedIn && streak && streak.count > 0 ? (
+                  <p className="text-xs text-muted">
+                    Check-in serisi ·{" "}
+                    <span className="text-accent">{streak.count} gece</span>
+                    {streak.geohash ? (
+                      <span className="font-mono"> · {streak.geohash}</span>
+                    ) : null}
+                  </p>
+                ) : null}
+
+                {checkedIn && hotZones.length > 0 ? (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {hotZones.map((z) => (
+                      <span
+                        key={z.geohash}
+                        className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10px] ${
+                          z.mine
+                            ? "border-accent/50 bg-accent/10 text-accent"
+                            : "border-border text-muted"
+                        }`}
+                      >
+                        {z.mine ? "Sen · " : ""}
+                        {z.geohash} · {z.count} aktif
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                {checkedIn &&
+                [...waveIn].filter((w) => !waveMutual.has(w)).length > 0 ? (
+                  <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                      Gelen selam
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {rankedPeers
+                        .filter(
+                          (p) =>
+                            waveIn.has(p.wallet.toLowerCase()) &&
+                            !waveMutual.has(p.wallet.toLowerCase())
+                        )
+                        .map((p) => (
+                          <button
+                            key={p.wallet}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void sendFreeWave(p.wallet)}
+                            className="rounded-full border border-accent/40 px-2.5 py-1 text-[11px]"
+                          >
+                            ◎{" "}
+                            {p.distanceM != null
+                              ? `≈${p.distanceM}m`
+                              : blindLabel(p.wallet)}{" "}
+                            · dön
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {inbox.length > 0 ? (
+                  <div className="rounded-xl border border-border bg-surface/50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                      Bana gelen hediyeler
+                    </p>
+                    <ul className="mt-2 space-y-1.5">
+                      {inbox.slice(0, 5).map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <button
+                            type="button"
+                            className="truncate text-left hover:text-accent"
+                            onClick={() => void openChat(item.fromWallet)}
+                          >
+                            {item.giftEmoji} {item.fromEmoji} {item.fromName}
+                          </button>
+                          <span className="shrink-0 font-mono text-[10px] text-muted">
+                            {item.giftLabel} · {item.amountSupra}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {checkedIn && board.length > 0 ? (
+                  <div className="rounded-xl border border-border bg-surface/50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                      Gece tahtı · hediye skoru
+                    </p>
+                    <ol className="mt-2 space-y-1.5">
+                      {board.slice(0, 5).map((row, i) => (
+                        <li
+                          key={row.wallet}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <span className="truncate">
+                            <span className="mr-1.5 font-mono text-[10px] text-muted">
+                              #{i + 1}
+                            </span>
+                            {row.avatarEmoji} {row.displayName}
+                          </span>
+                          <span className="shrink-0 font-mono text-[11px] text-accent">
+                            {row.score} pts · {row.receivedCount}×
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+
+                {checkedIn && pot ? (
+                  <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                      Yer kasası
+                    </p>
+                    <p className="mt-1 text-sm">
+                      Bu bölgeye {pot.giftCount} hediye · geohash{" "}
+                      <span className="font-mono text-xs">{pot.geohash}</span>
+                    </p>
+                    {drawWinner ? (
+                      <p className="mt-2 text-xs text-success">
+                        Son çekiliş kazananı · {shortAddress(drawWinner)}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {GIFT_CATALOG.map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void sendToPot(g.id)}
+                          className="rounded-full border border-border px-2.5 py-1 text-[11px] hover:border-accent/50"
+                        >
+                          {g.emoji} Kasa · {g.amountSupra}
+                        </button>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || pot.giftCount < 1}
+                        onClick={() => void runPotDraw()}
+                      >
+                        Gece çekilişi
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
                 {!checkedIn ? (
                   <p className="text-sm text-muted">
                     Check-in yapınca yakındaki StarKey kullanıcıları görünür.
                     Süre dolunca radar’dan düşersin.
                   </p>
                 ) : peers.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
-                    Henüz yakında kimse yok — arkadaşını davet et.
-                  </p>
+                  <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
+                    <p className="text-sm text-muted">
+                      Henüz yakında kimse yok.
+                    </p>
+                    <p className="mt-2 text-xs text-muted">
+                      Linki paylaş — aynı bölgede check-in yapan StarKey
+                      kullanıcıları burada görünür. Yer odasına da yazabilirsin.
+                    </p>
+                    <Button
+                      className="mt-4"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTab("room")}
+                    >
+                      <Users className="mr-1.5 h-3.5 w-3.5" />
+                      Yer odasını aç
+                    </Button>
+                  </div>
                 ) : (
                   <ul className="space-y-3">
-                    {peers.map((p) => (
+                    {rankedPeers.map((p) => {
+                      const score = scoreByWallet.get(p.wallet) || 0;
+                      const boosted = score >= 10;
+                      const open = isUnlocked(p.wallet);
+                      return (
                       <li
                         key={p.wallet}
-                        className="rounded-xl border border-border bg-surface/60 p-4"
+                        className={`rounded-xl border bg-surface/60 p-4 ${
+                          boosted
+                            ? "border-accent/50 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_25%,transparent)]"
+                            : "border-border"
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-lg">
-                              <span className="mr-2">{p.avatarEmoji}</span>
-                              {p.displayName}
+                              <span className="mr-2">
+                                {open ? p.avatarEmoji : "◎"}
+                              </span>
+                              {open ? p.displayName : blindLabel(p.wallet)}
+                              {boosted ? (
+                                <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                                  Boost
+                                </span>
+                              ) : null}
                             </p>
-                            {p.mood ? (
+                            {open && p.mood ? (
                               <p className="text-sm text-muted">{p.mood}</p>
+                            ) : !open ? (
+                              <p className="text-sm text-muted">
+                                Kör radar — Selam ile profil açılır
+                              </p>
                             ) : null}
                             <p className="mt-1 flex items-center gap-1 text-[11px] text-muted">
                               <MapPin className="h-3 w-3" />
                               {p.distanceM != null
                                 ? `≈ ${p.distanceM} m`
                                 : "yakın"}
+                              {score > 0 ? ` · ${score} pts` : ""}
                             </p>
                           </div>
                           <div className="flex flex-col gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void openChat(p.wallet)}
-                            >
-                              <MessageCircle className="mr-1 h-3.5 w-3.5" />
-                              Chat
-                            </Button>
+                            {isUnlocked(p.wallet) ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => void openChat(p.wallet)}
+                                >
+                                  <MessageCircle className="mr-1 h-3.5 w-3.5" />
+                                  Chat
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => void startVideo(p.wallet)}
+                                >
+                                  <Video className="mr-1 h-3.5 w-3.5" />
+                                  Görüntülü
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={busy}
+                                  onClick={() => void challengePeer(p.wallet)}
+                                >
+                                  Düello
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => void sendFreeWave(p.wallet)}
+                              >
+                                👋{" "}
+                                {waveOut.has(p.wallet.toLowerCase())
+                                  ? "Bekleniyor…"
+                                  : waveIn.has(p.wallet.toLowerCase())
+                                    ? "Selam dön"
+                                    : "Selam at"}
+                              </Button>
+                            )}
                           </div>
                         </div>
+                        {!isUnlocked(p.wallet) ? (
+                          <p className="mt-2 text-[11px] text-muted">
+                            {waveOut.has(p.wallet.toLowerCase()) &&
+                            !waveIn.has(p.wallet.toLowerCase())
+                              ? "Selamın iletildi — karşı taraf Selam atınca chat açılır."
+                              : waveIn.has(p.wallet.toLowerCase())
+                                ? "Sana Selam attı — sen de at, kilit açılsın."
+                                : "Chat / görüntülü için karşılıklı Selam veya Wave hediyesi."}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-[11px] text-accent">
+                            Karşılıklı Selam · açık
+                          </p>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           {GIFT_CATALOG.map((g) => (
                             <button
@@ -440,12 +1508,76 @@ export function NearApp() {
                             </button>
                           ))}
                         </div>
+                        <div className="mt-2 flex gap-3 text-[10px] text-muted">
+                          <button
+                            type="button"
+                            className="hover:text-foreground"
+                            onClick={() => hidePeer(p.wallet)}
+                          >
+                            Gizle
+                          </button>
+                          <button
+                            type="button"
+                            className="hover:text-danger"
+                            onClick={() => reportPeer(p.wallet)}
+                          >
+                            Bildir
+                          </button>
+                        </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
               </section>
             )}
+
+            {tab === "discover" && (
+              <NearDiscover
+                peers={rankedPeers}
+                unlocked={isUnlocked}
+                busy={busy}
+                onWave={(w) => sendFreeWave(w)}
+                onPass={(w) => hidePeer(w)}
+                onChat={(w) => void openChat(w)}
+                onGift={(w, g) => void sendGift(w, g)}
+                onMatch={(p) => setMatchPeer(p)}
+              />
+            )}
+
+            {tab === "voice" && wallet ? (
+              <NearVoicePanel
+                wallet={wallet}
+                displayName={name || shortAddress(wallet)}
+                avatarEmoji={emoji}
+                geohashHint={roomHash || inviteGeohash}
+                autoJoinRoomId={pendingVoiceId}
+                onAutoJoinConsumed={() => {
+                  setPendingVoiceId(null);
+                  try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("v");
+                    url.searchParams.delete("voice");
+                    window.history.replaceState(
+                      {},
+                      "",
+                      url.pathname + url.search
+                    );
+                  } catch {
+                    // ignore
+                  }
+                }}
+                giftBusy={busy}
+                onGift={async (w, g) => {
+                  await sendGift(w, g);
+                }}
+                onRoomGift={(g) => {
+                  giftFx.fire(g.giftId, `${g.fromName} gönderdi`);
+                  setGiftFlash(`${g.fromName} · hediye gösterisi`);
+                  window.setTimeout(() => setGiftFlash(null), 2200);
+                }}
+              />
+            ) : null}
 
             {tab === "chat" && (
               <section className="space-y-3">
@@ -456,24 +1588,40 @@ export function NearApp() {
                         Henüz sohbet yok — radar’dan birine yaz.
                       </p>
                     ) : (
-                      threads.map((t) => (
+                      threads.map((t) => {
+                        const unread =
+                          t.id !== activeThreadId &&
+                          (!seenMap[t.id] ||
+                            new Date(t.updatedAt).getTime() >
+                              new Date(seenMap[t.id]).getTime());
+                        return (
                         <button
                           key={t.id}
                           type="button"
-                          className="flex w-full flex-col rounded-xl border border-border px-3 py-3 text-left hover:border-accent/40"
+                          className={`flex w-full flex-col rounded-xl border px-3 py-3 text-left hover:border-accent/40 ${
+                            unread
+                              ? "border-accent/40 bg-accent/5"
+                              : "border-border"
+                          }`}
                           onClick={() => {
                             setActiveThreadId(t.id);
                             setActivePeer(t.peerWallet);
+                            markThreadSeen(t.id, t.updatedAt || new Date().toISOString());
+                            setSeenMap(loadSeen());
                           }}
                         >
-                          <span className="font-medium">
+                          <span className="flex items-center justify-between gap-2 font-medium">
                             {shortAddress(t.peerWallet)}
+                            {unread ? (
+                              <span className="h-2 w-2 shrink-0 rounded-full bg-accent" />
+                            ) : null}
                           </span>
                           <span className="truncate text-xs text-muted">
                             {t.lastBody || "—"}
                           </span>
                         </button>
-                      ))
+                        );
+                      })
                     )}
                   </ul>
                 ) : (
@@ -492,48 +1640,271 @@ export function NearApp() {
                       </button>
                     </div>
                     <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
-                      {msgs.map((m) => (
-                        <div
-                          key={m.id}
-                          className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
-                            m.fromWallet === wallet
-                              ? "ml-auto bg-accent text-accent-ink"
-                              : "bg-surface text-foreground"
-                          }`}
-                        >
-                          {m.body}
+                      {activePeer && !isUnlocked(activePeer) ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-3 px-2 text-center">
+                          <p className="text-sm text-muted">
+                            Bu sohbet kilitli — karşılıklı Selam gerekir.
+                          </p>
+                          <Button
+                            disabled={busy}
+                            onClick={() => void sendFreeWave(activePeer)}
+                          >
+                            👋{" "}
+                            {waveOut.has(activePeer.toLowerCase())
+                              ? "Selam iletildi"
+                              : "Selam at (ücretsiz)"}
+                          </Button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="text-[11px] text-accent"
+                            onClick={() => void sendGift(activePeer, "wave")}
+                          >
+                            veya Wave hediyesi gönder (0.1 SUPRA)
+                          </button>
                         </div>
-                      ))}
+                      ) : msgs.length === 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-center text-xs text-muted">
+                            İlk mesajı sen at — hazır cümleler:
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-1.5">
+                            {ICEBREAKERS.map((line) => (
+                              <button
+                                key={line}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void sendIcebreaker(line)}
+                                className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted hover:border-accent/40 hover:text-foreground"
+                              >
+                                {line}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        msgs.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                              m.fromWallet === wallet
+                                ? "ml-auto bg-accent text-accent-ink"
+                                : "bg-surface text-foreground"
+                            }`}
+                          >
+                            {m.body}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    {activePeer && isUnlocked(activePeer) ? (
+                      <>
+                        <div className="flex gap-2 border-t border-border p-2">
+                          <Input
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            placeholder="Mesaj…"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void sendMsg();
+                            }}
+                          />
+                          <Button
+                            disabled={busy}
+                            onClick={() => void sendMsg()}
+                          >
+                            Gönder
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 border-t border-border px-2 py-2">
+                          {GIFT_CATALOG.map((g) => (
+                            <button
+                              key={g.id}
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void sendGift(activePeer, g.id)}
+                              className="rounded-full border border-border px-2 py-0.5 text-[11px]"
+                            >
+                              <Gift className="mr-1 inline h-3 w-3" />
+                              {g.emoji} {g.amountSupra}
+                            </button>
+                          ))}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void startVideo(activePeer)}
+                          >
+                            <Video className="mr-1 h-3.5 w-3.5" />
+                            Görüntülü
+                          </Button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {tab === "room" && (
+              <section className="space-y-3">
+                {!checkedIn ? (
+                  <p className="text-sm text-muted">
+                    Yer odası için önce radar’dan check-in yap.
+                  </p>
+                ) : (
+                  <div className="flex h-[55dvh] flex-col rounded-xl border border-border">
+                    <div className="border-b border-border px-3 py-2">
+                      <p className="text-sm font-medium">Yer odası</p>
+                      <p className="font-mono text-[10px] text-muted">
+                        geohash {roomHash || "—"} · check-in süresince ortak
+                        {minutesLeft != null ? ` · ${minutesLeft}dk` : ""}
+                      </p>
+                      <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                        <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px]">
+                          {emoji} Sen
+                        </span>
+                        {rankedPeers.slice(0, 12).map((p) => {
+                          const open = isUnlocked(p.wallet);
+                          return (
+                          <button
+                            key={p.wallet}
+                            type="button"
+                            onClick={() =>
+                              open
+                                ? void openChat(p.wallet)
+                                : void sendFreeWave(p.wallet)
+                            }
+                            className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted"
+                            title={open ? p.displayName : "Selam ile aç"}
+                          >
+                            {open
+                              ? `${p.avatarEmoji} ${p.displayName.slice(0, 10)}`
+                              : `◎ ${blindLabel(p.wallet)}`}
+                          </button>
+                          );
+                        })}
+                        {rankedPeers.length === 0 ? (
+                          <span className="text-[10px] text-muted">
+                            Henüz başka üye yok
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                          Masa pinleri
+                        </p>
+                        {claims.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {claims.map((c) => {
+                              const open = isUnlocked(c.wallet);
+                              const mine =
+                                wallet &&
+                                c.wallet === wallet.toLowerCase();
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  disabled={busy || Boolean(mine)}
+                                  onClick={() => {
+                                    if (mine) return;
+                                    if (open) void openChat(c.wallet);
+                                    else void sendFreeWave(c.wallet);
+                                  }}
+                                  className={`rounded-lg border px-2 py-1 text-left text-[11px] ${
+                                    mine
+                                      ? "border-accent/50 bg-accent/10 text-accent"
+                                      : "border-border text-muted"
+                                  }`}
+                                >
+                                  📌 {c.label}
+                                  <span className="ml-1 font-mono text-[9px] opacity-70">
+                                    {mine
+                                      ? "sen"
+                                      : open
+                                        ? shortAddress(c.wallet)
+                                        : "◎"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-muted">
+                            Henüz pin yok — masanı 45 dk sabitle.
+                          </p>
+                        )}
+                        <div className="flex gap-1.5">
+                          {mineClaim ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void unpinTable()}
+                            >
+                              Pin kaldır · {mineClaim.label}
+                            </Button>
+                          ) : (
+                            <>
+                              <Input
+                                value={claimLabel}
+                                onChange={(e) =>
+                                  setClaimLabel(e.target.value.slice(0, 32))
+                                }
+                                placeholder="Masa 4 / Bar / …"
+                                className="h-8 text-xs"
+                              />
+                              <Button
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => void pinTable()}
+                              >
+                                Sabitle
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+                      {roomMsgs.length === 0 ? (
+                        <p className="text-center text-xs text-muted">
+                          İlk mesajı sen yaz — yakındakiler görür.
+                        </p>
+                      ) : (
+                        roomMsgs.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                              m.fromWallet === wallet
+                                ? "ml-auto bg-accent text-accent-ink"
+                                : "bg-surface text-foreground"
+                            }`}
+                          >
+                            {m.fromWallet !== wallet ? (
+                              <p className="mb-0.5 font-mono text-[10px] opacity-70">
+                                {shortAddress(m.fromWallet)}
+                              </p>
+                            ) : null}
+                            {m.body}
+                          </div>
+                        ))
+                      )}
                     </div>
                     <div className="flex gap-2 border-t border-border p-2">
                       <Input
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        placeholder="Mesaj…"
+                        value={roomDraft}
+                        onChange={(e) => setRoomDraft(e.target.value)}
+                        placeholder="Yer odasına yaz…"
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") void sendMsg();
+                          if (e.key === "Enter") void sendRoomMsg();
                         }}
                       />
-                      <Button disabled={busy} onClick={() => void sendMsg()}>
+                      <Button
+                        disabled={busy}
+                        onClick={() => void sendRoomMsg()}
+                      >
                         Gönder
                       </Button>
                     </div>
-                    {activePeer ? (
-                      <div className="flex flex-wrap gap-1 border-t border-border px-2 py-2">
-                        {GIFT_CATALOG.map((g) => (
-                          <button
-                            key={g.id}
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void sendGift(activePeer, g.id)}
-                            className="rounded-full border border-border px-2 py-0.5 text-[11px]"
-                          >
-                            <Gift className="mr-1 inline h-3 w-3" />
-                            {g.emoji} {g.amountSupra}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
                 )}
               </section>
@@ -565,7 +1936,47 @@ export function NearApp() {
                     placeholder="Kahve / sohbet / …"
                     maxLength={48}
                   />
+                  <div className="flex flex-wrap gap-1.5">
+                    {MOOD_PRESETS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMood(m)}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                          mood === m
+                            ? "border-accent/50 bg-accent/10 text-accent"
+                            : "border-border text-muted"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {blocked.length > 0 ? (
+                  <div className="space-y-2 rounded-xl border border-border p-3">
+                    <p className="text-xs text-muted">
+                      Gizlenen ({blocked.length})
+                    </p>
+                    <ul className="space-y-1">
+                      {blocked.map((w) => (
+                        <li
+                          key={w}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="font-mono">{shortAddress(w)}</span>
+                          <button
+                            type="button"
+                            className="text-accent"
+                            onClick={() => setBlocked(unblockWallet(w))}
+                          >
+                            Göster
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="space-y-2">
                   <label className="text-xs text-muted">Bio</label>
                   <Textarea
@@ -579,6 +1990,17 @@ export function NearApp() {
                   <UserRound className="mr-2 h-4 w-4" />
                   Kaydet
                 </Button>
+                {streak ? (
+                  <p className="text-sm text-muted">
+                    Check-in serisi:{" "}
+                    <span className="font-medium text-accent">
+                      {streak.count} gece
+                    </span>
+                    {streak.count >= 3
+                      ? " · gece canavarı 🔥"
+                      : " — ardışık gecelerde buradasın"}
+                  </p>
+                ) : null}
                 {profile ? (
                   <p className="font-mono text-[11px] text-muted">
                     {profile.wallet}
@@ -596,6 +2018,9 @@ export function NearApp() {
             {(
               [
                 ["radar", Radio, "Radar"],
+                ["discover", Compass, "Keşfet"],
+                ["voice", Mic, "Ses"],
+                ["room", MapPin, "Masa"],
                 ["chat", MessageCircle, "Chat"],
                 ["profile", UserRound, "Profil"],
               ] as const
@@ -604,16 +2029,44 @@ export function NearApp() {
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`flex flex-col items-center gap-0.5 rounded-lg px-4 py-1.5 text-[11px] ${
+                className={`relative flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1.5 text-[10px] sm:px-2.5 sm:text-[11px] ${
                   tab === id ? "text-accent" : "text-muted"
                 }`}
               >
-                <Icon className="h-5 w-5" />
+                <span className="relative">
+                  <Icon className="h-5 w-5" />
+                  {id === "chat" && unreadChat > 0 ? (
+                    <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-bold text-accent-ink">
+                      {unreadChat > 9 ? "9+" : unreadChat}
+                    </span>
+                  ) : null}
+                  {id === "discover" && pendingSelamCount > 0 ? (
+                    <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-bold text-accent-ink">
+                      {pendingSelamCount > 9 ? "9+" : pendingSelamCount}
+                    </span>
+                  ) : null}
+                </span>
                 {label}
               </button>
             ))}
           </div>
         </nav>
+      ) : null}
+
+      {videoPeer && wallet ? (
+        <VideoCallPanel
+          myWallet={wallet}
+          peerWallet={videoPeer}
+          onClose={() => setVideoPeer(null)}
+        />
+      ) : null}
+
+      {answerCall && wallet ? (
+        <VideoCallAnswer
+          callId={answerCall.id}
+          peerWallet={answerCall.from}
+          onClose={() => setAnswerCall(null)}
+        />
       ) : null}
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { stringToHex } from "viem";
 import {
   ensureSupraEvmDevnet,
   getStarkeyEthereum,
@@ -46,12 +47,18 @@ export async function signInWithStarkey(wallet: string): Promise<string> {
   const provider = getStarkeyEthereum();
   if (!provider) throw new Error("StarKey not installed");
 
+  // Drop legacy memory-session tokens before minting HMAC session
+  setNearToken(null);
+
   const challenge = await nearFetch(
     `/api/near/session?wallet=${encodeURIComponent(wallet)}`
   );
+  // StarKey (ethers) requires hex-encoded UTF-8 for personal_sign — plain
+  // strings throw INVALID_ARGUMENT / invalid BytesLike value.
+  const hexMessage = stringToHex(challenge.message as string);
   const signature = (await provider.request({
     method: "personal_sign",
-    params: [challenge.message, wallet],
+    params: [hexMessage, wallet],
   })) as string;
 
   const { session } = await nearFetch("/api/near/session", {
@@ -59,6 +66,7 @@ export async function signInWithStarkey(wallet: string): Promise<string> {
     body: JSON.stringify({
       wallet,
       nonce: challenge.nonce,
+      issuedAt: challenge.issuedAt,
       signature,
     }),
   });
@@ -98,6 +106,43 @@ export async function sendGiftOnChain(input: {
       giftId: input.giftId,
       txHash,
     }),
+  });
+  return { txHash };
+}
+
+/**
+ * Contribute to the local place pot. If NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS is set,
+ * sends SUPRA on-chain to that treasury; otherwise records ledger-only.
+ */
+export async function contributePlacePot(input: {
+  from: string;
+  giftId: string;
+}): Promise<{ txHash: string | null }> {
+  const gift = getGift(input.giftId);
+  if (!gift) throw new Error("Unknown gift");
+  const potAddr = process.env.NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS;
+
+  let txHash: string | null = null;
+  if (potAddr && /^0x[a-fA-F0-9]{40}$/.test(potAddr)) {
+    const provider = getStarkeyEthereum();
+    if (!provider) throw new Error("StarKey not installed");
+    await ensureSupraEvmDevnet(provider);
+    txHash = (await provider.request({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: input.from,
+          to: potAddr,
+          value: weiToHex(supraToWei(gift.amountSupra)),
+          chainId: SUPRA_EVM_DEVNET.chainId,
+        },
+      ],
+    })) as string;
+  }
+
+  await nearFetch("/api/near/pots", {
+    method: "POST",
+    body: JSON.stringify({ giftId: input.giftId, txHash }),
   });
   return { txHash };
 }

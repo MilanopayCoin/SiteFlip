@@ -2,8 +2,14 @@ import { nanoid } from "nanoid";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { coarseCoord, distanceMeters, encodeGeohash } from "@/lib/near/geohash";
+import { creditDuelGift } from "@/lib/near/duels";
+import { getGift, giftScore } from "@/lib/near/gifts";
+import { recordWave } from "@/lib/near/waves";
 import type {
+  NearGiftBoardRow,
+  NearGiftInboxItem,
   NearGiftRecord,
+  NearHotZone,
   NearMessage,
   NearPeer,
   NearPresence,
@@ -47,6 +53,20 @@ function now() {
 async function db() {
   if (!isSupabaseConfigured()) return null;
   return createServiceClient();
+}
+
+/** Missing Near tables / PostgREST schema cache — fall back to memory. */
+function isSchemaGap(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  const msg = String(err.message || "").toLowerCase();
+  return (
+    err.code === "42P01" ||
+    err.code === "PGRST205" ||
+    err.code === "PGRST204" ||
+    msg.includes("does not exist") ||
+    msg.includes("could not find the table") ||
+    msg.includes("schema cache")
+  );
 }
 
 function normWallet(w: string) {
@@ -93,7 +113,7 @@ export async function upsertProfile(
       created_at: profile.createdAt,
       updated_at: profile.updatedAt,
     });
-    if (error) throw new Error(error.message);
+    if (error && !isSchemaGap(error)) throw new Error(error.message);
   }
   return profile;
 }
@@ -104,11 +124,12 @@ export async function getProfile(wallet: string): Promise<NearProfile | null> {
   if (mem) return mem;
   const client = await db();
   if (!client) return null;
-  const { data } = await client
+  const { data, error } = await client
     .from("near_profiles")
     .select("*")
     .eq("wallet", w)
     .maybeSingle();
+  if (error && isSchemaGap(error)) return null;
   if (!data) return null;
   const p: NearProfile = {
     wallet: data.wallet,
@@ -160,7 +181,7 @@ export async function checkIn(
       expires_at: expiresAt,
       updated_at: ts,
     });
-    if (error) throw new Error(error.message);
+    if (error && !isSchemaGap(error)) throw new Error(error.message);
   }
   return presence;
 }
@@ -172,6 +193,33 @@ export async function checkOut(wallet: string): Promise<void> {
   if (client) {
     await client.from("near_presence").delete().eq("wallet", w);
   }
+}
+
+export async function getPresence(
+  wallet: string
+): Promise<NearPresence | null> {
+  const w = normWallet(wallet);
+  const mem = presenceMap().get(w);
+  if (mem && new Date(mem.expiresAt).getTime() > Date.now()) return mem;
+  const client = await db();
+  if (!client) return mem || null;
+  const { data } = await client
+    .from("near_presence")
+    .select("*")
+    .eq("wallet", w)
+    .maybeSingle();
+  if (!data) return null;
+  if (new Date(data.expires_at).getTime() < Date.now()) return null;
+  const p: NearPresence = {
+    wallet: data.wallet,
+    geohash: data.geohash,
+    lat: data.lat,
+    lng: data.lng,
+    expiresAt: data.expires_at,
+    updatedAt: data.updated_at,
+  };
+  presenceMap().set(w, p);
+  return p;
 }
 
 export async function listNearby(
@@ -309,7 +357,9 @@ export async function getOrCreateThread(
       created_at: ts,
       updated_at: ts,
     });
-    if (error && error.code !== "23505") throw new Error(error.message);
+    if (error && error.code !== "23505" && !isSchemaGap(error)) {
+      throw new Error(error.message);
+    }
   }
   return t;
 }
@@ -480,6 +530,21 @@ export async function recordGift(input: {
       created_at: rec.createdAt,
     });
   }
+  // Any catalog gift counts as a Selam unlock edge (Wave is the cheap path).
+  try {
+    await recordWave(rec.fromWallet, rec.toWallet, "gift");
+  } catch {
+    // non-fatal
+  }
+  try {
+    await creditDuelGift({
+      fromWallet: rec.fromWallet,
+      toWallet: rec.toWallet,
+      giftId: rec.giftId,
+    });
+  } catch {
+    // non-fatal
+  }
   return rec;
 }
 
@@ -489,12 +554,13 @@ export async function listGiftsFor(wallet: string, limit = 30) {
   if (mem.length) return mem.slice(0, limit);
   const client = await db();
   if (!client) return [];
-  const { data } = await client
+  const { data, error } = await client
     .from("near_gifts")
     .select("*")
     .or(`to_wallet.eq.${w},from_wallet.eq.${w}`)
     .order("created_at", { ascending: false })
     .limit(limit);
+  if (error && isSchemaGap(error)) return mem.slice(0, limit);
   return (data || []).map((row) => ({
     id: row.id,
     fromWallet: row.from_wallet,
@@ -504,4 +570,158 @@ export async function listGiftsFor(wallet: string, limit = 30) {
     txHash: row.tx_hash,
     createdAt: row.created_at,
   })) as NearGiftRecord[];
+}
+
+async function loadRecentGifts(limit = 400): Promise<NearGiftRecord[]> {
+  const mem = gifts();
+  const client = await db();
+  if (!client) return mem.slice(0, limit);
+  const { data, error } = await client
+    .from("near_gifts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error && isSchemaGap(error)) return mem.slice(0, limit);
+  const rows = (data || []).map((row) => ({
+    id: row.id,
+    fromWallet: row.from_wallet,
+    toWallet: row.to_wallet,
+    giftId: row.gift_id,
+    amountWei: row.amount_wei,
+    txHash: row.tx_hash,
+    createdAt: row.created_at,
+  })) as NearGiftRecord[];
+  // Prefer memory for same-isolate freshness, then DB.
+  const seen = new Set(mem.map((g) => g.id));
+  return [...mem, ...rows.filter((r) => !seen.has(r.id))].slice(0, limit);
+}
+
+/** Top gift receivers — powers radar boost + night board UI. */
+export async function listGiftLeaderboard(
+  limit = 15
+): Promise<NearGiftBoardRow[]> {
+  const all = await loadRecentGifts(500);
+  const agg = new Map<
+    string,
+    { count: number; wei: bigint; score: number }
+  >();
+  for (const g of all) {
+    const cur = agg.get(g.toWallet) || {
+      count: 0,
+      wei: BigInt(0),
+      score: 0,
+    };
+    cur.count += 1;
+    try {
+      cur.wei += BigInt(g.amountWei || "0");
+    } catch {
+      // ignore bad wei
+    }
+    cur.score += giftScore(g.giftId);
+    agg.set(g.toWallet, cur);
+  }
+  const wallets = [...agg.keys()];
+  const profilesByWallet = new Map<string, NearProfile>();
+  await Promise.all(
+    wallets.map(async (w) => {
+      const p = await getProfile(w);
+      if (p) profilesByWallet.set(w, p);
+    })
+  );
+  return wallets
+    .map((wallet) => {
+      const a = agg.get(wallet)!;
+      const p = profilesByWallet.get(wallet);
+      return {
+        wallet,
+        displayName: p?.displayName || shortWallet(wallet),
+        avatarEmoji: p?.avatarEmoji || "✨",
+        receivedCount: a.count,
+        receivedWei: a.wei.toString(),
+        score: a.score,
+      } satisfies NearGiftBoardRow;
+    })
+    .sort((a, b) => b.score - a.score || b.receivedCount - a.receivedCount)
+    .slice(0, limit);
+}
+
+function shortWallet(w: string) {
+  return `${w.slice(0, 6)}…${w.slice(-4)}`;
+}
+
+/** Gifts received by wallet — TikTok-style inbox. */
+export async function listGiftInbox(
+  wallet: string,
+  limit = 20
+): Promise<NearGiftInboxItem[]> {
+  const w = normWallet(wallet);
+  const all = await listGiftsFor(w, 80);
+  const received = all.filter((g) => g.toWallet === w).slice(0, limit);
+  const items: NearGiftInboxItem[] = [];
+  for (const g of received) {
+    const from = await getProfile(g.fromWallet);
+    const catalog = getGift(g.giftId);
+    items.push({
+      id: g.id,
+      fromWallet: g.fromWallet,
+      fromName: from?.displayName || shortWallet(g.fromWallet),
+      fromEmoji: from?.avatarEmoji || "✨",
+      giftId: g.giftId,
+      giftLabel: catalog?.label || g.giftId,
+      giftEmoji: catalog?.emoji || "🎁",
+      amountSupra: catalog?.amountSupra ?? 0,
+      txHash: g.txHash,
+      createdAt: g.createdAt,
+    });
+  }
+  return items;
+}
+
+/**
+ * Active check-in density near the viewer (same 4-char geohash prefix).
+ * Coarse only — no exact coords leaked.
+ */
+export async function listHotZones(wallet: string): Promise<NearHotZone[]> {
+  const me = await getPresence(wallet);
+  if (!me) return [];
+  const prefix = me.geohash.slice(0, 4);
+  const mine = me.geohash.slice(0, 5);
+  const nowMs = Date.now();
+  /** geohash5 → set of wallets (deduped across memory + DB). */
+  const zones = new Map<string, Set<string>>();
+
+  const bump = (hash: string, walletId: string) => {
+    if (!hash.startsWith(prefix)) return;
+    const key = hash.slice(0, 5);
+    if (!zones.has(key)) zones.set(key, new Set());
+    zones.get(key)!.add(normWallet(walletId));
+  };
+
+  for (const p of presenceMap().values()) {
+    if (new Date(p.expiresAt).getTime() < nowMs) continue;
+    bump(p.geohash, p.wallet);
+  }
+
+  const client = await db();
+  if (client) {
+    const { data, error } = await client
+      .from("near_presence")
+      .select("geohash,wallet")
+      .like("geohash", `${prefix}%`)
+      .gt("expires_at", now());
+    if (!error || !isSchemaGap(error)) {
+      for (const row of data || []) bump(row.geohash, row.wallet);
+    }
+  }
+
+  bump(me.geohash, me.wallet);
+
+  return [...zones.entries()]
+    .map(([geohash, set]) => ({
+      geohash,
+      count: set.size,
+      mine: geohash === mine,
+    }))
+    .sort((a, b) => b.count - a.count || a.geohash.localeCompare(b.geohash))
+    .slice(0, 8);
 }

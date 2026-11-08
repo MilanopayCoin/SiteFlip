@@ -9,7 +9,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
   const isLanding = pathname === "/";
   /** Guest-facing digital menu — no marketplace chrome */
   const isPublicMenu = pathname === "/m" || pathname.startsWith("/m/");
-  /** JIY Near — immersive proximity social */
+  /** JIY Near — landing + app (no marketplace chrome) */
   const isNear = pathname === "/near" || pathname.startsWith("/near/");
   const bare = isLanding || isPublicMenu || isNear;
 

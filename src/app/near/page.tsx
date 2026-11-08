@@ -1,12 +1,5 @@
-import type { Metadata } from "next";
-import { NearApp } from "@/components/near/near-app";
+import { NearLanding } from "@/components/near/near-landing";
 
-export const metadata: Metadata = {
-  title: "JIY Near",
-  description:
-    "Yakındakilerle StarKey sohbet, check-in radar ve SUPRA hediyeler.",
-};
-
-export default function NearPage() {
-  return <NearApp />;
+export default function NearMarketingPage() {
+  return <NearLanding />;
 }
