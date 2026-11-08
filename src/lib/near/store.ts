@@ -174,6 +174,33 @@ export async function checkOut(wallet: string): Promise<void> {
   }
 }
 
+export async function getPresence(
+  wallet: string
+): Promise<NearPresence | null> {
+  const w = normWallet(wallet);
+  const mem = presenceMap().get(w);
+  if (mem && new Date(mem.expiresAt).getTime() > Date.now()) return mem;
+  const client = await db();
+  if (!client) return mem || null;
+  const { data } = await client
+    .from("near_presence")
+    .select("*")
+    .eq("wallet", w)
+    .maybeSingle();
+  if (!data) return null;
+  if (new Date(data.expires_at).getTime() < Date.now()) return null;
+  const p: NearPresence = {
+    wallet: data.wallet,
+    geohash: data.geohash,
+    lat: data.lat,
+    lng: data.lng,
+    expiresAt: data.expires_at,
+    updatedAt: data.updated_at,
+  };
+  presenceMap().set(w, p);
+  return p;
+}
+
 export async function listNearby(
   wallet: string,
   maxMeters = 2500

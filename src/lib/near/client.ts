@@ -101,3 +101,40 @@ export async function sendGiftOnChain(input: {
   });
   return { txHash };
 }
+
+/**
+ * Contribute to the local place pot. If NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS is set,
+ * sends SUPRA on-chain to that treasury; otherwise records ledger-only.
+ */
+export async function contributePlacePot(input: {
+  from: string;
+  giftId: string;
+}): Promise<{ txHash: string | null }> {
+  const gift = getGift(input.giftId);
+  if (!gift) throw new Error("Unknown gift");
+  const potAddr = process.env.NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS;
+
+  let txHash: string | null = null;
+  if (potAddr && /^0x[a-fA-F0-9]{40}$/.test(potAddr)) {
+    const provider = getStarkeyEthereum();
+    if (!provider) throw new Error("StarKey not installed");
+    await ensureSupraEvmDevnet(provider);
+    txHash = (await provider.request({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: input.from,
+          to: potAddr,
+          value: weiToHex(supraToWei(gift.amountSupra)),
+          chainId: SUPRA_EVM_DEVNET.chainId,
+        },
+      ],
+    })) as string;
+  }
+
+  await nearFetch("/api/near/pots", {
+    method: "POST",
+    body: JSON.stringify({ giftId: input.giftId, txHash }),
+  });
+  return { txHash };
+}

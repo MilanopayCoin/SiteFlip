@@ -8,12 +8,19 @@ import {
   MessageCircle,
   Radio,
   UserRound,
+  Video,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  IncomingCallBanner,
+  VideoCallAnswer,
+  VideoCallPanel,
+} from "@/components/near/video-call";
+import {
+  contributePlacePot,
   getNearToken,
   nearFetch,
   sendGiftOnChain,
@@ -21,7 +28,7 @@ import {
   signInWithStarkey,
 } from "@/lib/near/client";
 import { GIFT_CATALOG } from "@/lib/near/gifts";
-import type { NearPeer, NearProfile } from "@/lib/near/types";
+import type { NearCall, NearPeer, NearPlacePot, NearProfile } from "@/lib/near/types";
 import {
   shortAddress,
   STARKEY_INSTALL_URL,
@@ -62,6 +69,12 @@ export function NearApp() {
   const [mood, setMood] = useState("");
   const [bio, setBio] = useState("");
   const [emoji, setEmoji] = useState("✨");
+  const [pot, setPot] = useState<NearPlacePot | null>(null);
+  const [videoPeer, setVideoPeer] = useState<string | null>(null);
+  const [answerCall, setAnswerCall] = useState<{
+    id: string;
+    from: string;
+  } | null>(null);
 
   const wallet = starkey.account;
 
@@ -79,6 +92,15 @@ export function NearApp() {
   const refreshPeers = useCallback(async () => {
     const data = await nearFetch("/api/near/presence");
     setPeers(data.peers || []);
+  }, []);
+
+  const refreshPot = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/pots");
+      setPot(data.pot || null);
+    } catch {
+      setPot(null);
+    }
   }, []);
 
   const refreshThreads = useCallback(async () => {
@@ -176,6 +198,7 @@ export function NearApp() {
       });
       setCheckedIn(true);
       await refreshPeers();
+      await refreshPot();
       setTab("radar");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Check-in failed");
@@ -256,6 +279,20 @@ export function NearApp() {
     }
   }
 
+  async function sendToPot(giftId: string) {
+    if (!wallet) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await contributePlacePot({ from: wallet, giftId });
+      await refreshPot();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Pot gift failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveProfile() {
     setBusy(true);
     try {
@@ -329,6 +366,15 @@ export function NearApp() {
           </p>
         ) : null}
 
+        {sessionReady && wallet ? (
+          <IncomingCallBanner
+            myWallet={wallet}
+            onAccept={(call: NearCall) => {
+              setAnswerCall({ id: call.id, from: call.fromWallet });
+            }}
+          />
+        ) : null}
+
         {!sessionReady || !wallet ? (
           <section className="space-y-5 rounded-2xl border border-border bg-surface/70 p-5">
             <p className="text-sm text-muted">
@@ -378,11 +424,40 @@ export function NearApp() {
                   <Button
                     variant="outline"
                     disabled={busy}
-                    onClick={() => void refreshPeers()}
+                    onClick={() => {
+                      void refreshPeers();
+                      void refreshPot();
+                    }}
                   >
                     Yenile
                   </Button>
                 </div>
+
+                {checkedIn && pot ? (
+                  <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                      Yer kasası
+                    </p>
+                    <p className="mt-1 text-sm">
+                      Bu bölgeye {pot.giftCount} hediye · geohash{" "}
+                      <span className="font-mono text-xs">{pot.geohash}</span>
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {GIFT_CATALOG.map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void sendToPot(g.id)}
+                          className="rounded-full border border-border px-2.5 py-1 text-[11px] hover:border-accent/50"
+                        >
+                          {g.emoji} Kasa · {g.amountSupra}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 {!checkedIn ? (
                   <p className="text-sm text-muted">
                     Check-in yapınca yakındaki StarKey kullanıcıları görünür.
@@ -423,6 +498,13 @@ export function NearApp() {
                             >
                               <MessageCircle className="mr-1 h-3.5 w-3.5" />
                               Chat
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => setVideoPeer(p.wallet)}
+                            >
+                              <Video className="mr-1 h-3.5 w-3.5" />
+                              Görüntülü
                             </Button>
                           </div>
                         </div>
@@ -614,6 +696,22 @@ export function NearApp() {
             ))}
           </div>
         </nav>
+      ) : null}
+
+      {videoPeer && wallet ? (
+        <VideoCallPanel
+          myWallet={wallet}
+          peerWallet={videoPeer}
+          onClose={() => setVideoPeer(null)}
+        />
+      ) : null}
+
+      {answerCall && wallet ? (
+        <VideoCallAnswer
+          callId={answerCall.id}
+          peerWallet={answerCall.from}
+          onClose={() => setAnswerCall(null)}
+        />
       ) : null}
     </div>
   );

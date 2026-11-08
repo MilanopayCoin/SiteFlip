@@ -57,3 +57,32 @@ export type GiftCatalogItem = {
   amountSupra: number;
   blurb: string;
 };
+
+export type NearCallStatus = "ringing" | "active" | "ended";
+
+export type NearCall = {
+  id: string;
+  fromWallet: string;
+  toWallet: string;
+  status: NearCallStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NearCallSignalKind = "offer" | "answer" | "ice" | "hangup";
+
+export type NearCallSignal = {
+  id: number;
+  callId: string;
+  fromWallet: string;
+  kind: NearCallSignalKind;
+  payload: unknown;
+  createdAt: string;
+};
+
+export type NearPlacePot = {
+  geohash: string;
+  totalWei: string;
+  giftCount: number;
+  updatedAt: string;
+};
