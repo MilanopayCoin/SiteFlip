@@ -1,0 +1,620 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  Gift,
+  MapPin,
+  MessageCircle,
+  Radio,
+  UserRound,
+  Wallet,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  getNearToken,
+  nearFetch,
+  sendGiftOnChain,
+  setNearToken,
+  signInWithStarkey,
+} from "@/lib/near/client";
+import { GIFT_CATALOG } from "@/lib/near/gifts";
+import type { NearPeer, NearProfile } from "@/lib/near/types";
+import {
+  shortAddress,
+  STARKEY_INSTALL_URL,
+  useStarkeyEvm,
+} from "@/lib/starkey";
+
+type Tab = "radar" | "chat" | "profile";
+
+type ThreadRow = {
+  id: string;
+  peerWallet: string;
+  lastBody?: string;
+  updatedAt: string;
+};
+
+type Msg = {
+  id: string;
+  fromWallet: string;
+  body: string;
+  createdAt: string;
+};
+
+export function NearApp() {
+  const starkey = useStarkeyEvm();
+  const [tab, setTab] = useState<Tab>("radar");
+  const [sessionReady, setSessionReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<NearProfile | null>(null);
+  const [peers, setPeers] = useState<NearPeer[]>([]);
+  const [checkedIn, setCheckedIn] = useState(false);
+  const [threads, setThreads] = useState<ThreadRow[]>([]);
+  const [activePeer, setActivePeer] = useState<string | null>(null);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [draft, setDraft] = useState("");
+  const [name, setName] = useState("");
+  const [mood, setMood] = useState("");
+  const [bio, setBio] = useState("");
+  const [emoji, setEmoji] = useState("✨");
+
+  const wallet = starkey.account;
+
+  const refreshProfile = useCallback(async () => {
+    const data = await nearFetch("/api/near/profile");
+    if (data.profile) {
+      setProfile(data.profile);
+      setName(data.profile.displayName || "");
+      setMood(data.profile.mood || "");
+      setBio(data.profile.bio || "");
+      setEmoji(data.profile.avatarEmoji || "✨");
+    }
+  }, []);
+
+  const refreshPeers = useCallback(async () => {
+    const data = await nearFetch("/api/near/presence");
+    setPeers(data.peers || []);
+  }, []);
+
+  const refreshThreads = useCallback(async () => {
+    const data = await nearFetch("/api/near/threads");
+    setThreads(data.threads || []);
+  }, []);
+
+  useEffect(() => {
+    setSessionReady(Boolean(getNearToken()));
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady || !wallet) return;
+    void (async () => {
+      try {
+        await refreshProfile();
+        await refreshPeers();
+        await refreshThreads();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Load failed");
+      }
+    })();
+  }, [sessionReady, wallet, refreshProfile, refreshPeers, refreshThreads]);
+
+  useEffect(() => {
+    if (!activeThreadId || !sessionReady) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const data = await nearFetch(
+          `/api/near/threads?threadId=${encodeURIComponent(activeThreadId)}`
+        );
+        if (!stop) setMsgs(data.messages || []);
+      } catch {
+        // ignore poll errors
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, 4000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [activeThreadId, sessionReady]);
+
+  async function handleSignIn() {
+    setError(null);
+    setBusy(true);
+    try {
+      let addr = wallet;
+      if (!addr) {
+        addr = await starkey.connect();
+      }
+      if (!addr) throw new Error("StarKey bağlantısı iptal");
+      await signInWithStarkey(addr);
+      setSessionReady(true);
+      await nearFetch("/api/near/profile", {
+        method: "PUT",
+        body: JSON.stringify({
+          displayName: name || shortAddress(addr),
+          mood,
+          bio,
+          avatarEmoji: emoji,
+        }),
+      });
+      await refreshProfile();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCheckIn() {
+    setError(null);
+    setBusy(true);
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error("Konum desteklenmiyor"));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+        });
+      });
+      await nearFetch("/api/near/presence", {
+        method: "POST",
+        body: JSON.stringify({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          ttlMinutes: 45,
+        }),
+      });
+      setCheckedIn(true);
+      await refreshPeers();
+      setTab("radar");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Check-in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCheckOut() {
+    setBusy(true);
+    try {
+      await nearFetch("/api/near/presence", { method: "DELETE" });
+      setCheckedIn(false);
+      setPeers([]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Check-out failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openChat(peer: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/threads", {
+        method: "POST",
+        body: JSON.stringify({ peerWallet: peer }),
+      });
+      setActivePeer(peer);
+      setActiveThreadId(data.thread.id);
+      setTab("chat");
+      await refreshThreads();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chat open failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendMsg() {
+    if (!draft.trim() || (!activeThreadId && !activePeer)) return;
+    setBusy(true);
+    try {
+      await nearFetch("/api/near/threads", {
+        method: "POST",
+        body: JSON.stringify({
+          threadId: activeThreadId || undefined,
+          peerWallet: activePeer || undefined,
+          text: draft,
+        }),
+      });
+      setDraft("");
+      if (activeThreadId) {
+        const data = await nearFetch(
+          `/api/near/threads?threadId=${encodeURIComponent(activeThreadId)}`
+        );
+        setMsgs(data.messages || []);
+      }
+      await refreshThreads();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Send failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendGift(peer: string, giftId: string) {
+    if (!wallet) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await sendGiftOnChain({ from: wallet, to: peer, giftId });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gift failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveProfile() {
+    setBusy(true);
+    try {
+      const data = await nearFetch("/api/near/profile", {
+        method: "PUT",
+        body: JSON.stringify({
+          displayName: name,
+          mood,
+          bio,
+          avatarEmoji: emoji,
+        }),
+      });
+      setProfile(data.profile);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function signOutLocal() {
+    setNearToken(null);
+    setSessionReady(false);
+    setProfile(null);
+    setPeers([]);
+    starkey.disconnect();
+  }
+
+  const peerName = useMemo(() => {
+    if (!activePeer) return "";
+    const p = peers.find((x) => x.wallet === activePeer);
+    return p?.displayName || shortAddress(activePeer);
+  }, [activePeer, peers]);
+
+  return (
+    <div className="min-h-[100dvh] bg-background text-foreground">
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%)",
+        }}
+      />
+
+      <header className="relative z-10 border-b border-border/80 px-4 py-4">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+          <div>
+            <Link href="/" className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
+              JIY Near
+            </Link>
+            <p className="font-display text-xl font-semibold tracking-tight">
+              Şu an yakınımda
+            </p>
+          </div>
+          {sessionReady && wallet ? (
+            <button
+              type="button"
+              onClick={signOutLocal}
+              className="rounded-full border border-border px-3 py-1 font-mono text-[11px] text-muted"
+            >
+              {shortAddress(wallet)}
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <main className="relative z-10 mx-auto max-w-lg px-4 pb-28 pt-5">
+        {error ? (
+          <p className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
+
+        {!sessionReady || !wallet ? (
+          <section className="space-y-5 rounded-2xl border border-border bg-surface/70 p-5">
+            <p className="text-sm text-muted">
+              StarKey ile gir — radar, chat ve hediyeler cüzdan kimliğine bağlı.
+              Konum yalnızca check-in süresince (≈45 dk) kaba geohash olarak tutulur.
+            </p>
+            {starkey.status === "missing" ? (
+              <Button asChild className="w-full">
+                <a href={STARKEY_INSTALL_URL} target="_blank" rel="noreferrer">
+                  <Wallet className="mr-2 h-4 w-4" />
+                  StarKey indir
+                </a>
+              </Button>
+            ) : (
+              <Button
+                className="w-full"
+                disabled={busy || starkey.status === "connecting"}
+                onClick={() => void handleSignIn()}
+              >
+                <Wallet className="mr-2 h-4 w-4" />
+                {busy ? "İmzalanıyor…" : "StarKey ile giriş"}
+              </Button>
+            )}
+            <p className="text-xs text-muted">
+              Imza gas harcamaz. Hediyeler Supra Devnet SUPRA transferidir.
+            </p>
+          </section>
+        ) : (
+          <>
+            {tab === "radar" && (
+              <section className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {!checkedIn ? (
+                    <Button disabled={busy} onClick={() => void handleCheckIn()}>
+                      <Radio className="mr-2 h-4 w-4" />
+                      Check-in (konum)
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void handleCheckOut()}
+                    >
+                      Check-out
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void refreshPeers()}
+                  >
+                    Yenile
+                  </Button>
+                </div>
+                {!checkedIn ? (
+                  <p className="text-sm text-muted">
+                    Check-in yapınca yakındaki StarKey kullanıcıları görünür.
+                    Süre dolunca radar’dan düşersin.
+                  </p>
+                ) : peers.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
+                    Henüz yakında kimse yok — arkadaşını davet et.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {peers.map((p) => (
+                      <li
+                        key={p.wallet}
+                        className="rounded-xl border border-border bg-surface/60 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-lg">
+                              <span className="mr-2">{p.avatarEmoji}</span>
+                              {p.displayName}
+                            </p>
+                            {p.mood ? (
+                              <p className="text-sm text-muted">{p.mood}</p>
+                            ) : null}
+                            <p className="mt-1 flex items-center gap-1 text-[11px] text-muted">
+                              <MapPin className="h-3 w-3" />
+                              {p.distanceM != null
+                                ? `≈ ${p.distanceM} m`
+                                : "yakın"}
+                            </p>
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void openChat(p.wallet)}
+                            >
+                              <MessageCircle className="mr-1 h-3.5 w-3.5" />
+                              Chat
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {GIFT_CATALOG.map((g) => (
+                            <button
+                              key={g.id}
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void sendGift(p.wallet, g.id)}
+                              className="rounded-full border border-border px-2.5 py-1 text-[11px] hover:border-accent/50"
+                              title={g.blurb}
+                            >
+                              {g.emoji} {g.label} · {g.amountSupra} SUPRA
+                            </button>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {tab === "chat" && (
+              <section className="space-y-3">
+                {!activeThreadId ? (
+                  <ul className="space-y-2">
+                    {threads.length === 0 ? (
+                      <p className="text-sm text-muted">
+                        Henüz sohbet yok — radar’dan birine yaz.
+                      </p>
+                    ) : (
+                      threads.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className="flex w-full flex-col rounded-xl border border-border px-3 py-3 text-left hover:border-accent/40"
+                          onClick={() => {
+                            setActiveThreadId(t.id);
+                            setActivePeer(t.peerWallet);
+                          }}
+                        >
+                          <span className="font-medium">
+                            {shortAddress(t.peerWallet)}
+                          </span>
+                          <span className="truncate text-xs text-muted">
+                            {t.lastBody || "—"}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </ul>
+                ) : (
+                  <div className="flex h-[55dvh] flex-col rounded-xl border border-border">
+                    <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                      <p className="text-sm font-medium">{peerName}</p>
+                      <button
+                        type="button"
+                        className="text-xs text-muted"
+                        onClick={() => {
+                          setActiveThreadId(null);
+                          setMsgs([]);
+                        }}
+                      >
+                        Geri
+                      </button>
+                    </div>
+                    <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+                      {msgs.map((m) => (
+                        <div
+                          key={m.id}
+                          className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                            m.fromWallet === wallet
+                              ? "ml-auto bg-accent text-accent-ink"
+                              : "bg-surface text-foreground"
+                          }`}
+                        >
+                          {m.body}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 border-t border-border p-2">
+                      <Input
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder="Mesaj…"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void sendMsg();
+                        }}
+                      />
+                      <Button disabled={busy} onClick={() => void sendMsg()}>
+                        Gönder
+                      </Button>
+                    </div>
+                    {activePeer ? (
+                      <div className="flex flex-wrap gap-1 border-t border-border px-2 py-2">
+                        {GIFT_CATALOG.map((g) => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void sendGift(activePeer, g.id)}
+                            className="rounded-full border border-border px-2 py-0.5 text-[11px]"
+                          >
+                            <Gift className="mr-1 inline h-3 w-3" />
+                            {g.emoji} {g.amountSupra}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {tab === "profile" && (
+              <section className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs text-muted">Emoji</label>
+                  <Input
+                    value={emoji}
+                    onChange={(e) => setEmoji(e.target.value)}
+                    maxLength={4}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted">İsim</label>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    maxLength={40}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted">Mood</label>
+                  <Input
+                    value={mood}
+                    onChange={(e) => setMood(e.target.value)}
+                    placeholder="Kahve / sohbet / …"
+                    maxLength={48}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted">Bio</label>
+                  <Textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    maxLength={160}
+                    rows={3}
+                  />
+                </div>
+                <Button disabled={busy} onClick={() => void saveProfile()}>
+                  <UserRound className="mr-2 h-4 w-4" />
+                  Kaydet
+                </Button>
+                {profile ? (
+                  <p className="font-mono text-[11px] text-muted">
+                    {profile.wallet}
+                  </p>
+                ) : null}
+              </section>
+            )}
+          </>
+        )}
+      </main>
+
+      {sessionReady && wallet ? (
+        <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-border/80 bg-background/95 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-lg justify-around px-2 py-2">
+            {(
+              [
+                ["radar", Radio, "Radar"],
+                ["chat", MessageCircle, "Chat"],
+                ["profile", UserRound, "Profil"],
+              ] as const
+            ).map(([id, Icon, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={`flex flex-col items-center gap-0.5 rounded-lg px-4 py-1.5 text-[11px] ${
+                  tab === id ? "text-accent" : "text-muted"
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      ) : null}
+    </div>
+  );
+}
