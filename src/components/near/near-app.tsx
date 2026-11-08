@@ -41,6 +41,7 @@ import {
   unblockWallet,
 } from "@/lib/near/safety";
 import type { NearTableClaim } from "@/lib/near/claims";
+import type { NearDuel } from "@/lib/near/duels";
 import type {
   NearCall,
   NearGiftBoardRow,
@@ -142,6 +143,8 @@ export function NearApp() {
   const [claims, setClaims] = useState<NearTableClaim[]>([]);
   const [mineClaim, setMineClaim] = useState<NearTableClaim | null>(null);
   const [claimLabel, setClaimLabel] = useState("Masa");
+  const [duels, setDuels] = useState<NearDuel[]>([]);
+  const [duelSeconds, setDuelSeconds] = useState(60);
 
   const wallet = starkey.account;
 
@@ -169,9 +172,34 @@ export function NearApp() {
     }
   }, [applyWaveSummary]);
 
+  const refreshDuels = useCallback(async () => {
+    try {
+      const data = await nearFetch("/api/near/duels");
+      setDuels(data.duels || []);
+      if (data.duelSeconds) setDuelSeconds(data.duelSeconds);
+    } catch {
+      setDuels([]);
+    }
+  }, []);
+
   function isUnlocked(peer: string) {
     return waveMutual.has(peer.toLowerCase());
   }
+
+  const activeDuel = useMemo(() => {
+    const recentDone = duels.find(
+      (d) =>
+        d.status === "done" &&
+        d.endsAt &&
+        Date.now() - new Date(d.endsAt).getTime() < 120_000
+    );
+    return (
+      duels.find((d) => d.status === "active") ||
+      duels.find((d) => d.status === "pending") ||
+      recentDone ||
+      null
+    );
+  }, [duels]);
 
   const refreshProfile = useCallback(async () => {
     const data = await nearFetch("/api/near/profile");
@@ -349,6 +377,7 @@ export function NearApp() {
         await refreshBoard();
         await refreshInbox();
         await refreshWaves();
+        await refreshDuels();
         setError(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Load failed";
@@ -371,6 +400,7 @@ export function NearApp() {
     refreshBoard,
     refreshInbox,
     refreshWaves,
+    refreshDuels,
   ]);
 
   useEffect(() => {
@@ -380,6 +410,7 @@ export function NearApp() {
       void refreshBoard();
       void refreshInbox();
       void refreshWaves();
+      void refreshDuels();
     }, 12_000);
     return () => window.clearInterval(id);
   }, [
@@ -389,7 +420,15 @@ export function NearApp() {
     refreshBoard,
     refreshInbox,
     refreshWaves,
+    refreshDuels,
   ]);
+
+  useEffect(() => {
+    if (!sessionReady || !wallet) return;
+    if (!activeDuel || activeDuel.status !== "active") return;
+    const id = window.setInterval(() => void refreshDuels(), 2000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, wallet, activeDuel, refreshDuels]);
 
   useEffect(() => {
     if (!activeThreadId || !sessionReady) return;
@@ -592,10 +631,11 @@ export function NearApp() {
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    if (!expiresAt) return;
-    const id = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    if (!expiresAt && !(activeDuel?.status === "active")) return;
+    const ms = activeDuel?.status === "active" ? 1000 : 30_000;
+    const id = window.setInterval(() => setTick((n) => n + 1), ms);
     return () => window.clearInterval(id);
-  }, [expiresAt]);
+  }, [expiresAt, activeDuel?.status]);
 
   const minutesLeft = useMemo(() => {
     if (!expiresAt) return null;
@@ -604,6 +644,59 @@ export function NearApp() {
     if (ms <= 0) return 0;
     return Math.ceil(ms / 60_000);
   }, [expiresAt, tick]);
+
+  const duelLeftSec = useMemo(() => {
+    void tick;
+    if (!activeDuel?.endsAt || activeDuel.status !== "active") return null;
+    const ms = new Date(activeDuel.endsAt).getTime() - Date.now();
+    return Math.max(0, Math.ceil(ms / 1000));
+  }, [activeDuel, tick]);
+
+  async function challengePeer(peer: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/duels", {
+        method: "POST",
+        body: JSON.stringify({ peerWallet: peer }),
+      });
+      setDuels((prev) => {
+        const rest = prev.filter((d) => d.id !== data.duel.id);
+        return [data.duel, ...rest];
+      });
+      setGiftFlash(`Düello isteği · ${duelSeconds}sn hazır`);
+      window.setTimeout(() => setGiftFlash(null), 2000);
+      await refreshDuels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Duel failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function respondDuel(duelId: string, action: "accept" | "decline") {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await nearFetch("/api/near/duels", {
+        method: "POST",
+        body: JSON.stringify({ duelId, action }),
+      });
+      setDuels((prev) => {
+        const rest = prev.filter((d) => d.id !== data.duel.id);
+        return [data.duel, ...rest];
+      });
+      if (action === "accept") {
+        setGiftFlash(`Düello başladı · ${duelSeconds}sn! Hediyeyle skor yap`);
+        window.setTimeout(() => setGiftFlash(null), 2500);
+      }
+      await refreshDuels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Duel respond failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const openChat = useCallback(async (peer: string) => {
     setBusy(true);
@@ -702,6 +795,7 @@ export function NearApp() {
       await refreshBoard();
       await refreshInbox();
       await refreshWaves();
+      await refreshDuels();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
     } finally {
@@ -866,6 +960,67 @@ export function NearApp() {
           <p className="mb-4 animate-pulse rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent">
             {giftFlash}
           </p>
+        ) : null}
+        {sessionReady && wallet && activeDuel ? (
+          <div className="mb-4 rounded-xl border border-accent/40 bg-accent/5 px-3 py-3">
+            {activeDuel.status === "pending" &&
+            activeDuel.bWallet === wallet.toLowerCase() ? (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  Düello isteği · {shortAddress(activeDuel.aWallet)}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void respondDuel(activeDuel.id, "accept")}
+                  >
+                    Kabul · {duelSeconds}sn
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void respondDuel(activeDuel.id, "decline")}
+                  >
+                    Reddet
+                  </Button>
+                </div>
+              </div>
+            ) : activeDuel.status === "pending" ? (
+              <p className="text-sm text-muted">
+                Düello bekleniyor · {shortAddress(activeDuel.bWallet)}
+              </p>
+            ) : activeDuel.status === "active" ? (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                  Hediye düellosu · {duelLeftSec ?? "—"}s
+                </p>
+                <p className="mt-1 font-mono text-sm">
+                  Sen{" "}
+                  {activeDuel.aWallet === wallet.toLowerCase()
+                    ? activeDuel.aScore
+                    : activeDuel.bScore}{" "}
+                  — rakip{" "}
+                  {activeDuel.aWallet === wallet.toLowerCase()
+                    ? activeDuel.bScore
+                    : activeDuel.aScore}
+                </p>
+                <p className="mt-1 text-[11px] text-muted">
+                  Rakibe hediye gönder — skor Wave=1 … Crown=100
+                </p>
+              </div>
+            ) : activeDuel.status === "done" ? (
+              <p className="text-sm">
+                Düello bitti ·{" "}
+                {activeDuel.winnerWallet
+                  ? activeDuel.winnerWallet === wallet.toLowerCase()
+                    ? "Kazandın 👑"
+                    : `Kazanan ${shortAddress(activeDuel.winnerWallet)}`
+                  : "Berabere"}
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {inviteGeohash && !checkedIn ? (
           <p className="mb-4 rounded-lg border border-border bg-surface/70 px-3 py-2 text-sm">
@@ -1210,6 +1365,14 @@ export function NearApp() {
                                 >
                                   <Video className="mr-1 h-3.5 w-3.5" />
                                   Görüntülü
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={busy}
+                                  onClick={() => void challengePeer(p.wallet)}
+                                >
+                                  Düello
                                 </Button>
                               </>
                             ) : (

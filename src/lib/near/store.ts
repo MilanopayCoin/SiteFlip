@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { coarseCoord, distanceMeters, encodeGeohash } from "@/lib/near/geohash";
+import { creditDuelGift } from "@/lib/near/duels";
 import { getGift, giftScore } from "@/lib/near/gifts";
 import { recordWave } from "@/lib/near/waves";
 import type {
@@ -532,6 +533,15 @@ export async function recordGift(input: {
   // Any catalog gift counts as a Selam unlock edge (Wave is the cheap path).
   try {
     await recordWave(rec.fromWallet, rec.toWallet, "gift");
+  } catch {
+    // non-fatal
+  }
+  try {
+    await creditDuelGift({
+      fromWallet: rec.fromWallet,
+      toWallet: rec.toWallet,
+      giftId: rec.giftId,
+    });
   } catch {
     // non-fatal
   }
