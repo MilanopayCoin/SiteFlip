@@ -84,6 +84,14 @@ export type RouletteSpin = {
   spunAt: string;
 };
 
+export type RouletteRoundNet = {
+  wallet: string;
+  /** Net chip change this round (won - lost stake). */
+  net: number;
+  staked: number;
+  returned: number;
+};
+
 export type RouletteTable = {
   id: string;
   hostWallet: string;
@@ -95,6 +103,10 @@ export type RouletteTable = {
   balances: Record<string, number>;
   lastSpin: RouletteSpin | null;
   history: RouletteSpin[];
+  /** Per-wallet net for the spin currently shown. */
+  lastRoundNets: RouletteRoundNet[];
+  /** Host: when result ends, auto open next betting round. */
+  autoStart: boolean;
   round: number;
   createdAt: string;
   updatedAt: string;
@@ -172,11 +184,26 @@ export function toPublic(t: RouletteTable): RoulettePublic {
     ...rest,
     history: t.history || [],
     bets: t.bets || [],
+    lastRoundNets: t.lastRoundNets || [],
+    autoStart: Boolean(t.autoStart),
     commitHash:
       t.phase === "betting" || t.phase === "spinning" || t.phase === "result"
         ? t._commit || t.lastSpin?.commitHash || null
         : t.lastSpin?.commitHash || null,
   };
+}
+
+export async function setAutoStart(
+  tableId: string,
+  wallet: string,
+  autoStart: boolean
+): Promise<RoulettePublic> {
+  const t = tables().get(tableId);
+  if (!t) throw new Error("Masa bulunamadı");
+  if (norm(wallet) !== t.hostWallet) throw new Error("Sadece host");
+  t.autoStart = autoStart;
+  t.updatedAt = now();
+  return toPublic(t);
 }
 
 function dozenNumbers(d: number): number[] {
@@ -308,6 +335,8 @@ export async function createTable(input: {
     balances: { [host]: START_CHIPS },
     lastSpin: null,
     history: [],
+    lastRoundNets: [],
+    autoStart: true,
     round: 0,
     createdAt: now(),
     updatedAt: now(),
@@ -425,22 +454,12 @@ export async function startBetting(
   if (!t) throw new Error("Masa bulunamadı");
   if (norm(wallet) !== t.hostWallet) throw new Error("Sadece host başlatır");
   await advancePhase(t);
+  if (t.phase === "betting") return toPublic(t);
   if (t.phase !== "lobby" && t.phase !== "result") {
     throw new Error("Şu an bahis açılamaz");
   }
   if (!t.seats.some(Boolean)) throw new Error("Koltuk boş");
-
-  const seedBytes = new Uint8Array(32);
-  crypto.getRandomValues(seedBytes);
-  const seed = [...seedBytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const commit = await sha256Hex(seed);
-  t._seed = seed;
-  t._commit = commit;
-  t.bets = [];
-  t.phase = "betting";
-  t.phaseEndsAt = new Date(Date.now() + BETTING_MS).toISOString();
-  t.round += 1;
-  t.updatedAt = now();
+  await beginBettingRound(t);
   return toPublic(t);
 }
 
@@ -547,13 +566,25 @@ async function settleAndSpin(t: RouletteTable): Promise<void> {
   const number = numberFromSeed(seed);
   const color = colorOf(number);
 
+  const byWallet = new Map<string, { staked: number; returned: number }>();
   for (const bet of t.bets) {
+    const cur = byWallet.get(bet.wallet) || { staked: 0, returned: 0 };
+    cur.staked += bet.amount;
     if (betWins(bet, number)) {
       const mult = PAYOUT[bet.kind];
-      t.balances[bet.wallet] =
-        (t.balances[bet.wallet] ?? 0) + bet.amount * (mult + 1);
+      const ret = bet.amount * (mult + 1);
+      cur.returned += ret;
+      t.balances[bet.wallet] = (t.balances[bet.wallet] ?? 0) + ret;
     }
+    byWallet.set(bet.wallet, cur);
   }
+
+  t.lastRoundNets = [...byWallet.entries()].map(([wallet, v]) => ({
+    wallet,
+    staked: v.staked,
+    returned: v.returned,
+    net: v.returned - v.staked,
+  }));
 
   const spin: RouletteSpin = {
     number,
@@ -566,6 +597,22 @@ async function settleAndSpin(t: RouletteTable): Promise<void> {
   t.history = [spin, ...t.history].slice(0, 24);
   t.phase = "spinning";
   t.phaseEndsAt = new Date(Date.now() + SPINNING_MS).toISOString();
+  t.updatedAt = now();
+}
+
+async function beginBettingRound(t: RouletteTable): Promise<void> {
+  const seedBytes = new Uint8Array(32);
+  crypto.getRandomValues(seedBytes);
+  const seed = [...seedBytes]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  const commit = await sha256Hex(seed);
+  t._seed = seed;
+  t._commit = commit;
+  t.bets = [];
+  t.phase = "betting";
+  t.phaseEndsAt = new Date(Date.now() + BETTING_MS).toISOString();
+  t.round += 1;
   t.updatedAt = now();
 }
 
@@ -590,6 +637,9 @@ async function advancePhase(t: RouletteTable): Promise<void> {
     t._seed = undefined;
     t._commit = undefined;
     t.updatedAt = now();
+    if (t.autoStart && t.seats.some(Boolean)) {
+      await beginBettingRound(t);
+    }
   }
 }
 

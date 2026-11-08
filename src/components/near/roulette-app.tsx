@@ -137,6 +137,14 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
   const isHost =
     !!table && !!wallet && table.hostWallet === wallet.toLowerCase();
 
+  const myNet = useMemo(() => {
+    if (!table || !wallet) return null;
+    return (
+      table.lastRoundNets?.find((n) => n.wallet === wallet.toLowerCase()) ||
+      null
+    );
+  }, [table, wallet]);
+
   const phaseTitle =
     table?.phase === "lobby"
       ? "Lobi"
@@ -147,6 +155,23 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
           : table?.phase === "result"
             ? "Sonuç"
             : "";
+
+  async function toggleAuto() {
+    if (!table) return;
+    try {
+      const data = await nearFetch("/api/near/roulette", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "auto",
+          tableId: table.id,
+          autoStart: !table.autoStart,
+        }),
+      });
+      setTable(data.table);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Auto ayarı başarısız");
+    }
+  }
 
   async function handleSignIn() {
     setBusy(true);
@@ -565,23 +590,50 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
                   spinning={table.phase === "spinning"}
                 />
               </div>
-              {table.phase === "result" && table.lastSpin ? (
-                <p className="border-t border-[#c9a227]/20 py-2.5 text-center text-xl font-semibold tracking-tight sm:text-2xl">
-                  <span
-                    className={
-                      table.lastSpin.color === "red"
-                        ? "text-red-400"
-                        : table.lastSpin.color === "black"
-                          ? "text-white"
-                          : "text-emerald-400"
-                    }
-                  >
-                    {table.lastSpin.number}
-                  </span>
-                  <span className="ml-2 text-xs font-normal uppercase tracking-[0.16em] text-white/45 sm:text-sm">
-                    {table.lastSpin.color}
-                  </span>
-                </p>
+              {(table.phase === "result" || table.phase === "spinning") &&
+              table.lastSpin ? (
+                <div className="space-y-1 border-t border-[#c9a227]/20 py-2.5 text-center">
+                  <p className="text-xl font-semibold tracking-tight sm:text-2xl">
+                    <span
+                      className={
+                        table.lastSpin.color === "red"
+                          ? "text-red-400"
+                          : table.lastSpin.color === "black"
+                            ? "text-white"
+                            : "text-emerald-400"
+                      }
+                    >
+                      {table.lastSpin.number}
+                    </span>
+                    <span className="ml-2 text-xs font-normal uppercase tracking-[0.16em] text-white/45 sm:text-sm">
+                      {table.lastSpin.color}
+                    </span>
+                  </p>
+                  {table.phase === "result" && myNet ? (
+                    <p
+                      className={`text-sm font-semibold ${
+                        myNet.net > 0
+                          ? "text-emerald-400"
+                          : myNet.net < 0
+                            ? "text-red-400"
+                            : "text-white/50"
+                      }`}
+                    >
+                      {myNet.net > 0
+                        ? `+${myNet.net} kazandın`
+                        : myNet.net < 0
+                          ? `${myNet.net} kaybettin`
+                          : "Berabere"}
+                      <span className="ml-2 text-[10px] font-normal text-white/35">
+                        stake {myNet.staked} · dönüş {myNet.returned}
+                      </span>
+                    </p>
+                  ) : table.phase === "result" && myBets.length === 0 ? (
+                    <p className="text-[11px] text-white/40">
+                      Bu turda bahsin yoktu
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
 
@@ -635,14 +687,47 @@ export function RouletteApp({ initialTableId }: { initialTableId?: string }) {
               </ul>
             ) : null}
 
-            {isHost && (table.phase === "lobby" || table.phase === "result") ? (
-              <Button
-                disabled={busy}
-                className="w-full bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
-                onClick={() => void startRound()}
-              >
-                Bahisleri aç · 30 sn
-              </Button>
+            {isHost ? (
+              <div className="flex flex-col gap-2">
+                {(table.phase === "lobby" || table.phase === "result") &&
+                !table.autoStart ? (
+                  <Button
+                    disabled={busy}
+                    className="w-full bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
+                    onClick={() => void startRound()}
+                  >
+                    Bahisleri aç · 30 sn
+                  </Button>
+                ) : null}
+                {(table.phase === "lobby" || table.phase === "result") &&
+                table.autoStart ? (
+                  <p className="text-center text-[11px] text-[#c9a227]/80">
+                    Otomatik tur açık — sonuç bitince bahisler yeniden açılır
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void toggleAuto()}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] ${
+                    table.autoStart
+                      ? "border-[#c9a227]/50 bg-[#c9a227]/15 text-[#ffe566]"
+                      : "border-white/20 text-white/45"
+                  }`}
+                >
+                  Otomatik tur · {table.autoStart ? "Açık" : "Kapalı"}
+                </button>
+                {table.phase === "lobby" ? (
+                  <Button
+                    disabled={busy}
+                    className="w-full bg-[#c9a227] text-[#1a1408] hover:bg-[#ffe566]"
+                    onClick={() => void startRound()}
+                  >
+                    {table.autoStart
+                      ? "İlk turu şimdi başlat"
+                      : "Bahisleri aç · 30 sn"}
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
 
             {!isHost && table.phase === "lobby" ? (

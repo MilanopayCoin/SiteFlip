@@ -11,6 +11,7 @@ import {
   pullRouletteSignals,
   pushRouletteSignal,
   ROULETTE_CONST,
+  setAutoStart,
   setCam,
   startBetting,
   tickTable,
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
       meta?: number;
       betKind?: RouletteBetKind;
       camOn?: boolean;
+      autoStart?: boolean;
       toWallet?: string;
       kind?: RouletteSignal["kind"];
       payload?: unknown;
@@ -178,6 +180,20 @@ export async function POST(request: Request) {
           );
         }
         const table = await setCam(body.tableId, wallet, body.camOn);
+        return Response.json({ table });
+      }
+      case "auto": {
+        if (!body.tableId || typeof body.autoStart !== "boolean") {
+          return Response.json(
+            { error: "tableId + autoStart required" },
+            { status: 400 }
+          );
+        }
+        const table = await setAutoStart(
+          body.tableId,
+          wallet,
+          body.autoStart
+        );
         return Response.json({ table });
       }
       case "tick": {

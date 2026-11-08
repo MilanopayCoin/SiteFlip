@@ -42,6 +42,8 @@ function ChipStack({ amount }: { amount: number }) {
   );
 }
 
+type BetMode = "straight" | "split" | "corner";
+
 export function RouletteBoard({
   disabled,
   chip,
@@ -64,6 +66,8 @@ export function RouletteBoard({
   const me = myWallet?.toLowerCase() || null;
   const shellRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [mode, setMode] = useState<BetMode>("straight");
+  const [picked, setPicked] = useState<number[]>([]);
 
   useEffect(() => {
     const el = shellRef.current;
@@ -92,6 +96,26 @@ export function RouletteBoard({
 
   const boardH = 268;
 
+  function onNumberTap(n: number) {
+    if (disabled) return;
+    if (mode === "straight") {
+      onBet({ kind: "straight", numbers: [n] });
+      return;
+    }
+    const need = mode === "split" ? 2 : 4;
+    const next = picked.includes(n)
+      ? picked.filter((x) => x !== n)
+      : [...picked, n].slice(-need);
+    setPicked(next);
+    if (next.length === need) {
+      onBet({
+        kind: mode,
+        numbers: next,
+      });
+      setPicked([]);
+    }
+  }
+
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -118,6 +142,50 @@ export function RouletteBoard({
         </span>
       </div>
 
+      <div className="flex gap-1">
+        {(
+          [
+            ["straight", "Düz"],
+            ["split", "Split"],
+            ["corner", "Corner"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              setMode(id);
+              setPicked([]);
+            }}
+            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+              mode === id
+                ? "border-[#ffe566] bg-[#c9a227]/20 text-[#ffe566]"
+                : "border-white/15 text-white/50"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        {picked.length > 0 ? (
+          <button
+            type="button"
+            className="ml-auto text-[10px] text-white/40"
+            onClick={() => setPicked([])}
+          >
+            Seçim {picked.join(",")} · iptal
+          </button>
+        ) : (
+          <span className="ml-auto self-center text-[9px] text-white/30">
+            {mode === "straight"
+              ? "Sayıya dokun"
+              : mode === "split"
+                ? "2 sayı seç"
+                : "4 sayı seç"}
+          </span>
+        )}
+      </div>
+
       {/* Scale-to-fit: full European layout always visible on phone */}
       <div
         ref={shellRef}
@@ -137,8 +205,10 @@ export function RouletteBoard({
             <button
               type="button"
               disabled={disabled}
-              onClick={() => onBet({ kind: "straight", numbers: [0] })}
-              className="relative flex w-9 shrink-0 flex-col justify-center rounded-md bg-emerald-700 text-sm font-semibold text-white active:brightness-110"
+              onClick={() => onNumberTap(0)}
+              className={`relative flex w-9 shrink-0 flex-col justify-center rounded-md bg-emerald-700 text-sm font-semibold text-white active:brightness-110 ${
+                picked.includes(0) ? "ring-2 ring-[#ffe566]" : ""
+              }`}
               style={{ minHeight: 118 }}
             >
               0
@@ -159,8 +229,10 @@ export function RouletteBoard({
                       key={n}
                       type="button"
                       disabled={disabled}
-                      onClick={() => onBet({ kind: "straight", numbers: [n] })}
-                      className={`relative flex h-9 items-center justify-center rounded-sm text-[11px] font-semibold active:brightness-125 ${cellClass(n)}`}
+                      onClick={() => onNumberTap(n)}
+                      className={`relative flex h-9 items-center justify-center rounded-sm text-[11px] font-semibold active:brightness-125 ${cellClass(n)} ${
+                        picked.includes(n) ? "ring-2 ring-[#ffe566] z-[1]" : ""
+                      }`}
                     >
                       {n}
                       <ChipStack
