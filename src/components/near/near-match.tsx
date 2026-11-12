@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MessageCircle, Video } from "lucide-react";
+import { MessageCircle, Mic, Swords, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { NearPeer } from "@/lib/near/types";
 
@@ -9,11 +9,15 @@ export function NearMatchOverlay({
   peer,
   onChat,
   onVideo,
+  onDuel,
+  onVoice,
   onClose,
 }: {
   peer: NearPeer;
   onChat: () => void;
   onVideo: () => void;
+  onDuel?: () => void;
+  onVoice?: () => void;
   onClose: () => void;
 }) {
   return (
@@ -41,7 +45,7 @@ export function NearMatchOverlay({
           {peer.displayName}
         </h2>
         <p className="mt-1 text-sm text-muted">
-          Karşılıklı Selam — chat ve görüntülü açıldı
+          Karşılıklı Selam — chat, görüntülü ve düello açıldı
         </p>
         <div className="mt-6 flex flex-col gap-2">
           <Button className="w-full" onClick={onChat}>
@@ -52,6 +56,18 @@ export function NearMatchOverlay({
             <Video className="mr-2 h-4 w-4" />
             Görüntülü ara
           </Button>
+          {onDuel ? (
+            <Button variant="outline" className="w-full" onClick={onDuel}>
+              <Swords className="mr-2 h-4 w-4" />
+              Hediye düellosu
+            </Button>
+          ) : null}
+          {onVoice ? (
+            <Button variant="outline" className="w-full" onClick={onVoice}>
+              <Mic className="mr-2 h-4 w-4" />
+              Sesli odaya geç
+            </Button>
+          ) : null}
           <button
             type="button"
             className="mt-1 text-xs text-muted hover:text-foreground"

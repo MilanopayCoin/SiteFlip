@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
-import { Heart, MapPin, MessageCircle, X } from "lucide-react";
+import { Heart, MapPin, MessageCircle, Swords, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { blindLabel } from "@/lib/near/safety";
 import type { NearPeer } from "@/lib/near/types";
@@ -16,6 +16,7 @@ export function NearDiscover({
   onPass,
   onChat,
   onGift,
+  onDuel,
   onMatch,
 }: {
   peers: NearPeer[];
@@ -25,6 +26,7 @@ export function NearDiscover({
   onPass: (wallet: string) => void;
   onChat: (wallet: string) => void;
   onGift: (wallet: string, giftId: string) => void;
+  onDuel?: (wallet: string) => void;
   onMatch?: (peer: NearPeer) => void;
 }) {
   const [index, setIndex] = useState(0);
@@ -166,14 +168,28 @@ export function NearDiscover({
           <Heart className="h-6 w-6" />
         </Button>
         {open ? (
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-14 w-14 rounded-full"
-            onClick={() => onChat(peer.wallet)}
-          >
-            <MessageCircle className="h-6 w-6" />
-          </Button>
+          <>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 w-14 rounded-full"
+              onClick={() => onChat(peer.wallet)}
+            >
+              <MessageCircle className="h-6 w-6" />
+            </Button>
+            {onDuel ? (
+              <Button
+                size="lg"
+                variant="outline"
+                disabled={busy}
+                className="h-14 w-14 rounded-full"
+                onClick={() => onDuel(peer.wallet)}
+                aria-label="Hediye düellosu"
+              >
+                <Swords className="h-5 w-5" />
+              </Button>
+            ) : null}
+          </>
         ) : (
           <Button
             size="lg"
