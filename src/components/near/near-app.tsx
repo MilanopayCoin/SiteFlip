@@ -25,6 +25,7 @@ import {
   NearLiveTicker,
 } from "@/components/near/near-live-ticker";
 import { NearMatchOverlay } from "@/components/near/near-match";
+import { NearStoriesStrip } from "@/components/near/near-stories";
 import { NearVoicePanel } from "@/components/near/near-voice-room";
 import {
   IncomingCallBanner,
@@ -1012,6 +1013,15 @@ export function NearApp() {
             setMatchPeer(null);
             void startVideo(w);
           }}
+          onDuel={() => {
+            const w = matchPeer.wallet;
+            setMatchPeer(null);
+            void challengePeer(w);
+          }}
+          onVoice={() => {
+            setMatchPeer(null);
+            setTab("voice");
+          }}
           onClose={() => setMatchPeer(null)}
         />
       ) : null}
@@ -1266,6 +1276,23 @@ export function NearApp() {
                   <NearLiveTicker
                     items={liveTickerItems}
                     onTapWave={() => setTab("discover")}
+                  />
+                ) : null}
+                {checkedIn ? (
+                  <NearStoriesStrip
+                    peers={rankedPeers.map((p) => ({
+                      ...p,
+                      pendingWave:
+                        waveIn.has(p.wallet.toLowerCase()) &&
+                        !waveMutual.has(p.wallet.toLowerCase()),
+                    }))}
+                    unlocked={isUnlocked}
+                    myEmoji={emoji}
+                    myMood={mood}
+                    onOpenSelf={() => setTab("profile")}
+                    onWave={(w) => void sendFreeWave(w)}
+                    onChat={(w) => void openChat(w)}
+                    onDuel={(w) => void challengePeer(w)}
                   />
                 ) : null}
                 {checkedIn && streak && streak.count > 0 ? (
@@ -1590,6 +1617,7 @@ export function NearApp() {
                 onPass={(w) => hidePeer(w)}
                 onChat={(w) => void openChat(w)}
                 onGift={(w, g) => void sendGift(w, g)}
+                onDuel={(w) => void challengePeer(w)}
                 onMatch={(p) => setMatchPeer(p)}
               />
             )}
