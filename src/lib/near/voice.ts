@@ -18,6 +18,14 @@ export type VoiceGiftEvent = {
   at: string;
 };
 
+export type VoiceReactionEvent = {
+  id: string;
+  fromWallet: string;
+  fromName: string;
+  emoji: string;
+  at: string;
+};
+
 export type VoiceRoom = {
   id: string;
   /** Geohash-scoped place voice, or invite code room. */
@@ -27,6 +35,8 @@ export type VoiceRoom = {
   participants: VoiceParticipant[];
   /** TikTok-style room gift feed (last N). */
   recentGifts: VoiceGiftEvent[];
+  /** Free emoji reactions (Telegram-style). */
+  recentReactions: VoiceReactionEvent[];
   createdAt: string;
   updatedAt: string;
 };
@@ -64,6 +74,7 @@ function norm(w: string) {
 
 function normalizeRoom(room: VoiceRoom): VoiceRoom {
   if (!room.recentGifts) room.recentGifts = [];
+  if (!room.recentReactions) room.recentReactions = [];
   return room;
 }
 
@@ -104,6 +115,7 @@ export function createVoiceRoom(input: {
       },
     ],
     recentGifts: [],
+    recentReactions: [],
     createdAt: now(),
     updatedAt: now(),
   };
@@ -210,6 +222,33 @@ export function pushVoiceGift(input: {
     at: now(),
   };
   room.recentGifts = [evt, ...room.recentGifts].slice(0, 40);
+  room.updatedAt = now();
+  return room;
+}
+
+export function pushVoiceReaction(input: {
+  roomId: string;
+  fromWallet: string;
+  fromName: string;
+  emoji: string;
+}): VoiceRoom {
+  const room = rooms().get(input.roomId);
+  if (!room) throw new Error("Sesli oda yok");
+  if (!room.recentReactions) room.recentReactions = [];
+  const from = norm(input.fromWallet);
+  if (!room.participants.some((p) => p.wallet === from)) {
+    throw new Error("Odada değilsin");
+  }
+  const emoji = input.emoji.trim().slice(0, 8);
+  if (!emoji) throw new Error("emoji required");
+  const evt: VoiceReactionEvent = {
+    id: nanoid(8),
+    fromWallet: from,
+    fromName: input.fromName.slice(0, 40),
+    emoji,
+    at: now(),
+  };
+  room.recentReactions = [evt, ...room.recentReactions].slice(0, 30);
   room.updatedAt = now();
   return room;
 }
