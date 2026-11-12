@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Gift, Mic, MicOff, PhoneOff, Radio, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +10,12 @@ import { GIFT_CATALOG } from "@/lib/near/gifts";
 import type {
   VoiceGiftEvent,
   VoiceParticipant,
+  VoiceReactionEvent,
   VoiceRoom,
 } from "@/lib/near/voice";
 import { shortAddress } from "@/lib/starkey";
+
+const REACTION_EMOJIS = ["👏", "🔥", "❤️", "😂", "🙌", "⚡"] as const;
 
 const ICE: RTCConfiguration = {
   iceServers: [
@@ -180,10 +184,12 @@ export function NearVoicePanel({
   const [label, setLabel] = useState("Near Live");
   const [giftTarget, setGiftTarget] = useState<string | null>(null);
   const [shareHint, setShareHint] = useState<string | null>(null);
+  const [floatingRx, setFloatingRx] = useState<VoiceReactionEvent[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const speakingRef = useRef(false);
   const seenGiftsRef = useRef<Set<string>>(new Set());
+  const seenRxRef = useRef<Set<string>>(new Set());
   const autoJoinTried = useRef(false);
   const me = wallet.toLowerCase();
 
@@ -200,6 +206,26 @@ export function NearVoicePanel({
     [me, onRoomGift]
   );
 
+  const ingestReactions = useCallback(
+    (next: VoiceRoom | null | undefined) => {
+      if (!next?.recentReactions?.length) return;
+      const fresh: VoiceReactionEvent[] = [];
+      for (const r of [...next.recentReactions].reverse()) {
+        if (seenRxRef.current.has(r.id)) continue;
+        seenRxRef.current.add(r.id);
+        fresh.push(r);
+      }
+      if (fresh.length === 0) return;
+      setFloatingRx((prev) => [...prev, ...fresh].slice(-12));
+      for (const r of fresh) {
+        window.setTimeout(() => {
+          setFloatingRx((prev) => prev.filter((x) => x.id !== r.id));
+        }, 2400);
+      }
+    },
+    []
+  );
+
   const refreshList = useCallback(async () => {
     const data = await nearFetch("/api/near/voice");
     setRooms(data.rooms || []);
@@ -212,8 +238,9 @@ export function NearVoicePanel({
       );
       setRoom(data.room);
       ingestGifts(data.room);
+      ingestReactions(data.room);
     },
-    [ingestGifts]
+    [ingestGifts, ingestReactions]
   );
 
   useEffect(() => {
@@ -398,6 +425,8 @@ export function NearVoicePanel({
       setStream(null);
       setGiftTarget(null);
       seenGiftsRef.current = new Set();
+      seenRxRef.current = new Set();
+      setFloatingRx([]);
       setRoom(null);
       await refreshList();
     } catch (e) {
@@ -425,6 +454,33 @@ export function NearVoicePanel({
       setRoom(data.room);
     } catch {
       /* chain gift already sent — room fan-out best-effort */
+    }
+  }
+
+  async function sendReaction(emoji: string) {
+    if (!room) return;
+    try {
+      const data = await nearFetch("/api/near/voice", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "react",
+          roomId: room.id,
+          emoji,
+          displayName,
+        }),
+      });
+      if (data.reaction?.id) {
+        seenRxRef.current.add(data.reaction.id);
+        setFloatingRx((prev) => [...prev, data.reaction].slice(-12));
+        window.setTimeout(() => {
+          setFloatingRx((prev) =>
+            prev.filter((x) => x.id !== data.reaction.id)
+          );
+        }, 2400);
+      }
+      setRoom(data.room);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Tepki gönderilemedi");
     }
   }
 
@@ -524,7 +580,22 @@ export function NearVoicePanel({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="relative space-y-4">
+      <AnimatePresence>
+        {floatingRx.map((r, i) => (
+          <motion.div
+            key={r.id}
+            className="pointer-events-none absolute z-10 text-3xl"
+            style={{ left: `${18 + (i % 5) * 14}%`, bottom: "28%" }}
+            initial={{ opacity: 0, y: 24, scale: 0.6 }}
+            animate={{ opacity: 1, y: -90, scale: 1.15 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 2.1, ease: "easeOut" }}
+          >
+            {r.emoji}
+          </motion.div>
+        ))}
+      </AnimatePresence>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
@@ -637,6 +708,20 @@ export function NearVoicePanel({
           Birine dokun → 3D hediye · konuşunca halka yanar · odaya yayınlanır
         </p>
       )}
+
+      <div className="flex flex-wrap items-center justify-center gap-1.5">
+        {REACTION_EMOJIS.map((e) => (
+          <button
+            key={e}
+            type="button"
+            className="rounded-full border border-border bg-surface/60 px-2.5 py-1.5 text-lg transition hover:border-accent/50 active:scale-95"
+            onClick={() => void sendReaction(e)}
+            aria-label={`Tepki ${e}`}
+          >
+            {e}
+          </button>
+        ))}
+      </div>
 
       <div className="flex justify-center gap-3">
         <Button

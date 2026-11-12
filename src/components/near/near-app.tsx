@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Compass,
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NearDiscover } from "@/components/near/near-discover";
+import { NearDuelResultOverlay } from "@/components/near/near-duel-result";
 import { NearGiftFxLayer, useGiftFx } from "@/components/near/near-gift-fx";
 import {
   buildLiveTicker,
@@ -158,6 +159,9 @@ export function NearApp() {
   const [duelSeconds, setDuelSeconds] = useState(60);
   const giftFx = useGiftFx();
   const [matchPeer, setMatchPeer] = useState<NearPeer | null>(null);
+  const [duelResult, setDuelResult] = useState<NearDuel | null>(null);
+  const seenInboxRef = useRef<Set<string> | null>(null);
+  const celebratedDuelsRef = useRef<Set<string>>(new Set());
 
   const wallet = starkey.account;
 
@@ -214,6 +218,19 @@ export function NearApp() {
     );
   }, [duels]);
 
+  useEffect(() => {
+    if (!activeDuel || activeDuel.status !== "done") return;
+    if (celebratedDuelsRef.current.has(activeDuel.id)) return;
+    celebratedDuelsRef.current.add(activeDuel.id);
+    setDuelResult(activeDuel);
+    const me = wallet?.toLowerCase();
+    if (activeDuel.winnerWallet && activeDuel.winnerWallet === me) {
+      giftFx.fire("crown", "Düello zaferi");
+    } else if (!activeDuel.winnerWallet) {
+      giftFx.fire("heart", "Berabere");
+    }
+  }, [activeDuel, wallet, giftFx]);
+
   const refreshProfile = useCallback(async () => {
     const data = await nearFetch("/api/near/profile");
     if (data.profile) {
@@ -241,11 +258,28 @@ export function NearApp() {
   const refreshInbox = useCallback(async () => {
     try {
       const data = await nearFetch("/api/near/gifts?inbox=1");
-      setInbox(data.inbox || []);
+      const next: NearGiftInboxItem[] = data.inbox || [];
+      if (seenInboxRef.current == null) {
+        seenInboxRef.current = new Set(next.map((g) => g.id));
+      } else {
+        for (const item of [...next].reverse()) {
+          if (seenInboxRef.current.has(item.id)) continue;
+          seenInboxRef.current.add(item.id);
+          giftFx.fire(
+            item.giftId,
+            `${item.fromName || shortAddress(item.fromWallet)} gönderdi`
+          );
+          setGiftFlash(
+            `${item.giftEmoji} ${item.fromName} · ${item.giftLabel}`
+          );
+          window.setTimeout(() => setGiftFlash(null), 2400);
+        }
+      }
+      setInbox(next);
     } catch {
       setInbox([]);
     }
-  }, []);
+  }, [giftFx]);
 
   const refreshPot = useCallback(async () => {
     try {
@@ -979,6 +1013,21 @@ export function NearApp() {
             void startVideo(w);
           }}
           onClose={() => setMatchPeer(null)}
+        />
+      ) : null}
+      {duelResult && wallet ? (
+        <NearDuelResultOverlay
+          duel={duelResult}
+          myWallet={wallet}
+          onClose={() => setDuelResult(null)}
+          onRematch={() => {
+            const rival =
+              duelResult.aWallet === wallet.toLowerCase()
+                ? duelResult.bWallet
+                : duelResult.aWallet;
+            setDuelResult(null);
+            void challengePeer(rival);
+          }}
         />
       ) : null}
       <div
