@@ -9,6 +9,7 @@ import {
   listVoiceRooms,
   pullVoiceSignals,
   pushVoiceGift,
+  pushVoiceReaction,
   pushVoiceSignal,
   setVoiceMute,
   setVoiceSpeaking,
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
       speaking?: boolean;
       toWallet?: string;
       giftId?: string;
+      emoji?: string;
       kind?: VoiceSignal["kind"];
       payload?: unknown;
       usePresence?: boolean;
@@ -151,6 +153,24 @@ export async function POST(request: Request) {
           giftId: body.giftId,
         });
         return Response.json({ room, gift: room.recentGifts[0] });
+      }
+      case "react": {
+        if (!body.roomId || !body.emoji || body.emoji.trim().length === 0) {
+          return Response.json(
+            { error: "roomId + emoji required" },
+            { status: 400 }
+          );
+        }
+        const room = pushVoiceReaction({
+          roomId: body.roomId,
+          fromWallet: wallet,
+          fromName: name,
+          emoji: body.emoji,
+        });
+        return Response.json({
+          room,
+          reaction: room.recentReactions[0],
+        });
       }
       case "signal": {
         if (
