@@ -33,9 +33,9 @@ import {
   VideoCallPanel,
 } from "@/components/near/video-call";
 import {
-  connectMoveAccount,
   contributePlacePot,
   getNearToken,
+  linkMoveAddressWithProof,
   nearFetch,
   sendGiftOnChain,
   setNearToken,
@@ -870,14 +870,9 @@ export function NearApp() {
     setBusy(true);
     setError(null);
     try {
-      const addr = await connectMoveAccount();
-      if (!addr) throw new Error("Move bağlantısı iptal");
-      const data = await nearFetch("/api/near/profile", {
-        method: "PUT",
-        body: JSON.stringify({ moveAddress: addr }),
-      });
-      if (data.profile) setProfile(data.profile);
-      setGiftFlash("Move adresi bağlandı — JIY hediyeleri zincire gider");
+      await linkMoveAddressWithProof();
+      await refreshProfile();
+      setGiftFlash("Move adresi imzayla bağlandı — JIY hediyeleri zincire gider");
       window.setTimeout(() => setGiftFlash(null), 2400);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Move bağlanamadı");

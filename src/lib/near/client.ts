@@ -11,6 +11,7 @@ import {
   connectMoveAccount,
   getMoveAccount,
   sendJiyFungibleAsset,
+  signMoveLinkMessage,
 } from "@/lib/near/send-jiy";
 import { SUPRA_EVM_DEVNET } from "@/lib/starkey/networks";
 
@@ -101,15 +102,11 @@ export async function sendGiftOnChain(input: {
   const peerMove =
     (peer?.profile?.moveAddress as string | undefined)?.toLowerCase() || null;
 
+  // Sender Move account is used only for this transfer — never auto-link
+  // without Ed25519 proof (see linkMoveAddressWithProof).
   let myMove = await getMoveAccount();
   if (!myMove) {
     myMove = await connectMoveAccount();
-  }
-  if (myMove) {
-    await nearFetch("/api/near/profile", {
-      method: "PUT",
-      body: JSON.stringify({ moveAddress: myMove }),
-    }).catch(() => undefined);
   }
 
   if (myMove && peerMove) {
@@ -169,6 +166,29 @@ export async function contributePlacePot(input: {
     body: JSON.stringify({ giftId: input.giftId, txHash }),
   });
   return { txHash };
+}
+
+/** Connect Move + prove possession, then persist moveAddress on profile. */
+export async function linkMoveAddressWithProof(): Promise<string> {
+  const addr = await connectMoveAccount();
+  if (!addr) throw new Error("Move bağlantısı iptal");
+  const challenge = await nearFetch(
+    `/api/near/profile?move=challenge&moveAddress=${encodeURIComponent(addr)}`
+  );
+  const signed = await signMoveLinkMessage(challenge.message as string);
+  const data = await nearFetch("/api/near/profile", {
+    method: "PUT",
+    body: JSON.stringify({
+      moveAddress: addr,
+      moveProof: {
+        nonce: challenge.nonce,
+        issuedAt: challenge.issuedAt,
+        signature: signed.signature,
+        publicKey: signed.publicKey,
+      },
+    }),
+  });
+  return (data.profile?.moveAddress as string) || addr;
 }
 
 export { connectMoveAccount, getMoveAccount };

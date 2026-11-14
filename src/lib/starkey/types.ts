@@ -35,6 +35,13 @@ export type StarkeySupraProvider = {
   getChainId?: () => Promise<{ chainId?: string } | string>;
   changeNetwork?: (opts: { chainId: string }) => Promise<void>;
   sendTransaction?: (params: StarkeySendTxParams) => Promise<string | null>;
+  signMessage?: (params: {
+    message: string;
+  }) => Promise<{
+    address: string;
+    publicKey: string;
+    signature: string;
+  } | null>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   removeListener?: (
     event: string,

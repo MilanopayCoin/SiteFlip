@@ -45,6 +45,28 @@ export async function getMoveAccount(): Promise<string | null> {
   }
 }
 
+/** Prove possession of Move address via StarKey Ed25519 signMessage. */
+export async function signMoveLinkMessage(message: string): Promise<{
+  address: string;
+  publicKey: string;
+  signature: string;
+}> {
+  const supra = getSupra();
+  if (!supra.signMessage) {
+    throw new Error("StarKey signMessage desteklemiyor — cüzdanı güncelle");
+  }
+  const hex =
+    "0x" +
+    Array.from(new TextEncoder().encode(message))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  const signed = await supra.signMessage({ message: hex });
+  if (!signed?.signature || !signed.publicKey) {
+    throw new Error("Move imzası iptal edildi");
+  }
+  return signed;
+}
+
 /**
  * Transfer JIY fungible asset via StarKey Move.
  * Uses primary_fungible_store::transfer on Supra mainnet.
