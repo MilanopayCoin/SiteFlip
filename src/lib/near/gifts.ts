@@ -1,54 +1,55 @@
+import { jiyToUnits, unitsToHex } from "@/lib/near/jiy-token";
 import type { GiftCatalogItem } from "@/lib/near/types";
 
-/** TikTok-style gift catalog — amounts in SUPRA (SupraEVM 18 decimals). */
+/** TikTok-style gift catalog — amounts in JIY (Supra Move FA, 6 decimals). */
 export const GIFT_CATALOG: GiftCatalogItem[] = [
   {
     id: "wave",
     label: "Selam",
     emoji: "👋",
-    amountSupra: 0.1,
+    amountJiy: 1,
     blurb: "İlk merhaba — radar’da nazik sinyal",
   },
   {
     id: "heart",
     label: "Kalp",
     emoji: "💗",
-    amountSupra: 0.5,
+    amountJiy: 5,
     blurb: "Yumuşak vurgu — skor +5",
   },
   {
     id: "boost",
     label: "Boost",
     emoji: "🔥",
-    amountSupra: 1,
+    amountJiy: 10,
     blurb: "Yakındakiler listesinde öne çık",
   },
   {
     id: "spotlight",
     label: "Spotlight",
     emoji: "💎",
-    amountSupra: 5,
+    amountJiy: 50,
     blurb: "Odaya animasyon + sesli vurgu",
   },
   {
     id: "crown",
     label: "Taç",
     emoji: "👑",
-    amountSupra: 10,
+    amountJiy: 100,
     blurb: "Gece tahtı — liderlik board’unda zirve",
   },
   {
     id: "rocket",
     label: "Roket",
     emoji: "🚀",
-    amountSupra: 25,
+    amountJiy: 250,
     blurb: "TikTok vibe — 3D sahne + sesli odada patlama",
   },
   {
     id: "universe",
     label: "Evren",
     emoji: "🌌",
-    amountSupra: 50,
+    amountJiy: 1000,
     blurb: "Mega gift — tüm odaya full-screen 3D show",
   },
 ];
@@ -76,25 +77,16 @@ export function getGift(id: string): GiftCatalogItem | undefined {
 export const ICEBREAKERS = [
   "Bu civarda favori mekanın?",
   "Ne içiyorsun / yiyorsun?",
-  "Kaç dakikandır buradasın?",
+  "Kaç dakikardır buradasın?",
   "Radar’da mıydın yoksa davetle mi geldin?",
   "Bir boost hak ediyorum 🔥 — sen?",
 ] as const;
 
-/** Convert SUPRA amount to wei string (18 decimals). */
+/** @deprecated use jiyToUnits — kept for pot ledger wei strings */
 export function supraToWei(amount: number): string {
-  const whole = Math.floor(amount);
-  const frac = amount - whole;
-  const fracStr = frac
-    .toFixed(18)
-    .slice(2)
-    .padEnd(18, "0")
-    .slice(0, 18);
-  const wei =
-    BigInt(whole) * BigInt(10) ** BigInt(18) + BigInt(fracStr);
-  return wei.toString();
+  return jiyToUnits(amount);
 }
 
 export function weiToHex(wei: string): `0x${string}` {
-  return `0x${BigInt(wei).toString(16)}` as `0x${string}`;
+  return unitsToHex(wei);
 }

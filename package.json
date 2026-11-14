@@ -52,6 +52,7 @@
     "react-dom": "19.2.8",
     "react-hook-form": "^7.85.0",
     "recharts": "^3.10.1",
+    "supra-l1-sdk": "^5.0.3",
     "tailwind-merge": "^3.6.0",
     "three": "^0.187.0",
     "viem": "^2.57.16",

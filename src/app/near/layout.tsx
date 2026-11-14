@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s · JIY Near",
   },
   description:
-    "Şu an yakınındakilerle StarKey sohbet, görüntülü ve SUPRA hediyeler. Ephemeral radar — kaçırırsan yok.",
+    "Şu an yakınındakilerle StarKey sohbet, görüntülü ve JIY hediyeler. Ephemeral radar — kaçırırsan yok.",
   openGraph: {
     title: "JIY Near",
     description:

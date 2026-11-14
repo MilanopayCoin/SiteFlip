@@ -33,6 +33,7 @@ import {
   VideoCallPanel,
 } from "@/components/near/video-call";
 import {
+  connectMoveAccount,
   contributePlacePot,
   getNearToken,
   nearFetch,
@@ -41,6 +42,7 @@ import {
   signInWithStarkey,
 } from "@/lib/near/client";
 import { GIFT_CATALOG, ICEBREAKERS } from "@/lib/near/gifts";
+import { JIY_TOKEN } from "@/lib/near/jiy-token";
 import {
   blindLabel,
   blockWallet,
@@ -842,20 +844,43 @@ export function NearApp() {
     setBusy(true);
     setError(null);
     try {
-      await sendGiftOnChain({ from: wallet, to: peer, giftId });
+      const result = await sendGiftOnChain({ from: wallet, to: peer, giftId });
       const item = GIFT_CATALOG.find((g) => g.id === giftId);
       giftFx.fire(giftId, "Sen gönderdin");
       setGiftFlash(
-        `${item?.emoji || "🎁"} ${item?.label || "Hediye"} gönderildi`
+        result.mode === "jiy"
+          ? `${item?.emoji || "🎁"} ${item?.label || "Hediye"} · ${item?.amountJiy ?? ""} JIY zincirde`
+          : `${item?.emoji || "🎁"} ${item?.label || "Hediye"} kaydedildi · peer Move adresi yok (JIY ledger)`
       );
-      window.setTimeout(() => setGiftFlash(null), 2200);
+      window.setTimeout(() => setGiftFlash(null), 2800);
       await refreshBoard();
       await refreshInbox();
       await refreshWaves();
       await refreshDuels();
+      await refreshProfile();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
       throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function linkMoveWallet() {
+    setBusy(true);
+    setError(null);
+    try {
+      const addr = await connectMoveAccount();
+      if (!addr) throw new Error("Move bağlantısı iptal");
+      const data = await nearFetch("/api/near/profile", {
+        method: "PUT",
+        body: JSON.stringify({ moveAddress: addr }),
+      });
+      if (data.profile) setProfile(data.profile);
+      setGiftFlash("Move adresi bağlandı — JIY hediyeleri zincire gider");
+      window.setTimeout(() => setGiftFlash(null), 2400);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Move bağlanamadı");
     } finally {
       setBusy(false);
     }
@@ -1205,7 +1230,7 @@ export function NearApp() {
               </Button>
             )}
             <p className="text-xs text-muted">
-              Imza gas harcamaz. Hediyeler Supra Devnet SUPRA transferidir.
+              Imza gas harcamaz. Hediyeler Supra Move JIY FA transferidir.
             </p>
           </section>
         ) : (
@@ -1374,7 +1399,7 @@ export function NearApp() {
                             {item.giftEmoji} {item.fromEmoji} {item.fromName}
                           </button>
                           <span className="shrink-0 font-mono text-[10px] text-muted">
-                            {item.giftLabel} · {item.amountSupra}
+                            {item.giftLabel} · {item.amountJiy ?? item.amountSupra} JIY
                           </span>
                         </li>
                       ))}
@@ -1431,7 +1456,7 @@ export function NearApp() {
                           onClick={() => void sendToPot(g.id)}
                           className="rounded-full border border-border px-2.5 py-1 text-[11px] hover:border-accent/50"
                         >
-                          {g.emoji} Kasa · {g.amountSupra}
+                          {g.emoji} Kasa · {g.amountJiy} JIY
                         </button>
                       ))}
                       <Button
@@ -1580,7 +1605,7 @@ export function NearApp() {
                               className="rounded-full border border-border px-2.5 py-1 text-[11px] hover:border-accent/50"
                               title={g.blurb}
                             >
-                              {g.emoji} {g.label} · {g.amountSupra} SUPRA
+                              {g.emoji} {g.label} · {g.amountJiy} JIY
                             </button>
                           ))}
                         </div>
@@ -1737,7 +1762,7 @@ export function NearApp() {
                             className="text-[11px] text-accent"
                             onClick={() => void sendGift(activePeer, "wave")}
                           >
-                            veya Wave hediyesi gönder (0.1 SUPRA)
+                            veya Wave hediyesi gönder (1 JIY)
                           </button>
                         </div>
                       ) : msgs.length === 0 ? (
@@ -1802,7 +1827,7 @@ export function NearApp() {
                               className="rounded-full border border-border px-2 py-0.5 text-[11px]"
                             >
                               <Gift className="mr-1 inline h-3 w-3" />
-                              {g.emoji} {g.amountSupra}
+                              {g.emoji} {g.amountJiy}
                             </button>
                           ))}
                           <Button
@@ -1989,6 +2014,44 @@ export function NearApp() {
 
             {tab === "profile" && (
               <section className="space-y-4">
+                <div className="rounded-xl border border-accent/30 bg-accent/5 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                    JIY token · Supra Move
+                  </p>
+                  <p className="mt-1 text-sm">
+                    Hediye ödemeleri{" "}
+                    <a
+                      href={JIY_TOKEN.explorerUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-accent underline-offset-2 hover:underline"
+                    >
+                      {JIY_TOKEN.symbol}
+                    </a>{" "}
+                    FA · {JIY_TOKEN.decimals} decimals
+                  </p>
+                  {profile?.moveAddress ? (
+                    <p className="mt-2 break-all font-mono text-[10px] text-muted">
+                      Move · {profile.moveAddress}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-muted">
+                      Move adresin yok — hediyeler skor için kaydedilir; zincir
+                      için bağla.
+                    </p>
+                  )}
+                  <Button
+                    className="mt-3"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void linkMoveWallet()}
+                  >
+                    {profile?.moveAddress
+                      ? "Move adresini yenile"
+                      : "StarKey Move bağla"}
+                  </Button>
+                </div>
                 <div className="space-y-2">
                   <label className="text-xs text-muted">Emoji</label>
                   <Input

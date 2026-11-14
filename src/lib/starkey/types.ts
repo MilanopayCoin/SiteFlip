@@ -13,7 +13,16 @@ export type Eip1193Provider = {
   ) => void;
 };
 
-/** Move / SupraMVM provider (F1+). Typed lightly for future use. */
+export type StarkeySendTxParams = {
+  data?: string;
+  from: string;
+  to: string;
+  value: string;
+  chainId: string;
+  options?: { waitForTransaction?: boolean };
+};
+
+/** Move / SupraMVM provider — JIY FA gifts use sendTransaction. */
 export type StarkeySupraProvider = {
   connect: (opts?: {
     chainId?: string;
@@ -25,6 +34,7 @@ export type StarkeySupraProvider = {
   isConnected?: () => Promise<boolean>;
   getChainId?: () => Promise<{ chainId?: string } | string>;
   changeNetwork?: (opts: { chainId: string }) => Promise<void>;
+  sendTransaction?: (params: StarkeySendTxParams) => Promise<string | null>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   removeListener?: (
     event: string,

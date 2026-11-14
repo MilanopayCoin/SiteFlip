@@ -4,6 +4,8 @@ export type NearProfile = {
   mood: string;
   bio: string;
   avatarEmoji: string;
+  /** Linked Supra Move address for JIY FA gifts (64-hex). */
+  moveAddress: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -74,7 +76,9 @@ export type NearGiftInboxItem = {
   giftId: string;
   giftLabel: string;
   giftEmoji: string;
-  amountSupra: number;
+  amountJiy: number;
+  /** @deprecated alias of amountJiy */
+  amountSupra?: number;
   txHash: string | null;
   createdAt: string;
 };
@@ -83,8 +87,8 @@ export type GiftCatalogItem = {
   id: string;
   label: string;
   emoji: string;
-  /** Human amount in SUPRA (18 decimals on EVM). */
-  amountSupra: number;
+  /** Human amount in JIY (Supra Move FA, 6 decimals). */
+  amountJiy: number;
   blurb: string;
 };
 

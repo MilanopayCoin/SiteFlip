@@ -13,6 +13,21 @@ export async function GET(request: Request) {
     if (!wallet) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const peer = new URL(request.url).searchParams.get("peer");
+    if (peer && /^0x[a-fA-F0-9]{40}$/.test(peer)) {
+      const profile = await getProfile(peer.toLowerCase());
+      return Response.json({
+        profile: profile
+          ? {
+              wallet: profile.wallet,
+              displayName: profile.displayName,
+              avatarEmoji: profile.avatarEmoji,
+              mood: profile.mood,
+              moveAddress: profile.moveAddress,
+            }
+          : null,
+      });
+    }
     const profile = await getProfile(wallet);
     return Response.json({ profile });
   } catch (e) {
@@ -37,6 +52,7 @@ export async function PUT(request: Request) {
       mood?: string;
       bio?: string;
       avatarEmoji?: string;
+      moveAddress?: string | null;
     };
     const profile = await upsertProfile(wallet, body);
     return Response.json({ profile });
