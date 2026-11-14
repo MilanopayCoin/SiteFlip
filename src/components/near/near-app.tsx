@@ -54,8 +54,10 @@ import {
   blindLabel,
   blockWallet,
   loadBlocked,
+  loadPassed,
   loadStreak,
   MOOD_PRESETS,
+  passWallet,
   recordCheckInStreak,
   recordLocalReport,
   type NearStreak,
@@ -151,6 +153,7 @@ export function NearApp() {
   const [giftFlash, setGiftFlash] = useState<string | null>(null);
   const [seenMap, setSeenMap] = useState<Record<string, string>>({});
   const [blocked, setBlocked] = useState<string[]>([]);
+  const [passed, setPassed] = useState<string[]>([]);
   const [pendingPeer, setPendingPeer] = useState<string | null>(null);
   const [inviteGeohash, setInviteGeohash] = useState<string | null>(null);
   const [pendingVoiceId, setPendingVoiceId] = useState<string | null>(null);
@@ -445,6 +448,7 @@ export function NearApp() {
     setSessionReady(Boolean(getNearToken()));
     setSeenMap(loadSeen());
     setBlocked(loadBlocked());
+    setPassed(loadPassed());
     setStreak(loadStreak());
     try {
       const sp = new URLSearchParams(window.location.search);
@@ -718,6 +722,13 @@ export function NearApp() {
   function hidePeer(peer: string) {
     setBlocked(blockWallet(peer));
     setInviteHint("Kişi gizlendi");
+    window.setTimeout(() => setInviteHint(null), 1800);
+  }
+
+  /** Discover swipe-left — session skip, not permanent block. */
+  function softPassPeer(peer: string) {
+    setPassed(passWallet(peer));
+    setInviteHint("Geçildi · bu oturumda tekrar gelmez");
     window.setTimeout(() => setInviteHint(null), 1800);
   }
 
@@ -1031,6 +1042,7 @@ export function NearApp() {
 
   const rankedPeers = useMemo(() => {
     const blockedSet = new Set(blocked);
+    const passedSet = new Set(passed);
     const rank = (w: string) => {
       const key = w.toLowerCase();
       if (waveIn.has(key) && !waveMutual.has(key)) return 0; // pending Selam first
@@ -1038,7 +1050,10 @@ export function NearApp() {
       return 2;
     };
     return [...peers]
-      .filter((p) => !blockedSet.has(p.wallet.toLowerCase()))
+      .filter((p) => {
+        const w = p.wallet.toLowerCase();
+        return !blockedSet.has(w) && !passedSet.has(w);
+      })
       .sort((a, b) => {
         const ra = rank(a.wallet);
         const rb = rank(b.wallet);
@@ -1048,7 +1063,7 @@ export function NearApp() {
         if (sb !== sa) return sb - sa;
         return (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9);
       });
-  }, [peers, scoreByWallet, blocked, waveIn, waveMutual]);
+  }, [peers, scoreByWallet, blocked, passed, waveIn, waveMutual]);
 
   const pendingSelamCount = useMemo(
     () => [...waveIn].filter((w) => !waveMutual.has(w)).length,
@@ -1461,9 +1476,13 @@ export function NearApp() {
                                 className="text-accent underline-offset-2 hover:underline"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                tx
+                                zincir
                               </a>
-                            ) : null}
+                            ) : (
+                              <span className="text-[9px] uppercase tracking-wide opacity-70">
+                                ledger
+                              </span>
+                            )}
                           </span>
                         </li>
                       ))}
@@ -1707,7 +1726,7 @@ export function NearApp() {
                 unlocked={isUnlocked}
                 busy={busy}
                 onWave={(w) => sendFreeWave(w)}
-                onPass={(w) => hidePeer(w)}
+                onPass={(w) => softPassPeer(w)}
                 onChat={(w) => void openChat(w)}
                 onGift={(w, g) => void sendGift(w, g)}
                 onDuel={(w) => void challengePeer(w)}

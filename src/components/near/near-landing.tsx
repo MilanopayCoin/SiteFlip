@@ -200,8 +200,9 @@ export function NearLanding() {
               Sahte hesap pahalı. Dikkat gerçek.
             </h2>
             <p className="mt-4 max-w-md text-[#9ca3af]">
-              Kimlik cüzdan. Hediye zincirde. Yer kasası bölgeye birikir —
-              gece çekilişiyle geri döner. Web2 “swipe” değil; yakınlık ekonomisi.
+              Kimlik cüzdan. Her iki taraf Move bağladıysa hediye JIY FA
+              zincirde; değilse sosyal skor ledger’da. Yer kasası birikir —
+              çekiliş prototipi. Web2 “swipe” değil; yakınlık ekonomisi.
             </p>
           </div>
           <div className="relative overflow-hidden rounded-none border border-white/10 bg-[#121214] p-8 sm:p-10">
@@ -212,8 +213,8 @@ export function NearLanding() {
               {[
                 "StarKey personal_sign → oturum",
                 "Check-in → ephemeral presence",
-                "Gift → Supra Move JIY FA",
-                "Görüntülü → WebRTC + imzalı sinyal",
+                "Gift → Move JIY FA (bağlıysa) · aksi ledger",
+                "Rulet → demo chip · WebRTC seat cam",
               ].map((line) => (
                 <li
                   key={line}
@@ -245,7 +246,7 @@ export function NearLanding() {
             <ArrowRight className="h-4 w-4" />
           </Link>
           <p className="mt-6 text-xs text-[#71717a]">
-            jiy.app · StarKey · Supra Devnet
+            jiy.app · StarKey · Supra Move mainnet (JIY FA) · rulet demo
           </p>
         </div>
       </section>

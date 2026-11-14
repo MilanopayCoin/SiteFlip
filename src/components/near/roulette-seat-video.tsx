@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { nearFetch } from "@/lib/near/client";
+import { nearMediaStreamConstraints } from "@/lib/near/media";
 
 const ICE: RTCConfiguration = {
   iceServers: [
@@ -47,10 +48,9 @@ export function RouletteSeatVideo({
     let stop = false;
     void (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
-          audio: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia(
+          nearMediaStreamConstraints({ audio: true, video: true })
+        );
         if (stop) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -99,10 +99,9 @@ export function RouletteSeatVideo({
         }
       };
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia(
+          nearMediaStreamConstraints({ audio: true, video: true })
+        );
         localRef.current = stream;
         for (const track of stream.getTracks()) pc.addTrack(track, stream);
       } catch {

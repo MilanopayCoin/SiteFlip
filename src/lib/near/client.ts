@@ -6,7 +6,7 @@ import {
   getStarkeyEthereum,
 } from "@/lib/starkey/provider";
 import { getGift, weiToHex } from "@/lib/near/gifts";
-import { isMoveAddress, jiyToUnits } from "@/lib/near/jiy-token";
+import { formatJiy, isMoveAddress, jiyToUnits } from "@/lib/near/jiy-token";
 import {
   connectMoveAccount,
   getJiyBalance,
@@ -111,6 +111,12 @@ export async function sendGiftOnChain(input: {
   }
 
   if (myMove && peerMove) {
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < gift.amountJiy) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${gift.amountJiy}`
+      );
+    }
     txHash = await sendJiyFungibleAsset({
       fromMove: myMove,
       toMove: peerMove,
@@ -154,6 +160,12 @@ export async function contributePlacePot(input: {
     let myMove = await getMoveAccount();
     if (!myMove) myMove = await connectMoveAccount();
     if (!myMove) throw new Error("Move bağlantısı gerekli (yer kasası JIY)");
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < gift.amountJiy) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${gift.amountJiy}`
+      );
+    }
     txHash = await sendJiyFungibleAsset({
       fromMove: myMove,
       toMove: potMove,
