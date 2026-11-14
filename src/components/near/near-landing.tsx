@@ -93,8 +93,8 @@ export function NearLanding() {
             transition={{ duration: 0.55, delay: 0.2 }}
             className="mt-4 max-w-md text-base leading-relaxed text-[#9ca3af] sm:text-lg"
           >
-            Keşfet swipe, sesli odalar, 3D hediyeler, görüntülü rulet. StarKey
-            kimliğin — kaçırınca kaybolur.
+            Keşfet swipe, sesli odalar, zincir üstü JIY hediyeler, görüntülü
+            rulet. StarKey kimliğin — kaçırınca kaybolur.
           </motion.p>
           <motion.div
             {...fade}

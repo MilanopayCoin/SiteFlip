@@ -38,6 +38,32 @@ export function jiyToUnits(amount: number): string {
   return units.toString();
 }
 
+/** Base units (6 decimals) → human JIY number. */
+export function unitsToJiy(units: string | number | bigint): number {
+  let u: bigint;
+  try {
+    u = typeof units === "bigint" ? units : BigInt(units || "0");
+  } catch {
+    return 0;
+  }
+  if (u < BigInt(0)) return 0;
+  const base = BigInt(10) ** BigInt(JIY_TOKEN.decimals);
+  const whole = u / base;
+  const frac = u % base;
+  return Number(whole) + Number(frac) / Number(base);
+}
+
+/** Compact display: 1000 → "1.000", 1.5 → "1.5". */
+export function formatJiy(amount: number, maxFrac = 2): string {
+  if (!Number.isFinite(amount)) return "0";
+  if (amount >= 1000) {
+    return amount.toLocaleString("tr-TR", { maximumFractionDigits: 0 });
+  }
+  const rounded =
+    Math.round(amount * Math.pow(10, maxFrac)) / Math.pow(10, maxFrac);
+  return String(rounded);
+}
+
 export function unitsToHex(units: string): `0x${string}` {
   return `0x${BigInt(units).toString(16)}` as `0x${string}`;
 }
@@ -46,4 +72,15 @@ export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/** SupraScan tx deep link (Move mainnet). */
+export function jiyTxExplorerUrl(txHash: string): string {
+  const h = txHash.startsWith("0x") ? txHash : `0x${txHash}`;
+  return `${SUPRA_MOVE_MAINNET.explorerUrl}/tx/${h}`;
+}
+
+/** SupraScan account deep link. */
+export function jiyAccountExplorerUrl(moveAddress: string): string {
+  return `${SUPRA_MOVE_MAINNET.explorerUrl}/account/${moveAddress}`;
 }

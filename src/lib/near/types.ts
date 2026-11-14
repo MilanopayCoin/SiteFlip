@@ -116,6 +116,7 @@ export type NearCallSignal = {
 
 export type NearPlacePot = {
   geohash: string;
+  /** JIY base units (6 decimals) — legacy field name `totalWei`. */
   totalWei: string;
   giftCount: number;
   updatedAt: string;

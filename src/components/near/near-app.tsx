@@ -34,6 +34,7 @@ import {
 } from "@/components/near/video-call";
 import {
   contributePlacePot,
+  getJiyBalance,
   getNearToken,
   linkMoveAddressWithProof,
   nearFetch,
@@ -42,7 +43,13 @@ import {
   signInWithStarkey,
 } from "@/lib/near/client";
 import { GIFT_CATALOG, ICEBREAKERS } from "@/lib/near/gifts";
-import { JIY_TOKEN } from "@/lib/near/jiy-token";
+import {
+  formatJiy,
+  JIY_TOKEN,
+  jiyAccountExplorerUrl,
+  jiyTxExplorerUrl,
+  unitsToJiy,
+} from "@/lib/near/jiy-token";
 import {
   blindLabel,
   blockWallet,
@@ -163,6 +170,7 @@ export function NearApp() {
   const giftFx = useGiftFx();
   const [matchPeer, setMatchPeer] = useState<NearPeer | null>(null);
   const [duelResult, setDuelResult] = useState<NearDuel | null>(null);
+  const [jiyBalance, setJiyBalance] = useState<number | null>(null);
   const seenInboxRef = useRef<Set<string> | null>(null);
   const celebratedDuelsRef = useRef<Set<string>>(new Set());
 
@@ -318,6 +326,28 @@ export function NearApp() {
     }
   }, []);
 
+  const refreshJiyBalance = useCallback(async (moveAddr?: string | null) => {
+    const addr = moveAddr || profile?.moveAddress;
+    if (!addr) {
+      setJiyBalance(null);
+      return;
+    }
+    try {
+      const bal = await getJiyBalance(addr);
+      setJiyBalance(bal.amountJiy);
+    } catch {
+      setJiyBalance(null);
+    }
+  }, [profile?.moveAddress]);
+
+  useEffect(() => {
+    if (sessionReady && profile?.moveAddress) {
+      void refreshJiyBalance(profile.moveAddress);
+    } else {
+      setJiyBalance(null);
+    }
+  }, [sessionReady, profile?.moveAddress, refreshJiyBalance]);
+
   async function runPotDraw() {
     setBusy(true);
     setError(null);
@@ -326,7 +356,21 @@ export function NearApp() {
         method: "POST",
         body: JSON.stringify({ action: "draw" }),
       });
-      setDrawWinner(data.draw?.winnerWallet || null);
+      const winner = data.draw?.winnerWallet || null;
+      setDrawWinner(winner);
+      if (winner) {
+        const prize = data.draw?.totalWei
+          ? formatJiy(unitsToJiy(data.draw.totalWei))
+          : pot
+            ? formatJiy(unitsToJiy(pot.totalWei))
+            : null;
+        setGiftFlash(
+          prize
+            ? `🎲 Gece çekilişi · ${shortAddress(winner)} · ${prize} JIY`
+            : `🎲 Gece çekilişi · ${shortAddress(winner)}`
+        );
+        window.setTimeout(() => setGiftFlash(null), 3200);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Draw failed");
     } finally {
@@ -858,6 +902,7 @@ export function NearApp() {
       await refreshWaves();
       await refreshDuels();
       await refreshProfile();
+      if (result.mode === "jiy") await refreshJiyBalance();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gift failed");
       throw e;
@@ -870,8 +915,9 @@ export function NearApp() {
     setBusy(true);
     setError(null);
     try {
-      await linkMoveAddressWithProof();
+      const addr = await linkMoveAddressWithProof();
       await refreshProfile();
+      await refreshJiyBalance(addr);
       setGiftFlash("Move adresi imzayla bağlandı — JIY hediyeleri zincire gider");
       window.setTimeout(() => setGiftFlash(null), 2400);
     } catch (e) {
@@ -923,8 +969,19 @@ export function NearApp() {
     setBusy(true);
     setError(null);
     try {
-      await contributePlacePot({ from: wallet, giftId });
+      const item = GIFT_CATALOG.find((g) => g.id === giftId);
+      const result = await contributePlacePot({ from: wallet, giftId });
       await refreshPot();
+      await refreshJiyBalance();
+      const label = `${item?.emoji || "🎁"} Kasa · ${item?.amountJiy ?? ""} JIY`;
+      setGiftFlash(
+        result.mode === "jiy"
+          ? `${label} · Move FA`
+          : result.mode === "evm"
+            ? `${label} · EVM Devnet`
+            : `${label} · ledger (kasa adresi yok)`
+      );
+      window.setTimeout(() => setGiftFlash(null), 2800);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Pot gift failed");
     } finally {
@@ -1393,8 +1450,20 @@ export function NearApp() {
                           >
                             {item.giftEmoji} {item.fromEmoji} {item.fromName}
                           </button>
-                          <span className="shrink-0 font-mono text-[10px] text-muted">
-                            {item.giftLabel} · {item.amountJiy ?? item.amountSupra} JIY
+                          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-muted">
+                            {item.giftLabel} ·{" "}
+                            {item.amountJiy ?? item.amountSupra} JIY
+                            {item.txHash ? (
+                              <a
+                                href={jiyTxExplorerUrl(item.txHash)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-accent underline-offset-2 hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                tx
+                              </a>
+                            ) : null}
                           </span>
                         </li>
                       ))}
@@ -1434,7 +1503,11 @@ export function NearApp() {
                       Yer kasası
                     </p>
                     <p className="mt-1 text-sm">
-                      Bu bölgeye {pot.giftCount} hediye · geohash{" "}
+                      <span className="font-semibold text-accent">
+                        {formatJiy(unitsToJiy(pot.totalWei))} JIY
+                      </span>
+                      {" · "}
+                      {pot.giftCount} hediye · geohash{" "}
                       <span className="font-mono text-xs">{pot.geohash}</span>
                     </p>
                     {drawWinner ? (
@@ -2026,9 +2099,35 @@ export function NearApp() {
                     FA · {JIY_TOKEN.decimals} decimals
                   </p>
                   {profile?.moveAddress ? (
-                    <p className="mt-2 break-all font-mono text-[10px] text-muted">
-                      Move · {profile.moveAddress}
-                    </p>
+                    <>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight text-accent">
+                        {jiyBalance == null
+                          ? "…"
+                          : `${formatJiy(jiyBalance, 4)} JIY`}
+                      </p>
+                      <p className="mt-1 break-all font-mono text-[10px] text-muted">
+                        Move ·{" "}
+                        <a
+                          href={jiyAccountExplorerUrl(profile.moveAddress)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline-offset-2 hover:underline"
+                        >
+                          {profile.moveAddress}
+                        </a>
+                      </p>
+                      <Button
+                        className="mt-2"
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() =>
+                          void refreshJiyBalance(profile.moveAddress)
+                        }
+                      >
+                        Bakiyeyi yenile
+                      </Button>
+                    </>
                   ) : (
                     <p className="mt-2 text-[11px] text-muted">
                       Move adresin yok — hediyeler skor için kaydedilir; zincir

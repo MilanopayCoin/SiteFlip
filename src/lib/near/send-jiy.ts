@@ -8,6 +8,7 @@ import {
   JIY_TOKEN,
   jiyToUnits,
   SUPRA_MOVE_MAINNET,
+  unitsToJiy,
 } from "@/lib/near/jiy-token";
 import { getStarkey } from "@/lib/starkey/provider";
 import type { StarkeySupraProvider } from "@/lib/starkey/types";
@@ -65,6 +66,33 @@ export async function signMoveLinkMessage(message: string): Promise<{
     throw new Error("Move imzası iptal edildi");
   }
   return signed;
+}
+
+/**
+ * Read JIY FA balance for a Move address via
+ * `0x1::primary_fungible_store::balance<Metadata>(owner, metadata)`.
+ */
+export async function getJiyBalance(moveAddress: string): Promise<{
+  units: string;
+  amountJiy: number;
+}> {
+  if (!isMoveAddress(moveAddress)) {
+    throw new Error("Geçerli Move adresi gerekli");
+  }
+  const client = await SupraClient.init(SUPRA_MOVE_MAINNET.rpcUrl);
+  const raw = await client.invokeViewMethod(
+    "0x1::primary_fungible_store::balance",
+    ["0x1::fungible_asset::Metadata"],
+    [moveAddress, JIY_TOKEN.address]
+  );
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  const units =
+    typeof first === "string" || typeof first === "number"
+      ? String(first)
+      : first && typeof first === "object" && "value" in (first as object)
+        ? String((first as { value: unknown }).value)
+        : "0";
+  return { units, amountJiy: unitsToJiy(units) };
 }
 
 /**

@@ -10,6 +10,11 @@ declare module "supra-l1-sdk" {
   export class SupraClient {
     static init(url: string): Promise<SupraClient>;
     getAccountInfo(addr: HexString): Promise<{ sequence_number: number | string | bigint }>;
+    invokeViewMethod(
+      functionFullName: string,
+      typeArguments: string[],
+      functionArguments: string[]
+    ): Promise<unknown>;
     createSerializedRawTxObject(
       senderAddr: HexString,
       senderSequenceNumber: bigint,

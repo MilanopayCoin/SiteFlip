@@ -1,6 +1,7 @@
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { walletFromAuthHeader } from "@/lib/near/auth";
 import { getGift } from "@/lib/near/gifts";
+import { unitsToJiy } from "@/lib/near/jiy-token";
 import {
   contributeToPot,
   drawPotWinner,
@@ -9,6 +10,13 @@ import {
   recentPotEvents,
 } from "@/lib/near/pots";
 import { getPresence } from "@/lib/near/store";
+
+function potPayload(pot: Awaited<ReturnType<typeof getPot>>) {
+  return {
+    ...pot,
+    totalJiy: unitsToJiy(pot.totalWei),
+  };
+}
 
 export const runtime = "nodejs";
 
@@ -31,7 +39,12 @@ export async function GET(request: Request) {
   const pot = await getPot(presence.geohash);
   const events = await recentPotEvents(presence.geohash);
   const draw = lastDraw(presence.geohash);
-  return Response.json({ pot, events, geohash: presence.geohash, draw });
+  return Response.json({
+    pot: potPayload(pot),
+    events,
+    geohash: presence.geohash,
+    draw,
+  });
 }
 
 export async function POST(request: Request) {
@@ -73,5 +86,5 @@ export async function POST(request: Request) {
     giftId: body.giftId,
     txHash: body.txHash || null,
   });
-  return Response.json({ pot });
+  return Response.json({ pot: potPayload(pot) });
 }
