@@ -176,6 +176,10 @@ export async function linkMoveAddressWithProof(): Promise<string> {
     `/api/near/profile?move=challenge&moveAddress=${encodeURIComponent(addr)}`
   );
   const signed = await signMoveLinkMessage(challenge.message as string);
+  const signedAddr = (signed.address || "").toLowerCase();
+  if (signedAddr && signedAddr !== addr) {
+    throw new Error("StarKey imza adresi bağlı Move hesabıyla uyuşmuyor");
+  }
   const data = await nearFetch("/api/near/profile", {
     method: "PUT",
     body: JSON.stringify({
@@ -185,6 +189,7 @@ export async function linkMoveAddressWithProof(): Promise<string> {
         issuedAt: challenge.issuedAt,
         signature: signed.signature,
         publicKey: signed.publicKey,
+        signedAddress: signed.address || addr,
       },
     }),
   });

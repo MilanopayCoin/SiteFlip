@@ -33,4 +33,18 @@ declare module "supra-l1-sdk-core" {
     constructor(type: string);
     parseTypeTag(): unknown;
   }
+  export class HexString {
+    static ensure(hex: string): HexString;
+    toUint8Array(): Uint8Array;
+    toString(): string;
+  }
+  export namespace TxnBuilderTypes {
+    class Ed25519PublicKey {
+      constructor(publicKey: Uint8Array);
+    }
+    class AuthenticationKey {
+      static fromEd25519PublicKey(publicKey: Ed25519PublicKey): AuthenticationKey;
+      derivedAddress(): { toString(): string };
+    }
+  }
 }

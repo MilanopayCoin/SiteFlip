@@ -85,6 +85,7 @@ export async function PUT(request: Request) {
         issuedAt: string;
         signature: string;
         publicKey: string;
+        signedAddress?: string;
       } | null;
     };
 
@@ -118,10 +119,14 @@ export async function PUT(request: Request) {
         issuedAt: proof.issuedAt,
         signature: proof.signature,
         publicKey: proof.publicKey,
+        signedAddress: proof.signedAddress,
       });
       if (!ok) {
         return Response.json(
-          { error: "Move imzası geçersiz veya süresi dolmuş" },
+          {
+            error:
+              "Move imzası geçersiz, süresi dolmuş veya public key adrese bağlı değil",
+          },
           { status: 401 }
         );
       }

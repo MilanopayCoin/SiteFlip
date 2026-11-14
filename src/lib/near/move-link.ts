@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { HexString, TxnBuilderTypes } from "supra-l1-sdk-core";
 import nacl from "tweetnacl";
 
 const LINK_TTL_MS = 1000 * 60 * 10;
@@ -35,6 +36,23 @@ function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
+function normMove(addr: string): string {
+  const h = strip0x(addr).toLowerCase();
+  return `0x${h.padStart(64, "0")}`;
+}
+
+/** Supra/Aptos single-signer auth key: sha3_256(pubkey || 0x00). */
+export function deriveMoveAddressFromPublicKey(publicKeyHex: string): string {
+  const pubKey = new TxnBuilderTypes.Ed25519PublicKey(
+    HexString.ensure(publicKeyHex).toUint8Array()
+  );
+  return normMove(
+    TxnBuilderTypes.AuthenticationKey.fromEd25519PublicKey(pubKey)
+      .derivedAddress()
+      .toString()
+  );
+}
+
 export function buildMoveLinkMessage(input: {
   evmWallet: string;
   moveAddress: string;
@@ -58,7 +76,7 @@ export function issueMoveLinkChallenge(input: {
   moveAddress: string;
 }): Challenge {
   const evmWallet = input.evmWallet.toLowerCase();
-  const moveAddress = input.moveAddress.toLowerCase();
+  const moveAddress = normMove(input.moveAddress);
   if (!/^0x[a-f0-9]{64}$/.test(moveAddress)) {
     throw new Error("Geçerli Move adresi gerekli");
   }
@@ -89,9 +107,11 @@ export function verifyMoveLinkProof(input: {
   issuedAt: string;
   signature: string;
   publicKey: string;
+  /** Optional StarKey-reported address — must match claimed + derived. */
+  signedAddress?: string;
 }): boolean {
   const evmWallet = input.evmWallet.toLowerCase();
-  const moveAddress = input.moveAddress.toLowerCase();
+  const moveAddress = normMove(input.moveAddress);
   const key = `${evmWallet}:${input.nonce}`;
   const stored = challenges().get(key);
   if (!stored) return false;
@@ -118,6 +138,16 @@ export function verifyMoveLinkProof(input: {
     if (sig.length !== 64 || pub.length !== 32) return false;
     const ok = nacl.sign.detached.verify(msgBytes, sig, pub);
     if (!ok) return false;
+
+    // Bind pubkey → Move address (auth key derivation). Without this, any
+    // throwaway keypair can "prove" an unrelated payout address.
+    const derived = deriveMoveAddressFromPublicKey(input.publicKey);
+    if (derived !== moveAddress) return false;
+
+    if (input.signedAddress) {
+      if (normMove(input.signedAddress) !== moveAddress) return false;
+    }
+
     challenges().delete(key);
     return true;
   } catch {
