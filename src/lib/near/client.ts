@@ -84,7 +84,7 @@ export async function signInWithStarkey(wallet: string): Promise<string> {
 
 /**
  * Send catalog gift as JIY Move FA when both sides have Move addresses.
- * Falls back to ledger-only (no tx) if peer has no Move link — social score still counts.
+ * Server verifies the mainnet tx; ledger-only only when peer has no Move link.
  */
 export async function sendGiftOnChain(input: {
   from: string;
@@ -95,7 +95,6 @@ export async function sendGiftOnChain(input: {
   if (!gift) throw new Error("Unknown gift");
 
   let txHash: string | null = null;
-  let mode: "jiy" | "ledger" = "ledger";
 
   const peer = await nearFetch(
     `/api/near/profile?peer=${encodeURIComponent(input.to)}`
@@ -106,11 +105,12 @@ export async function sendGiftOnChain(input: {
   // Sender Move account is used only for this transfer — never auto-link
   // without Ed25519 proof (see linkMoveAddressWithProof).
   let myMove = await getMoveAccount();
-  if (!myMove) {
+  if (!myMove && peerMove) {
     myMove = await connectMoveAccount();
   }
 
-  if (myMove && peerMove) {
+  if (peerMove) {
+    if (!myMove) throw new Error("Move bağlantısı gerekli (mainnet JIY)");
     const bal = await getJiyBalance(myMove);
     if (bal.amountJiy + 1e-9 < gift.amountJiy) {
       throw new Error(
@@ -122,10 +122,9 @@ export async function sendGiftOnChain(input: {
       toMove: peerMove,
       amountJiy: gift.amountJiy,
     });
-    mode = "jiy";
   }
 
-  await nearFetch("/api/near/gifts", {
+  const data = await nearFetch("/api/near/gifts", {
     method: "POST",
     body: JSON.stringify({
       toWallet: input.to,
@@ -133,7 +132,8 @@ export async function sendGiftOnChain(input: {
       txHash,
     }),
   });
-  return { txHash, mode };
+  const mode = (data.mode as "jiy" | "ledger") || (txHash ? "jiy" : "ledger");
+  return { txHash: (data.gift?.txHash as string | null) ?? txHash, mode };
 }
 
 /**

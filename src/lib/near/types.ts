@@ -41,6 +41,9 @@ export type NearMessage = {
   createdAt: string;
 };
 
+/** `jiy` = verified Supra Move mainnet FA tx; `ledger` = social-only. */
+export type NearGiftMode = "jiy" | "ledger";
+
 export type NearGiftRecord = {
   id: string;
   fromWallet: string;
@@ -48,6 +51,8 @@ export type NearGiftRecord = {
   giftId: string;
   amountWei: string;
   txHash: string | null;
+  /** Derived: verified Move FA vs social ledger. */
+  mode?: NearGiftMode;
   createdAt: string;
 };
 
@@ -58,8 +63,10 @@ export type NearGiftBoardRow = {
   avatarEmoji: string;
   receivedCount: number;
   receivedWei: string;
-  /** Weighted score: wave=1, boost=10, spotlight=50, heart=5, crown=100 */
+  /** Weighted score from verified Move mainnet gifts only. */
   score: number;
+  /** How many of receivedCount are verified JIY on-chain. */
+  onChainCount?: number;
 };
 
 export type NearHotZone = {
@@ -80,6 +87,7 @@ export type NearGiftInboxItem = {
   /** @deprecated alias of amountJiy */
   amountSupra?: number;
   txHash: string | null;
+  mode: NearGiftMode;
   createdAt: string;
 };
 

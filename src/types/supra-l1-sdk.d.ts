@@ -15,6 +15,14 @@ declare module "supra-l1-sdk" {
       typeArguments: string[],
       functionArguments: string[]
     ): Promise<unknown>;
+    getTransactionDetail(
+      account: HexString,
+      transactionHash: string
+    ): Promise<{
+      txHash: string;
+      sender: string;
+      status: string;
+    } | null>;
     createSerializedRawTxObject(
       senderAddr: HexString,
       senderSequenceNumber: bigint,

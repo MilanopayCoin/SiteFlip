@@ -213,8 +213,8 @@ export function NearLanding() {
               {[
                 "StarKey personal_sign → oturum",
                 "Check-in → ephemeral presence",
-                "Gift → Move JIY FA (bağlıysa) · aksi ledger",
-                "Rulet → demo chip · WebRTC seat cam",
+                "Gift → Move mainnet JIY (doğrulanır) · aksi ledger",
+                "Gece tahtı → sadece verified mainnet skor",
               ].map((line) => (
                 <li
                   key={line}

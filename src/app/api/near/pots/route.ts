@@ -1,7 +1,7 @@
 import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { walletFromAuthHeader } from "@/lib/near/auth";
 import { getGift } from "@/lib/near/gifts";
-import { unitsToJiy } from "@/lib/near/jiy-token";
+import { isMoveAddress, unitsToJiy } from "@/lib/near/jiy-token";
 import {
   contributeToPot,
   drawPotWinner,
@@ -9,13 +9,22 @@ import {
   lastDraw,
   recentPotEvents,
 } from "@/lib/near/pots";
-import { getPresence } from "@/lib/near/store";
+import { consumeMoveTx, isMoveTxSpent } from "@/lib/near/spent-tx";
+import { getPresence, getProfile } from "@/lib/near/store";
+import { verifyJiyGiftTransfer } from "@/lib/near/verify-jiy-tx";
 
 function potPayload(pot: Awaited<ReturnType<typeof getPot>>) {
   return {
     ...pot,
     totalJiy: unitsToJiy(pot.totalWei),
   };
+}
+
+function potMoveTreasury(): string | null {
+  const addr = (process.env.NEXT_PUBLIC_JIY_NEAR_POT_MOVE_ADDRESS || "")
+    .trim()
+    .toLowerCase();
+  return isMoveAddress(addr) ? addr : null;
 }
 
 export const runtime = "nodejs";
@@ -39,11 +48,14 @@ export async function GET(request: Request) {
   const pot = await getPot(presence.geohash);
   const events = await recentPotEvents(presence.geohash);
   const draw = lastDraw(presence.geohash);
+  const treasury = potMoveTreasury();
   return Response.json({
     pot: potPayload(pot),
     events,
     geohash: presence.geohash,
     draw,
+    treasuryMode: treasury ? "move-mainnet" : "ledger",
+    treasuryMove: treasury,
   });
 }
 
@@ -77,14 +89,64 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!body.giftId || !getGift(body.giftId)) {
+  const gift = body.giftId ? getGift(body.giftId) : undefined;
+  if (!gift) {
     return Response.json({ error: "Valid giftId required" }, { status: 400 });
   }
+
+  const treasury = potMoveTreasury();
+  const rawTx = body.txHash?.trim() || null;
+  let txHash: string | null = null;
+  let mode: "jiy" | "ledger" | "evm" = "ledger";
+
+  if (treasury) {
+    if (!rawTx) {
+      return Response.json(
+        {
+          error: "Move kasa aktif — JIY mainnet txHash zorunlu",
+          code: "REQUIRE_MOVE_TX",
+        },
+        { status: 400 }
+      );
+    }
+    const profile = await getProfile(wallet);
+    const fromMove = profile?.moveAddress?.toLowerCase() || "";
+    if (!isMoveAddress(fromMove)) {
+      return Response.json(
+        {
+          error: "Önce profilde Move adresini bağla",
+          code: "LINK_MOVE",
+        },
+        { status: 400 }
+      );
+    }
+    if (await isMoveTxSpent(rawTx)) {
+      return Response.json(
+        { error: "Bu txHash zaten kullanıldı", code: "TX_REPLAY" },
+        { status: 409 }
+      );
+    }
+    const verified = await verifyJiyGiftTransfer({
+      txHash: rawTx,
+      fromMove,
+      toMove: treasury,
+      amountJiy: gift.amountJiy,
+    });
+    txHash = await consumeMoveTx(verified.txHash, "pot");
+    mode = "jiy";
+  } else {
+    // No Move treasury: ledger pot only. Never persist a caller-supplied hash —
+    // unverified hashes would poison isMoveTxSpent via near_place_pot_events
+    // and let an attacker burn someone else's real Move payment.
+    txHash = null;
+    mode = "ledger";
+  }
+
   const pot = await contributeToPot({
     geohash: presence.geohash,
     fromWallet: wallet,
-    giftId: body.giftId,
-    txHash: body.txHash || null,
+    giftId: gift.id,
+    txHash,
   });
-  return Response.json({ pot: potPayload(pot) });
+  return Response.json({ pot: potPayload(pot), mode, network: mode });
 }

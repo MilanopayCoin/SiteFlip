@@ -74,6 +74,35 @@ export function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
+/** Canonical 0x + 64 hex lowercase for Move tx hashes. */
+export function normalizeTxHash(h: string): string {
+  const s = h.trim().toLowerCase();
+  const with0x = s.startsWith("0x") ? s : `0x${s}`;
+  if (!/^0x[a-f0-9]{64}$/.test(with0x)) {
+    throw new Error("Geçersiz tx hash");
+  }
+  return with0x;
+}
+
+/**
+ * Lookup forms for legacy rows that may store bare hex or `0x` + hex.
+ * Always store new rows with {@link normalizeTxHash}.
+ */
+export function txHashLookupForms(txHash: string): string[] {
+  const canonical = normalizeTxHash(txHash);
+  const bare = canonical.slice(2);
+  return [canonical, bare];
+}
+
+/** Pad Move address to 0x + 64 hex. */
+export function normalizeMoveArgAddress(raw: string): string {
+  const s = raw.trim().toLowerCase();
+  if (!s) return "";
+  const hex = s.startsWith("0x") ? s.slice(2) : s;
+  if (!/^[a-f0-9]+$/.test(hex) || hex.length > 64) return "";
+  return `0x${hex.padStart(64, "0")}`;
+}
+
 /** SupraScan tx deep link (Move mainnet). */
 export function jiyTxExplorerUrl(txHash: string): string {
   const h = txHash.startsWith("0x") ? txHash : `0x${txHash}`;
