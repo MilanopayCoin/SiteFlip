@@ -2,6 +2,8 @@
 
 const BLOCK_KEY = "jiy-near-blocked";
 const REPORT_KEY = "jiy-near-reports";
+/** Session-only Discover passes — not permanent hide. */
+const PASS_KEY = "jiy-near-passed-session";
 
 function norm(w: string) {
   return w.trim().toLowerCase();
@@ -29,6 +31,29 @@ export function unblockWallet(wallet: string): string[] {
   const next = loadBlocked().filter((x) => x !== w);
   localStorage.setItem(BLOCK_KEY, JSON.stringify(next));
   return next;
+}
+
+/** Soft-pass deck skips (sessionStorage — clears when tab closes). */
+export function loadPassed(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(PASS_KEY) || "[]") as string[];
+    return Array.isArray(raw) ? raw.map(norm) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function passWallet(wallet: string): string[] {
+  const w = norm(wallet);
+  const next = [...new Set([...loadPassed(), w])];
+  sessionStorage.setItem(PASS_KEY, JSON.stringify(next));
+  return next;
+}
+
+export function clearPassed(): string[] {
+  sessionStorage.removeItem(PASS_KEY);
+  return [];
 }
 
 export function recordLocalReport(wallet: string, reason: string) {

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nearFetch } from "@/lib/near/client";
 import { GIFT_CATALOG } from "@/lib/near/gifts";
+import { nearMediaStreamConstraints } from "@/lib/near/media";
 import type {
   VoiceGiftEvent,
   VoiceParticipant,
@@ -308,10 +309,9 @@ export function NearVoicePanel({
 
   async function ensureMic() {
     if (streamRef.current) return streamRef.current;
-    const s = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: false,
-    });
+    const s = await navigator.mediaDevices.getUserMedia(
+      nearMediaStreamConstraints({ audio: true, video: false })
+    );
     streamRef.current = s;
     setStream(s);
     return s;

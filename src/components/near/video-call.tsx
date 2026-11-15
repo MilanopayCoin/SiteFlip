@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { nearFetch } from "@/lib/near/client";
+import { nearMediaStreamConstraints } from "@/lib/near/media";
 import { shortAddress } from "@/lib/starkey";
 import type { NearCall, NearCallSignal } from "@/lib/near/types";
 
@@ -88,10 +89,9 @@ export function VideoCallPanel({
       if (pc.connectionState === "connected") setStatus("Bağlandı");
     };
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
+    const stream = await navigator.mediaDevices.getUserMedia(
+      nearMediaStreamConstraints({ audio: true, video: true })
+    );
     streamRef.current = stream;
     if (localRef.current) localRef.current.srcObject = stream;
     for (const track of stream.getTracks()) {
@@ -332,10 +332,9 @@ export function VideoCallAnswer({
 
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia(
+          nearMediaStreamConstraints({ audio: true, video: true })
+        );
         if (stop) return;
         streamRef.current = stream;
         if (localRef.current) localRef.current.srcObject = stream;

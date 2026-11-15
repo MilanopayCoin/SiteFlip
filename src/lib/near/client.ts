@@ -6,9 +6,10 @@ import {
   getStarkeyEthereum,
 } from "@/lib/starkey/provider";
 import { getGift, weiToHex } from "@/lib/near/gifts";
-import { jiyToUnits } from "@/lib/near/jiy-token";
+import { formatJiy, isMoveAddress, jiyToUnits } from "@/lib/near/jiy-token";
 import {
   connectMoveAccount,
+  getJiyBalance,
   getMoveAccount,
   sendJiyFungibleAsset,
   signMoveLinkMessage,
@@ -110,6 +111,12 @@ export async function sendGiftOnChain(input: {
   }
 
   if (myMove && peerMove) {
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < gift.amountJiy) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${gift.amountJiy}`
+      );
+    }
     txHash = await sendJiyFungibleAsset({
       fromMove: myMove,
       toMove: peerMove,
@@ -130,42 +137,64 @@ export async function sendGiftOnChain(input: {
 }
 
 /**
- * Contribute to the local place pot. If NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS is set,
- * sends EVM native on Devnet to that treasury; otherwise records ledger-only.
- * Amounts are recorded in JIY base units.
+ * Contribute to the local place pot.
+ * Prefer Move JIY FA → `NEXT_PUBLIC_JIY_NEAR_POT_MOVE_ADDRESS` (64-hex).
+ * Fallback: EVM Devnet native → `NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS` (40-hex).
+ * Otherwise ledger-only. Amounts recorded in JIY base units.
  */
 export async function contributePlacePot(input: {
   from: string;
   giftId: string;
-}): Promise<{ txHash: string | null }> {
+}): Promise<{ txHash: string | null; mode: "jiy" | "evm" | "ledger" }> {
   const gift = getGift(input.giftId);
   if (!gift) throw new Error("Unknown gift");
-  const potAddr = process.env.NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS;
+  const potMove = (
+    process.env.NEXT_PUBLIC_JIY_NEAR_POT_MOVE_ADDRESS || ""
+  ).toLowerCase();
+  const potEvm = process.env.NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS || "";
 
   let txHash: string | null = null;
-  if (potAddr && /^0x[a-fA-F0-9]{40}$/.test(potAddr)) {
+  let mode: "jiy" | "evm" | "ledger" = "ledger";
+
+  if (isMoveAddress(potMove)) {
+    let myMove = await getMoveAccount();
+    if (!myMove) myMove = await connectMoveAccount();
+    if (!myMove) throw new Error("Move bağlantısı gerekli (yer kasası JIY)");
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < gift.amountJiy) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${gift.amountJiy}`
+      );
+    }
+    txHash = await sendJiyFungibleAsset({
+      fromMove: myMove,
+      toMove: potMove,
+      amountJiy: gift.amountJiy,
+    });
+    mode = "jiy";
+  } else if (/^0x[a-fA-F0-9]{40}$/.test(potEvm)) {
     const provider = getStarkeyEthereum();
     if (!provider) throw new Error("StarKey not installed");
     await ensureSupraEvmDevnet(provider);
-    // Pot treasury still on EVM Devnet — value is JIY-sized units for ledger parity.
     txHash = (await provider.request({
       method: "eth_sendTransaction",
       params: [
         {
           from: input.from,
-          to: potAddr,
+          to: potEvm,
           value: weiToHex(jiyToUnits(gift.amountJiy)),
           chainId: SUPRA_EVM_DEVNET.chainId,
         },
       ],
     })) as string;
+    mode = "evm";
   }
 
   await nearFetch("/api/near/pots", {
     method: "POST",
     body: JSON.stringify({ giftId: input.giftId, txHash }),
   });
-  return { txHash };
+  return { txHash, mode };
 }
 
 /** Connect Move + prove possession, then persist moveAddress on profile. */
@@ -196,4 +225,4 @@ export async function linkMoveAddressWithProof(): Promise<string> {
   return (data.profile?.moveAddress as string) || addr;
 }
 
-export { connectMoveAccount, getMoveAccount };
+export { connectMoveAccount, getJiyBalance, getMoveAccount };
