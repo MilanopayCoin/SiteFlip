@@ -96,6 +96,30 @@ export async function upsertProfile(
     if (raw && !/^0x[a-f0-9]{64}$/.test(raw)) {
       throw new Error("Geçerli Move adresi gerekli (0x + 64 hex)");
     }
+    if (raw) {
+      // One Move address → one Near profile (memory + DB unique index).
+      for (const [otherWallet, p] of profiles()) {
+        if (
+          otherWallet !== w &&
+          p.moveAddress &&
+          p.moveAddress.toLowerCase() === raw
+        ) {
+          throw new Error("Bu Move adresi başka bir cüzdana bağlı");
+        }
+      }
+      const clientCheck = await db();
+      if (clientCheck) {
+        const { data: clash } = await clientCheck
+          .from("near_profiles")
+          .select("wallet")
+          .eq("move_address", raw)
+          .neq("wallet", w)
+          .maybeSingle();
+        if (clash?.wallet) {
+          throw new Error("Bu Move adresi başka bir cüzdana bağlı");
+        }
+      }
+    }
     moveAddress = raw;
   }
   const profile: NearProfile = {

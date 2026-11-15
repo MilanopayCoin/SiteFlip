@@ -93,6 +93,15 @@ export async function POST(request: Request) {
     let txHash: string | null = null;
 
     if (fromMove && toMove && isMoveAddress(fromMove) && isMoveAddress(toMove)) {
+      if (fromMove === toMove) {
+        return Response.json(
+          {
+            error: "Aynı Move adresi self-gift skor üretemez",
+            code: "MOVE_SELF_GIFT",
+          },
+          { status: 400 }
+        );
+      }
       // Both linked → real Move mainnet FA required.
       if (!rawTx) {
         return Response.json(

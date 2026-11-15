@@ -123,6 +123,9 @@ export async function verifyJiyGiftTransfer(
   if (!isMoveAddress(fromMove) || !isMoveAddress(toMove)) {
     throw new Error("Move adresleri gerekli");
   }
+  if (fromMove === toMove) {
+    throw new Error("Move self-transfer kabul edilmez");
+  }
   const expectedUnits = jiyToUnits(proof.amountJiy);
   const jiyMeta = normalizeMoveArgAddress(JIY_TOKEN.address);
 

@@ -31,6 +31,14 @@ function isSchemaGap(err: { code?: string; message?: string } | null): boolean {
   );
 }
 
+function isUniqueViolation(err: { code?: string; message?: string } | null) {
+  if (!err) return false;
+  return (
+    err.code === "23505" ||
+    String(err.message || "").toLowerCase().includes("duplicate")
+  );
+}
+
 /** True if this canonical hash was already used for a gift or pot credit. */
 export async function isMoveTxSpent(txHash: string): Promise<boolean> {
   const h = normalizeTxHash(txHash);
@@ -48,8 +56,10 @@ export async function isMoveTxSpent(txHash: string): Promise<boolean> {
     mem().set(h, "gift");
     return true;
   }
-  if (spentErr && !isSchemaGap(spentErr)) {
-    // fall through to legacy tables
+  if (spentErr && isSchemaGap(spentErr)) {
+    // Table missing — still consult legacy rows; consume will fail-closed.
+  } else if (spentErr) {
+    throw new Error(spentErr.message || "spent lookup failed");
   }
 
   const { data: gift } = await client
@@ -76,8 +86,8 @@ export async function isMoveTxSpent(txHash: string): Promise<boolean> {
 }
 
 /**
- * Atomically mark a verified Move tx as spent.
- * Throws if already consumed (memory or unique DB constraint).
+ * Atomically mark a verified Move tx as spent (DB PK).
+ * Fail-closed when Supabase is configured but `near_spent_move_txs` is missing.
  */
 export async function consumeMoveTx(
   txHash: string,
@@ -88,32 +98,33 @@ export async function consumeMoveTx(
     throw new Error("Bu txHash zaten kullanıldı");
   }
 
+  // Reserve in-process before await to shrink same-isolate races.
+  mem().set(h, purpose);
+
   const client = await db();
-  if (client) {
-    const { error } = await client.from("near_spent_move_txs").insert({
-      tx_hash: h,
-      purpose,
-      created_at: new Date().toISOString(),
-    });
-    if (error) {
-      if (isSchemaGap(error)) {
-        // Table missing — fall back to legacy uniqueness checks.
-        if (await isMoveTxSpent(h)) {
-          throw new Error("Bu txHash zaten kullanıldı");
-        }
-      } else if (
-        error.code === "23505" ||
-        String(error.message || "").toLowerCase().includes("duplicate")
-      ) {
-        throw new Error("Bu txHash zaten kullanıldı");
-      } else {
-        throw new Error(error.message || "tx spend failed");
-      }
-    }
-  } else if (await isMoveTxSpent(h)) {
-    throw new Error("Bu txHash zaten kullanıldı");
+  if (!client) {
+    // Memory-only (no Supabase) — best-effort single isolate.
+    return h;
   }
 
-  mem().set(h, purpose);
+  const { error } = await client.from("near_spent_move_txs").insert({
+    tx_hash: h,
+    purpose,
+    created_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    mem().delete(h);
+    if (isSchemaGap(error)) {
+      throw new Error(
+        "near_spent_move_txs yok — migration 017 uygula (Move tx spend zorunlu)"
+      );
+    }
+    if (isUniqueViolation(error)) {
+      throw new Error("Bu txHash zaten kullanıldı");
+    }
+    throw new Error(error.message || "tx spend failed");
+  }
+
   return h;
 }
