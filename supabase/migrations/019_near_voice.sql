@@ -41,4 +41,4 @@ ALTER TABLE near_voice_signals ENABLE ROW LEVEL SECURITY;
 COMMENT ON TABLE near_voice_rooms IS
   'JIY Near voice rooms — JSON participants/gifts; service role API only.';
 COMMENT ON TABLE near_voice_signals IS
-  'JIY Near WebRTC signal queue — short lived; prune via updated room leave.';
+  'JIY Near WebRTC signal queue — participants only; API prunes ~5m TTL + leave CASCADE.';

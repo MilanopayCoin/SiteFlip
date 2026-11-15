@@ -363,6 +363,46 @@ export async function pushVoiceReaction(input: {
   return room;
 }
 
+/** WebRTC signals are short-lived; prune on write/read. */
+const VOICE_SIGNAL_TTL_MS = 5 * 60_000;
+/** Cap SDP/ICE JSON to avoid unbounded Postgres growth. */
+const VOICE_SIGNAL_MAX_PAYLOAD_BYTES = 16_384;
+
+function assertVoicePayloadSize(payload: unknown): unknown {
+  const value = payload ?? {};
+  let encoded: string;
+  try {
+    encoded = JSON.stringify(value);
+  } catch {
+    throw new Error("Geçersiz signal payload");
+  }
+  if (encoded.length > VOICE_SIGNAL_MAX_PAYLOAD_BYTES) {
+    throw new Error("Signal payload çok büyük");
+  }
+  return value;
+}
+
+async function pruneVoiceSignals(roomId?: string): Promise<void> {
+  const cutoffIso = new Date(Date.now() - VOICE_SIGNAL_TTL_MS).toISOString();
+  const client = await db();
+  if (client) {
+    let q = client
+      .from("near_voice_signals")
+      .delete()
+      .lt("created_at", cutoffIso);
+    if (roomId) q = q.eq("room_id", roomId);
+    const { error } = await q;
+    if (error && !isSchemaGap(error)) {
+      console.error("pruneVoiceSignals", error.message);
+    }
+  }
+  const cutoff = Date.now() - VOICE_SIGNAL_TTL_MS;
+  g.__jiyVoiceSignals = signals().filter((s) => {
+    if (roomId && s.roomId !== roomId) return true;
+    return Date.parse(s.createdAt) >= cutoff;
+  });
+}
+
 export async function pushVoiceSignal(input: {
   roomId: string;
   fromWallet: string;
@@ -370,9 +410,20 @@ export async function pushVoiceSignal(input: {
   kind: VoiceSignal["kind"];
   payload: unknown;
 }): Promise<VoiceSignal> {
-  // Ensure room exists (also warms cache / validates FK for DB).
   const room = await loadRoom(input.roomId);
   if (!room) throw new Error("Sesli oda yok");
+
+  const from = norm(input.fromWallet);
+  const to = norm(input.toWallet);
+  if (!room.participants.some((p) => p.wallet === from)) {
+    throw new Error("Odada değilsin");
+  }
+  if (!room.participants.some((p) => p.wallet === to)) {
+    throw new Error("Hedef odada değil");
+  }
+
+  const payload = assertVoicePayloadSize(input.payload);
+  await pruneVoiceSignals(input.roomId);
 
   const client = await db();
   if (client) {
@@ -380,10 +431,10 @@ export async function pushVoiceSignal(input: {
       .from("near_voice_signals")
       .insert({
         room_id: input.roomId,
-        from_wallet: norm(input.fromWallet),
-        to_wallet: norm(input.toWallet),
+        from_wallet: from,
+        to_wallet: to,
         kind: input.kind,
-        payload: input.payload ?? {},
+        payload,
         created_at: now(),
       })
       .select("id, room_id, from_wallet, to_wallet, kind, payload, created_at")
@@ -408,10 +459,10 @@ export async function pushVoiceSignal(input: {
   const sig: VoiceSignal = {
     id: g.__jiyVoiceSigSeq++,
     roomId: input.roomId,
-    fromWallet: norm(input.fromWallet),
-    toWallet: norm(input.toWallet),
+    fromWallet: from,
+    toWallet: to,
     kind: input.kind,
-    payload: input.payload,
+    payload,
     createdAt: now(),
   };
   signals().unshift(sig);
@@ -425,6 +476,15 @@ export async function pullVoiceSignals(
   afterId: number
 ): Promise<VoiceSignal[]> {
   const w = norm(wallet);
+  const room = await loadRoom(roomId);
+  if (!room) return [];
+  if (!room.participants.some((p) => p.wallet === w)) {
+    throw new Error("Odada değilsin");
+  }
+
+  await pruneVoiceSignals(roomId);
+  const cutoffIso = new Date(Date.now() - VOICE_SIGNAL_TTL_MS).toISOString();
+
   const client = await db();
   if (client) {
     const { data, error } = await client
@@ -433,6 +493,7 @@ export async function pullVoiceSignals(
       .eq("room_id", roomId)
       .eq("to_wallet", w)
       .gt("id", afterId)
+      .gte("created_at", cutoffIso)
       .order("id", { ascending: true })
       .limit(100);
     if (!error && data) {
@@ -450,8 +511,15 @@ export async function pullVoiceSignals(
       console.error("pullVoiceSignals", error.message);
     }
   }
+  const cutoff = Date.now() - VOICE_SIGNAL_TTL_MS;
   return signals()
-    .filter((s) => s.roomId === roomId && s.id > afterId && s.toWallet === w)
+    .filter(
+      (s) =>
+        s.roomId === roomId &&
+        s.id > afterId &&
+        s.toWallet === w &&
+        Date.parse(s.createdAt) >= cutoff
+    )
     .sort((a, b) => a.id - b.id)
     .slice(0, 100);
 }

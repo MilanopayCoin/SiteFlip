@@ -31,9 +31,15 @@ export async function GET(request: Request) {
     const roomId = url.searchParams.get("roomId");
     const after = Number(url.searchParams.get("after") || 0);
     if (roomId && url.searchParams.get("signals") === "1") {
-      return Response.json({
-        signals: await pullVoiceSignals(roomId, wallet, after),
-      });
+      try {
+        return Response.json({
+          signals: await pullVoiceSignals(roomId, wallet, after),
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "signals failed";
+        const status = msg.includes("Odada değilsin") ? 403 : 400;
+        return Response.json({ error: msg }, { status });
+      }
     }
     if (roomId) {
       const room = await getVoiceRoom(roomId);
