@@ -362,17 +362,25 @@ export function NearApp() {
       const winner = data.draw?.winnerWallet || null;
       setDrawWinner(winner);
       if (winner) {
-        const prize = data.draw?.totalWei
-          ? formatJiy(unitsToJiy(data.draw.totalWei))
-          : pot
-            ? formatJiy(unitsToJiy(pot.totalWei))
-            : null;
+        const prize =
+          typeof data.draw?.payoutJiy === "number"
+            ? formatJiy(data.draw.payoutJiy)
+            : data.draw?.totalWei
+              ? formatJiy(unitsToJiy(data.draw.totalWei))
+              : null;
+        const paid =
+          data.draw?.payoutStatus === "credited"
+            ? "ledger’e yazıldı"
+            : data.draw?.payoutStatus === "failed"
+              ? "ödeme bekliyor"
+              : "kayıtlı";
         setGiftFlash(
           prize
-            ? `🎲 Gece çekilişi · ${shortAddress(winner)} · ${prize} JIY`
+            ? `🎲 Gece çekilişi · ${shortAddress(winner)} · ${prize} JIY · ${paid}`
             : `🎲 Gece çekilişi · ${shortAddress(winner)}`
         );
-        window.setTimeout(() => setGiftFlash(null), 3200);
+        window.setTimeout(() => setGiftFlash(null), 4200);
+        await refreshPot();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Draw failed");
@@ -1534,7 +1542,8 @@ export function NearApp() {
                     </p>
                     {drawWinner ? (
                       <p className="mt-2 text-xs text-success">
-                        Son çekiliş kazananı · {shortAddress(drawWinner)}
+                        Son çekiliş · {shortAddress(drawWinner)} · ağırlıklı
+                        commit-reveal · kazanç ledger JIY
                       </p>
                     ) : null}
                     <div className="mt-3 flex flex-wrap gap-1.5">

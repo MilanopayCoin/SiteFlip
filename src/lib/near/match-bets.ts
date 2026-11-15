@@ -215,6 +215,14 @@ async function debitBalance(
   throw new Error("Eşzamanlı bakiye güncellemesi — tekrar dene");
 }
 
+/** Shared Near claimable JIY (match bets + pot payouts). */
+export async function creditWalletJiy(
+  wallet: string,
+  amount: number
+): Promise<MatchBalances> {
+  return creditBalance(wallet, "jiy", amount);
+}
+
 async function creditBalance(
   wallet: string,
   currency: BetCurrency,

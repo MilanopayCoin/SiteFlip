@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   }
   const pot = await getPot(presence.geohash);
   const events = await recentPotEvents(presence.geohash);
-  const draw = lastDraw(presence.geohash);
+  const draw = await lastDraw(presence.geohash);
   const treasury = potMoveTreasury();
   return Response.json({
     pot: potPayload(pot),
