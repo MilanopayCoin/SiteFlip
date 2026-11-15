@@ -66,12 +66,12 @@ export async function isMoveTxSpent(txHash: string): Promise<boolean> {
     markSpentAliases(h, "gift");
     return true;
   }
-  if (spentErr && isSchemaGap(spentErr)) {
-    // Table missing — still consult legacy rows; consume will fail-closed.
-  } else if (spentErr) {
+  const spentMissing = Boolean(spentErr && isSchemaGap(spentErr));
+  if (spentErr && !spentMissing) {
     throw new Error(spentErr.message || "spent lookup failed");
   }
 
+  // Verified Move gifts (pre- or post-spend-ledger) still count.
   const { data: gift } = await client
     .from("near_gifts")
     .select("id")
@@ -83,15 +83,20 @@ export async function isMoveTxSpent(txHash: string): Promise<boolean> {
     return true;
   }
 
-  const { data: pot } = await client
-    .from("near_place_pot_events")
-    .select("id")
-    .in("tx_hash", forms)
-    .limit(1)
-    .maybeSingle();
-  if (pot) {
-    markSpentAliases(h, "pot");
-    return true;
+  // Pot events are only consulted when the spend ledger table is missing.
+  // Verified pots write near_spent_move_txs via consumeMoveTx; unverified
+  // pot hashes must never burn a real Move payment in the shared spend set.
+  if (spentMissing) {
+    const { data: pot } = await client
+      .from("near_place_pot_events")
+      .select("id")
+      .in("tx_hash", forms)
+      .limit(1)
+      .maybeSingle();
+    if (pot) {
+      markSpentAliases(h, "pot");
+      return true;
+    }
   }
 
   return false;

@@ -134,11 +134,12 @@ export async function POST(request: Request) {
     });
     txHash = await consumeMoveTx(verified.txHash, "pot");
     mode = "jiy";
-  } else if (rawTx) {
-    // No Move treasury configured — accept EVM/legacy hash as opaque proof only
-    // (not Move-verified). Prefer ledger-only when unset.
-    txHash = rawTx;
-    mode = "evm";
+  } else {
+    // No Move treasury: ledger pot only. Never persist a caller-supplied hash —
+    // unverified hashes would poison isMoveTxSpent via near_place_pot_events
+    // and let an attacker burn someone else's real Move payment.
+    txHash = null;
+    mode = "ledger";
   }
 
   const pot = await contributeToPot({
