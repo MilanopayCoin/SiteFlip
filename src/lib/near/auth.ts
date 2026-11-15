@@ -5,34 +5,94 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const SIGNIN_TTL_MS = 1000 * 60 * 10;
 const DEV_FALLBACK_SECRET = "jiy-near-dev-session-secret";
 
+type PendingChallenge = {
+  wallet: string;
+  origin: string;
+  issuedAt: string;
+  expiresAt: number;
+};
+
+const g = globalThis as unknown as {
+  __jiyNearSignChallenges?: Map<string, PendingChallenge>;
+};
+
+function challenges() {
+  if (!g.__jiyNearSignChallenges) g.__jiyNearSignChallenges = new Map();
+  return g.__jiyNearSignChallenges;
+}
+
+function pruneChallenges() {
+  const now = Date.now();
+  for (const [nonce, ch] of challenges()) {
+    if (ch.expiresAt < now) challenges().delete(nonce);
+  }
+}
+
+/** Resolve binding origin from the browser Origin header (or Host fallback). */
+export function resolveRequestOrigin(request: Request): string {
+  const origin = (request.headers.get("origin") || "").trim();
+  if (origin && /^https?:\/\//i.test(origin)) {
+    try {
+      return new URL(origin).origin;
+    } catch {
+      // fall through
+    }
+  }
+  const host = (request.headers.get("host") || "").trim();
+  if (host) {
+    const proto =
+      (request.headers.get("x-forwarded-proto") || "").split(",")[0]?.trim() ||
+      "https";
+    return `${proto}://${host}`;
+  }
+  return "jiy-near://unknown";
+}
+
 export function buildSignMessage(
   wallet: string,
   nonce: string,
-  issuedAt: string
+  issuedAt: string,
+  origin: string
 ): string {
   return [
     "JIY Near — StarKey sign-in",
     "",
     `Wallet: ${wallet}`,
+    `Origin: ${origin}`,
     `Issued: ${issuedAt}`,
     `Nonce: ${nonce}`,
     "",
     "Bu imza sadece oturum açmak içindir; gas harcamaz.",
+    "Only sign on the Origin above.",
   ].join("\n");
 }
 
-export async function issueNonce(wallet: string): Promise<{
+export async function issueNonce(
+  wallet: string,
+  origin: string
+): Promise<{
   nonce: string;
   issuedAt: string;
+  origin: string;
   message: string;
 }> {
+  nearSessionSecret();
+  pruneChallenges();
   const normalized = wallet.toLowerCase();
+  const boundOrigin = origin.trim() || "jiy-near://unknown";
   const nonce = nanoid(24);
   const issuedAt = new Date().toISOString();
+  challenges().set(nonce, {
+    wallet: normalized,
+    origin: boundOrigin,
+    issuedAt,
+    expiresAt: Date.now() + SIGNIN_TTL_MS,
+  });
   return {
     nonce,
     issuedAt,
-    message: buildSignMessage(normalized, nonce, issuedAt),
+    origin: boundOrigin,
+    message: buildSignMessage(normalized, nonce, issuedAt, boundOrigin),
   };
 }
 
@@ -129,22 +189,42 @@ async function verifyPayload(
   }
 }
 
+/**
+ * Consume a server-issued challenge (one-time), verify personal_sign, mint session.
+ * `origin` must match the challenge binding (from request Origin).
+ */
 export async function verifyAndCreateSession(input: {
   wallet: string;
   nonce: string;
   issuedAt: string;
   signature: `0x${string}`;
+  origin: string;
 }): Promise<{ token: string; wallet: string; expiresAt: string } | null> {
-  // Fail closed early if production secret is missing.
   nearSessionSecret();
+  pruneChallenges();
 
   const normalized = input.wallet.toLowerCase();
-  const issuedMs = Date.parse(input.issuedAt);
-  if (!Number.isFinite(issuedMs) || Math.abs(Date.now() - issuedMs) > SIGNIN_TTL_MS) {
+  const boundOrigin = input.origin.trim();
+  const pending = challenges().get(input.nonce);
+  // Consume immediately to prevent parallel replay.
+  challenges().delete(input.nonce);
+
+  if (
+    !pending ||
+    pending.wallet !== normalized ||
+    pending.origin !== boundOrigin ||
+    pending.issuedAt !== input.issuedAt ||
+    pending.expiresAt < Date.now()
+  ) {
     return null;
   }
 
-  const message = buildSignMessage(normalized, input.nonce, input.issuedAt);
+  const message = buildSignMessage(
+    normalized,
+    input.nonce,
+    input.issuedAt,
+    boundOrigin
+  );
   let ok = false;
   try {
     ok = await verifyMessage({

@@ -162,27 +162,50 @@ async function loadRoom(id: string): Promise<VoiceRoom | null> {
   return room;
 }
 
-export async function listVoiceRooms(limit = 30): Promise<VoiceRoom[]> {
+export function isInviteVoiceRoom(room: VoiceRoom): boolean {
+  return room.geohash == null;
+}
+
+export function isVoiceParticipant(room: VoiceRoom, wallet: string): boolean {
+  const w = norm(wallet);
+  return room.participants.some((p) => p.wallet === w);
+}
+
+/** Place rooms (geohash) are discoverable; invite rooms only if already a member. */
+export async function listVisibleVoiceRooms(
+  wallet: string,
+  limit = 30
+): Promise<VoiceRoom[]> {
+  const w = norm(wallet);
   const client = await db();
+  let raw: VoiceRoom[] = [];
   if (client) {
     const { data, error } = await client
       .from("near_voice_rooms")
       .select("*")
       .order("updated_at", { ascending: false })
-      .limit(limit);
+      .limit(Math.min(100, limit * 3));
     if (!error && data) {
-      const list = data.map((row) => rowToRoom(row));
-      for (const r of list) rooms().set(r.id, r);
-      return list;
-    }
-    if (error && !isSchemaGap(error)) {
-      console.error("listVoiceRooms", error.message);
+      raw = data.map((row) => rowToRoom(row));
+      for (const r of raw) rooms().set(r.id, r);
+    } else if (error && !isSchemaGap(error)) {
+      console.error("listVisibleVoiceRooms", error.message);
     }
   }
-  return [...rooms().values()]
-    .map(normalizeRoom)
+  if (!raw.length) {
+    raw = [...rooms().values()].map(normalizeRoom);
+  }
+  return raw
+    .filter(
+      (r) => !isInviteVoiceRoom(r) || isVoiceParticipant(r, w)
+    )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, limit);
+}
+
+/** @deprecated Use listVisibleVoiceRooms — kept for internal callers. */
+export async function listVoiceRooms(limit = 30): Promise<VoiceRoom[]> {
+  return listVisibleVoiceRooms("", limit);
 }
 
 export async function getVoiceRoom(id: string): Promise<VoiceRoom | null> {

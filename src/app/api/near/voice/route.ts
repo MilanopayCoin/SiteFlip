@@ -4,9 +4,11 @@ import { getPresence } from "@/lib/near/store";
 import {
   createVoiceRoom,
   getVoiceRoom,
+  isInviteVoiceRoom,
+  isVoiceParticipant,
   joinVoiceRoom,
   leaveVoiceRoom,
-  listVoiceRooms,
+  listVisibleVoiceRooms,
   pullVoiceSignals,
   pushVoiceGift,
   pushVoiceReaction,
@@ -46,9 +48,15 @@ export async function GET(request: Request) {
       if (!room) {
         return Response.json({ error: "Oda yok" }, { status: 404 });
       }
+      // Invite rooms (no geohash) are not enumerable — require membership to read.
+      if (isInviteVoiceRoom(room) && !isVoiceParticipant(room, wallet)) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
       return Response.json({ room });
     }
-    return Response.json({ rooms: await listVoiceRooms() });
+    return Response.json({
+      rooms: await listVisibleVoiceRooms(wallet),
+    });
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "Voice failed" },

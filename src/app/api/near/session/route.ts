@@ -2,6 +2,7 @@ import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import {
   issueNonce,
   nearSessionSecret,
+  resolveRequestOrigin,
   verifyAndCreateSession,
 } from "@/lib/near/auth";
 
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
       return Response.json({ error: "Valid wallet required" }, { status: 400 });
     }
-    const challenge = await issueNonce(wallet);
+    const challenge = await issueNonce(wallet, resolveRequestOrigin(request));
     return Response.json(challenge);
   } catch (e) {
     return (
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
       nonce: body.nonce,
       issuedAt: body.issuedAt,
       signature: body.signature as `0x${string}`,
+      origin: resolveRequestOrigin(request),
     });
     if (!session) {
       return Response.json(
