@@ -1,4 +1,6 @@
 import { nanoid } from "nanoid";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export type VoiceParticipant = {
   wallet: string;
@@ -72,33 +74,131 @@ function norm(w: string) {
   return w.trim().toLowerCase();
 }
 
+function isSchemaGap(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  const msg = String(err.message || "").toLowerCase();
+  return (
+    err.code === "42P01" ||
+    err.code === "PGRST205" ||
+    err.code === "PGRST204" ||
+    msg.includes("does not exist") ||
+    msg.includes("could not find the table") ||
+    msg.includes("schema cache")
+  );
+}
+
+async function db() {
+  if (!isSupabaseConfigured()) return null;
+  return createServiceClient();
+}
+
 function normalizeRoom(room: VoiceRoom): VoiceRoom {
   if (!room.recentGifts) room.recentGifts = [];
   if (!room.recentReactions) room.recentReactions = [];
   return room;
 }
 
-export function listVoiceRooms(limit = 30): VoiceRoom[] {
+function rowToRoom(row: Record<string, unknown>): VoiceRoom {
+  return normalizeRoom({
+    id: String(row.id),
+    geohash: (row.geohash as string | null) || null,
+    label: String(row.label || "Sesli oda"),
+    hostWallet: String(row.host_wallet || "").toLowerCase(),
+    participants: Array.isArray(row.participants)
+      ? (row.participants as VoiceParticipant[])
+      : [],
+    recentGifts: Array.isArray(row.recent_gifts)
+      ? (row.recent_gifts as VoiceGiftEvent[])
+      : [],
+    recentReactions: Array.isArray(row.recent_reactions)
+      ? (row.recent_reactions as VoiceReactionEvent[])
+      : [],
+    createdAt: String(row.created_at || now()),
+    updatedAt: String(row.updated_at || now()),
+  });
+}
+
+async function persistRoom(room: VoiceRoom): Promise<void> {
+  rooms().set(room.id, room);
+  const client = await db();
+  if (!client) return;
+  const { error } = await client.from("near_voice_rooms").upsert({
+    id: room.id,
+    geohash: room.geohash,
+    label: room.label,
+    host_wallet: room.hostWallet,
+    participants: room.participants,
+    recent_gifts: room.recentGifts,
+    recent_reactions: room.recentReactions,
+    created_at: room.createdAt,
+    updated_at: room.updatedAt,
+  });
+  if (error && !isSchemaGap(error)) {
+    console.error("near_voice_rooms upsert", error.message);
+  }
+}
+
+async function deletePersistedRoom(roomId: string): Promise<void> {
+  rooms().delete(roomId);
+  const client = await db();
+  if (!client) return;
+  await client.from("near_voice_rooms").delete().eq("id", roomId);
+}
+
+async function loadRoom(id: string): Promise<VoiceRoom | null> {
+  const mem = rooms().get(id);
+  if (mem) return normalizeRoom(mem);
+  const client = await db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("near_voice_rooms")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error && isSchemaGap(error)) return null;
+  if (!data) return null;
+  const room = rowToRoom(data);
+  rooms().set(room.id, room);
+  return room;
+}
+
+export async function listVoiceRooms(limit = 30): Promise<VoiceRoom[]> {
+  const client = await db();
+  if (client) {
+    const { data, error } = await client
+      .from("near_voice_rooms")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    if (!error && data) {
+      const list = data.map((row) => rowToRoom(row));
+      for (const r of list) rooms().set(r.id, r);
+      return list;
+    }
+    if (error && !isSchemaGap(error)) {
+      console.error("listVoiceRooms", error.message);
+    }
+  }
   return [...rooms().values()]
     .map(normalizeRoom)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, limit);
 }
 
-export function getVoiceRoom(id: string): VoiceRoom | null {
-  const room = rooms().get(id);
-  return room ? normalizeRoom(room) : null;
+export async function getVoiceRoom(id: string): Promise<VoiceRoom | null> {
+  return loadRoom(id);
 }
 
-export function createVoiceRoom(input: {
+export async function createVoiceRoom(input: {
   hostWallet: string;
   displayName: string;
   avatarEmoji: string;
   label?: string;
   geohash?: string | null;
-}): VoiceRoom {
+}): Promise<VoiceRoom> {
   const host = norm(input.hostWallet);
   const id = nanoid(10);
+  const ts = now();
   const room: VoiceRoom = {
     id,
     geohash: input.geohash ? input.geohash.slice(0, 5) : null,
@@ -111,29 +211,30 @@ export function createVoiceRoom(input: {
         avatarEmoji: input.avatarEmoji || "🎙️",
         muted: false,
         speaking: false,
-        joinedAt: now(),
+        joinedAt: ts,
       },
     ],
     recentGifts: [],
     recentReactions: [],
-    createdAt: now(),
-    updatedAt: now(),
+    createdAt: ts,
+    updatedAt: ts,
   };
-  rooms().set(id, room);
+  await persistRoom(room);
   return room;
 }
 
-export function joinVoiceRoom(input: {
+export async function joinVoiceRoom(input: {
   roomId: string;
   wallet: string;
   displayName: string;
   avatarEmoji: string;
-}): VoiceRoom {
-  const room = rooms().get(input.roomId);
+}): Promise<VoiceRoom> {
+  const room = await loadRoom(input.roomId);
   if (!room) throw new Error("Sesli oda yok");
   const w = norm(input.wallet);
   if (room.participants.some((p) => p.wallet === w)) {
     room.updatedAt = now();
+    await persistRoom(room);
     return room;
   }
   if (room.participants.length >= 12) throw new Error("Oda dolu (max 12)");
@@ -146,63 +247,70 @@ export function joinVoiceRoom(input: {
     joinedAt: now(),
   });
   room.updatedAt = now();
+  await persistRoom(room);
   return room;
 }
 
-export function leaveVoiceRoom(roomId: string, wallet: string): VoiceRoom | null {
-  const room = rooms().get(roomId);
+export async function leaveVoiceRoom(
+  roomId: string,
+  wallet: string
+): Promise<VoiceRoom | null> {
+  const room = await loadRoom(roomId);
   if (!room) return null;
   const w = norm(wallet);
   room.participants = room.participants.filter((p) => p.wallet !== w);
   room.updatedAt = now();
   if (room.participants.length === 0) {
-    rooms().delete(roomId);
+    await deletePersistedRoom(roomId);
     return null;
   }
   if (room.hostWallet === w) {
     room.hostWallet = room.participants[0]!.wallet;
   }
+  await persistRoom(room);
   return room;
 }
 
-export function setVoiceMute(
+export async function setVoiceMute(
   roomId: string,
   wallet: string,
   muted: boolean
-): VoiceRoom {
-  const room = rooms().get(roomId);
+): Promise<VoiceRoom> {
+  const room = await loadRoom(roomId);
   if (!room) throw new Error("Sesli oda yok");
   const w = norm(wallet);
   room.participants = room.participants.map((p) =>
     p.wallet === w ? { ...p, muted } : p
   );
   room.updatedAt = now();
+  await persistRoom(room);
   return room;
 }
 
-export function setVoiceSpeaking(
+export async function setVoiceSpeaking(
   roomId: string,
   wallet: string,
   speaking: boolean
-): VoiceRoom {
-  const room = rooms().get(roomId);
+): Promise<VoiceRoom> {
+  const room = await loadRoom(roomId);
   if (!room) throw new Error("Sesli oda yok");
   const w = norm(wallet);
   room.participants = room.participants.map((p) =>
     p.wallet === w ? { ...p, speaking } : p
   );
   room.updatedAt = now();
+  await persistRoom(room);
   return room;
 }
 
-export function pushVoiceGift(input: {
+export async function pushVoiceGift(input: {
   roomId: string;
   fromWallet: string;
   fromName: string;
   toWallet: string;
   giftId: string;
-}): VoiceRoom {
-  const room = rooms().get(input.roomId);
+}): Promise<VoiceRoom> {
+  const room = await loadRoom(input.roomId);
   if (!room) throw new Error("Sesli oda yok");
   if (!room.recentGifts) room.recentGifts = [];
   const from = norm(input.fromWallet);
@@ -223,16 +331,17 @@ export function pushVoiceGift(input: {
   };
   room.recentGifts = [evt, ...room.recentGifts].slice(0, 40);
   room.updatedAt = now();
+  await persistRoom(room);
   return room;
 }
 
-export function pushVoiceReaction(input: {
+export async function pushVoiceReaction(input: {
   roomId: string;
   fromWallet: string;
   fromName: string;
   emoji: string;
-}): VoiceRoom {
-  const room = rooms().get(input.roomId);
+}): Promise<VoiceRoom> {
+  const room = await loadRoom(input.roomId);
   if (!room) throw new Error("Sesli oda yok");
   if (!room.recentReactions) room.recentReactions = [];
   const from = norm(input.fromWallet);
@@ -250,16 +359,51 @@ export function pushVoiceReaction(input: {
   };
   room.recentReactions = [evt, ...room.recentReactions].slice(0, 30);
   room.updatedAt = now();
+  await persistRoom(room);
   return room;
 }
 
-export function pushVoiceSignal(input: {
+export async function pushVoiceSignal(input: {
   roomId: string;
   fromWallet: string;
   toWallet: string;
   kind: VoiceSignal["kind"];
   payload: unknown;
-}): VoiceSignal {
+}): Promise<VoiceSignal> {
+  // Ensure room exists (also warms cache / validates FK for DB).
+  const room = await loadRoom(input.roomId);
+  if (!room) throw new Error("Sesli oda yok");
+
+  const client = await db();
+  if (client) {
+    const { data, error } = await client
+      .from("near_voice_signals")
+      .insert({
+        room_id: input.roomId,
+        from_wallet: norm(input.fromWallet),
+        to_wallet: norm(input.toWallet),
+        kind: input.kind,
+        payload: input.payload ?? {},
+        created_at: now(),
+      })
+      .select("id, room_id, from_wallet, to_wallet, kind, payload, created_at")
+      .single();
+    if (!error && data) {
+      return {
+        id: Number(data.id),
+        roomId: data.room_id,
+        fromWallet: data.from_wallet,
+        toWallet: data.to_wallet,
+        kind: data.kind as VoiceSignal["kind"],
+        payload: data.payload,
+        createdAt: data.created_at,
+      };
+    }
+    if (error && !isSchemaGap(error)) {
+      console.error("pushVoiceSignal", error.message);
+    }
+  }
+
   if (!g.__jiyVoiceSigSeq) g.__jiyVoiceSigSeq = 1;
   const sig: VoiceSignal = {
     id: g.__jiyVoiceSigSeq++,
@@ -275,12 +419,37 @@ export function pushVoiceSignal(input: {
   return sig;
 }
 
-export function pullVoiceSignals(
+export async function pullVoiceSignals(
   roomId: string,
   wallet: string,
   afterId: number
-): VoiceSignal[] {
+): Promise<VoiceSignal[]> {
   const w = norm(wallet);
+  const client = await db();
+  if (client) {
+    const { data, error } = await client
+      .from("near_voice_signals")
+      .select("id, room_id, from_wallet, to_wallet, kind, payload, created_at")
+      .eq("room_id", roomId)
+      .eq("to_wallet", w)
+      .gt("id", afterId)
+      .order("id", { ascending: true })
+      .limit(100);
+    if (!error && data) {
+      return data.map((row) => ({
+        id: Number(row.id),
+        roomId: row.room_id,
+        fromWallet: row.from_wallet,
+        toWallet: row.to_wallet,
+        kind: row.kind as VoiceSignal["kind"],
+        payload: row.payload,
+        createdAt: row.created_at,
+      }));
+    }
+    if (error && !isSchemaGap(error)) {
+      console.error("pullVoiceSignals", error.message);
+    }
+  }
   return signals()
     .filter((s) => s.roomId === roomId && s.id > afterId && s.toWallet === w)
     .sort((a, b) => a.id - b.id)

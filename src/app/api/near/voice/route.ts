@@ -32,17 +32,17 @@ export async function GET(request: Request) {
     const after = Number(url.searchParams.get("after") || 0);
     if (roomId && url.searchParams.get("signals") === "1") {
       return Response.json({
-        signals: pullVoiceSignals(roomId, wallet, after),
+        signals: await pullVoiceSignals(roomId, wallet, after),
       });
     }
     if (roomId) {
-      const room = getVoiceRoom(roomId);
+      const room = await getVoiceRoom(roomId);
       if (!room) {
         return Response.json({ error: "Oda yok" }, { status: 404 });
       }
       return Response.json({ room });
     }
-    return Response.json({ rooms: listVoiceRooms() });
+    return Response.json({ rooms: await listVoiceRooms() });
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "Voice failed" },
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
           const presence = await getPresence(wallet);
           geohash = presence?.geohash?.slice(0, 5) || null;
         }
-        const room = createVoiceRoom({
+        const room = await createVoiceRoom({
           hostWallet: wallet,
           displayName: name,
           avatarEmoji: emoji,
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
         if (!body.roomId) {
           return Response.json({ error: "roomId required" }, { status: 400 });
         }
-        const room = joinVoiceRoom({
+        const room = await joinVoiceRoom({
           roomId: body.roomId,
           wallet,
           displayName: name,
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
         if (!body.roomId) {
           return Response.json({ error: "roomId required" }, { status: 400 });
         }
-        const room = leaveVoiceRoom(body.roomId, wallet);
+        const room = await leaveVoiceRoom(body.roomId, wallet);
         return Response.json({ room, ok: true });
       }
       case "mute": {
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        const room = setVoiceMute(body.roomId, wallet, body.muted);
+        const room = await setVoiceMute(body.roomId, wallet, body.muted);
         return Response.json({ room });
       }
       case "speaking": {
@@ -130,7 +130,11 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        const room = setVoiceSpeaking(body.roomId, wallet, body.speaking);
+        const room = await setVoiceSpeaking(
+          body.roomId,
+          wallet,
+          body.speaking
+        );
         return Response.json({ room });
       }
       case "gift": {
@@ -145,7 +149,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        const room = pushVoiceGift({
+        const room = await pushVoiceGift({
           roomId: body.roomId,
           fromWallet: wallet,
           fromName: name,
@@ -161,7 +165,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        const room = pushVoiceReaction({
+        const room = await pushVoiceReaction({
           roomId: body.roomId,
           fromWallet: wallet,
           fromName: name,
@@ -181,7 +185,7 @@ export async function POST(request: Request) {
         ) {
           return Response.json({ error: "Invalid signal" }, { status: 400 });
         }
-        const signal = pushVoiceSignal({
+        const signal = await pushVoiceSignal({
           roomId: body.roomId,
           fromWallet: wallet,
           toWallet: body.toWallet,
