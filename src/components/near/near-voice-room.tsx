@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nearFetch } from "@/lib/near/client";
 import { GIFT_CATALOG } from "@/lib/near/gifts";
+import { fetchNearRtcConfiguration } from "@/lib/near/ice-client";
 import { nearMediaStreamConstraints } from "@/lib/near/media";
 import type {
   VoiceGiftEvent,
@@ -17,13 +18,6 @@ import type {
 import { shortAddress } from "@/lib/starkey";
 
 const REACTION_EMOJIS = ["👏", "🔥", "❤️", "😂", "🙌", "⚡"] as const;
-
-const ICE: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
 
 function VoicePeerAudio({
   roomId,
@@ -48,7 +42,8 @@ function VoicePeerAudio({
 
     const ensurePc = async () => {
       if (pcRef.current) return pcRef.current;
-      const pc = new RTCPeerConnection(ICE);
+      const ice = await fetchNearRtcConfiguration();
+      const pc = new RTCPeerConnection(ice);
       pcRef.current = pc;
       pc.onicecandidate = (ev) => {
         if (!ev.candidate) return;
