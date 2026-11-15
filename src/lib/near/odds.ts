@@ -117,6 +117,7 @@ export function normTeam(name: string): string {
     .trim();
 }
 
+/** Loose match — UI only. Never use for settlement. */
 export function teamsLikelyMatch(a: string, b: string): boolean {
   const na = normTeam(a);
   const nb = normTeam(b);
@@ -128,4 +129,16 @@ export function teamsLikelyMatch(a: string, b: string): boolean {
   let hit = 0;
   for (const t of ta) if (tb.has(t)) hit += 1;
   return hit >= 1 && hit / Math.max(ta.size, 1) >= 0.5;
+}
+
+/** Settlement-safe: exact after stripping common club suffixes (fc/cf/fk…). */
+export function teamsStrictMatch(a: string, b: string): boolean {
+  const strip = (name: string) =>
+    normTeam(name)
+      .replace(/\b(fc|cf|fk|sc|ac|afc|club)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const na = strip(a);
+  const nb = strip(b);
+  return Boolean(na && nb && na.length >= 3 && na === nb);
 }

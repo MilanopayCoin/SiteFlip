@@ -4,7 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import {
   fetchMatchOdds,
   getCachedMatch,
-  teamsLikelyMatch,
+  teamsStrictMatch,
   type MatchOdds,
 } from "@/lib/near/odds";
 import { jiyToUnits } from "@/lib/near/jiy-token";
@@ -44,6 +44,10 @@ export type MatchBalances = {
 
 const START_SUPRA = 2_000;
 const START_JIY = 50;
+/** Don't settle until kickoff + this many ms (regulation-ish). */
+const SETTLE_AFTER_MS = 85 * 60_000;
+/** Kickoff vs InferSports scheduled_at must be within this window. */
+const KICKOFF_SLACK_MS = 12 * 3600_000;
 
 const g = globalThis as unknown as {
   __jiyMatchBets?: MatchBet[];
@@ -78,15 +82,32 @@ function isSchemaGap(err: { code?: string; message?: string } | null): boolean {
   );
 }
 
+function parseAmount(raw: unknown, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 async function db() {
   if (!isSupabaseConfigured()) return null;
   return createServiceClient();
 }
 
-export async function getMatchBalances(wallet: string): Promise<MatchBalances> {
+function cacheBet(bet: MatchBet) {
+  const list = bets();
+  const idx = list.findIndex((b) => b.id === bet.id);
+  if (idx >= 0) list[idx] = bet;
+  else list.unshift(bet);
+}
+
+export async function getMatchBalances(
+  wallet: string,
+  opts?: { fresh?: boolean }
+): Promise<MatchBalances> {
   const w = norm(wallet);
-  const mem = balances().get(w);
-  if (mem) return mem;
+  if (!opts?.fresh) {
+    const mem = balances().get(w);
+    if (mem) return mem;
+  }
 
   const client = await db();
   if (client) {
@@ -98,13 +119,20 @@ export async function getMatchBalances(wallet: string): Promise<MatchBalances> {
     if (!error && data) {
       const bal: MatchBalances = {
         wallet: w,
-        supra: Number(data.supra) || START_SUPRA,
-        jiy: Number(data.jiy) || 0,
+        // Preserve stored 0 — do not treat falsy as missing.
+        supra: parseAmount(data.supra, START_SUPRA),
+        jiy: parseAmount(data.jiy, 0),
       };
       balances().set(w, bal);
       return bal;
     }
+    if (error && !isSchemaGap(error) && error.code !== "PGRST116") {
+      // Fall through to grant only when row truly missing.
+    }
   }
+
+  const existing = balances().get(w);
+  if (existing) return existing;
 
   const fresh: MatchBalances = {
     wallet: w,
@@ -131,12 +159,111 @@ async function persistBalance(bal: MatchBalances): Promise<void> {
   }
 }
 
-async function persistBet(bet: MatchBet): Promise<void> {
-  const list = bets();
-  const idx = list.findIndex((b) => b.id === bet.id);
-  if (idx >= 0) list[idx] = bet;
-  else list.unshift(bet);
+/**
+ * Optimistic debit. Retries once. Fails closed on concurrent mutation.
+ */
+async function debitBalance(
+  wallet: string,
+  currency: BetCurrency,
+  amount: number
+): Promise<MatchBalances> {
+  const w = norm(wallet);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const bal = await getMatchBalances(w, { fresh: true });
+    const field = currency === "supra" ? "supra" : "jiy";
+    if (bal[field] < amount) {
+      throw new Error(
+        currency === "supra" ? "Yetersiz SUPRA bakiyesi" : "Yetersiz JIY bakiyesi"
+      );
+    }
+    const next =
+      currency === "supra"
+        ? Math.round((bal[field] - amount) * 1000) / 1000
+        : Math.round((bal[field] - amount) * 1e6) / 1e6;
 
+    const client = await db();
+    if (!client) {
+      bal[field] = next;
+      balances().set(w, bal);
+      return bal;
+    }
+
+    const { data, error } = await client
+      .from("near_match_balances")
+      .update({ [field]: next, updated_at: now() })
+      .eq("wallet", w)
+      .eq(field, bal[field])
+      .gte(field, amount)
+      .select("*")
+      .maybeSingle();
+
+    if (error && isSchemaGap(error)) {
+      bal[field] = next;
+      balances().set(w, bal);
+      return bal;
+    }
+    if (data) {
+      const out: MatchBalances = {
+        wallet: w,
+        supra: parseAmount(data.supra, field === "supra" ? next : bal.supra),
+        jiy: parseAmount(data.jiy, field === "jiy" ? next : bal.jiy),
+      };
+      balances().set(w, out);
+      return out;
+    }
+  }
+  throw new Error("Eşzamanlı bakiye güncellemesi — tekrar dene");
+}
+
+async function creditBalance(
+  wallet: string,
+  currency: BetCurrency,
+  amount: number
+): Promise<MatchBalances> {
+  const w = norm(wallet);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const bal = await getMatchBalances(w, { fresh: true });
+    const field = currency === "supra" ? "supra" : "jiy";
+    const next =
+      currency === "supra"
+        ? Math.round((bal[field] + amount) * 1000) / 1000
+        : Math.round((bal[field] + amount) * 1e6) / 1e6;
+
+    const client = await db();
+    if (!client) {
+      bal[field] = next;
+      balances().set(w, bal);
+      return bal;
+    }
+
+    const { data, error } = await client
+      .from("near_match_balances")
+      .update({ [field]: next, updated_at: now() })
+      .eq("wallet", w)
+      .eq(field, bal[field])
+      .select("*")
+      .maybeSingle();
+
+    if (error && isSchemaGap(error)) {
+      bal[field] = next;
+      balances().set(w, bal);
+      return bal;
+    }
+    if (data) {
+      const out: MatchBalances = {
+        wallet: w,
+        supra: parseAmount(data.supra, field === "supra" ? next : bal.supra),
+        jiy: parseAmount(data.jiy, field === "jiy" ? next : bal.jiy),
+      };
+      balances().set(w, out);
+      return out;
+    }
+  }
+  throw new Error("Kazanç yazılamadı — tekrar dene");
+}
+
+async function persistBet(bet: MatchBet): Promise<void> {
+  cacheBet(bet);
   const client = await db();
   if (!client) return;
   const { error } = await client.from("near_match_bets").upsert({
@@ -164,24 +291,80 @@ async function persistBet(bet: MatchBet): Promise<void> {
   }
 }
 
+/** Claim open → terminal status atomically. Returns false if already settled. */
+async function claimBetSettlement(
+  betId: string,
+  patch: {
+    status: "won" | "lost" | "void";
+    scoreHome: number | null;
+    scoreAway: number | null;
+    settledAt: string;
+  }
+): Promise<boolean> {
+  const client = await db();
+  if (!client) {
+    const b = bets().find((x) => x.id === betId);
+    if (!b || b.status !== "open") return false;
+    b.status = patch.status;
+    b.scoreHome = patch.scoreHome;
+    b.scoreAway = patch.scoreAway;
+    b.settledAt = patch.settledAt;
+    return true;
+  }
+
+  const { data, error } = await client
+    .from("near_match_bets")
+    .update({
+      status: patch.status,
+      score_home: patch.scoreHome,
+      score_away: patch.scoreAway,
+      settled_at: patch.settledAt,
+    })
+    .eq("id", betId)
+    .eq("status", "open")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    if (isSchemaGap(error)) {
+      const b = bets().find((x) => x.id === betId);
+      if (!b || b.status !== "open") return false;
+      b.status = patch.status;
+      b.scoreHome = patch.scoreHome;
+      b.scoreAway = patch.scoreAway;
+      b.settledAt = patch.settledAt;
+      return true;
+    }
+    throw new Error(error.message || "settle claim failed");
+  }
+  return Boolean(data);
+}
+
 export async function listMatchBets(
   wallet: string,
   limit = 40
 ): Promise<MatchBet[]> {
   const w = norm(wallet);
-  const mem = bets().filter((b) => b.wallet === w);
-  if (mem.length) return mem.slice(0, limit);
-
   const client = await db();
-  if (!client) return [];
-  const { data, error } = await client
-    .from("near_match_bets")
-    .select("*")
-    .eq("wallet", w)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error && isSchemaGap(error)) return [];
-  return (data || []).map(rowToBet);
+  if (client) {
+    const { data, error } = await client
+      .from("near_match_bets")
+      .select("*")
+      .eq("wallet", w)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (!error && data) {
+      const mapped = data.map(rowToBet);
+      for (const b of mapped) cacheBet(b);
+      return mapped;
+    }
+    if (error && !isSchemaGap(error)) {
+      console.error("listMatchBets", error.message);
+    }
+  }
+  return bets()
+    .filter((b) => b.wallet === w)
+    .slice(0, limit);
 }
 
 function rowToBet(row: Record<string, unknown>): MatchBet {
@@ -246,19 +429,15 @@ export async function placeMatchBet(input: {
   const odds = match.odds[input.pick];
   if (!odds || odds < 1.01) throw new Error("Oran geçersiz");
 
-  const bal = await getMatchBalances(input.wallet);
+  let bal: MatchBalances;
   if (input.currency === "supra") {
-    if (bal.supra < input.stake) throw new Error("Yetersiz SUPRA bakiyesi");
-    bal.supra = Math.round((bal.supra - input.stake) * 1000) / 1000;
+    bal = await debitBalance(input.wallet, "supra", input.stake);
+  } else if (!input.txHash) {
+    bal = await debitBalance(input.wallet, "jiy", input.stake);
   } else {
-    // JIY: if on-chain tx provided, stake is already paid to treasury — don't
-    // also debit ledger. Without tx, debit ledger JIY.
-    if (!input.txHash) {
-      if (bal.jiy < input.stake) throw new Error("Yetersiz JIY bakiyesi");
-      bal.jiy = Math.round((bal.jiy - input.stake) * 1e6) / 1e6;
-    }
+    // On-chain JIY already paid to treasury — don't also debit ledger.
+    bal = await getMatchBalances(input.wallet, { fresh: true });
   }
-  await persistBalance(bal);
 
   const potentialWin =
     Math.round(input.stake * odds * (input.currency === "jiy" ? 1e6 : 1000)) /
@@ -291,9 +470,11 @@ export async function placeMatchBet(input: {
 type InferResult = {
   event_id: string;
   sport: string;
+  league?: string;
   home_team: string;
   away_team: string;
   scheduled_at: string;
+  finished_at?: string | null;
   score?: { home: number; away: number };
 };
 
@@ -311,16 +492,39 @@ function pickResult(
   bet: MatchBet,
   results: InferResult[]
 ): { home: number; away: number } | null {
-  const football = results.filter((r) => r.sport === "football" && r.score);
-  for (const r of football) {
+  const kickoff = Date.parse(bet.kickoffUtc);
+  if (!Number.isFinite(kickoff)) return null;
+  if (Date.now() < kickoff + SETTLE_AFTER_MS) return null;
+
+  const candidates: InferResult[] = [];
+  for (const r of results) {
+    if (r.sport !== "football" || !r.score) continue;
     if (
-      teamsLikelyMatch(bet.home, r.home_team) &&
-      teamsLikelyMatch(bet.away, r.away_team)
+      !Number.isFinite(r.score.home) ||
+      !Number.isFinite(r.score.away)
     ) {
-      return { home: r.score!.home, away: r.score!.away };
+      continue;
     }
+    const sched = Date.parse(r.scheduled_at);
+    if (!Number.isFinite(sched)) continue;
+    if (Math.abs(sched - kickoff) > KICKOFF_SLACK_MS) continue;
+    if (r.finished_at) {
+      const fin = Date.parse(r.finished_at);
+      if (Number.isFinite(fin) && fin < kickoff) continue;
+    }
+    if (
+      !teamsStrictMatch(bet.home, r.home_team) ||
+      !teamsStrictMatch(bet.away, r.away_team)
+    ) {
+      continue;
+    }
+    candidates.push(r);
   }
-  return null;
+
+  // Ambiguous fuzzy collisions must not settle.
+  if (candidates.length !== 1) return null;
+  const score = candidates[0]!.score!;
+  return { home: score.home, away: score.away };
 }
 
 function outcomeOf(score: { home: number; away: number }): BetPick {
@@ -329,34 +533,40 @@ function outcomeOf(score: { home: number; away: number }): BetPick {
   return "draw";
 }
 
+async function loadOpenBets(wallet?: string | null): Promise<MatchBet[]> {
+  const w = wallet ? norm(wallet) : null;
+  const client = await db();
+  if (client) {
+    let q = client
+      .from("near_match_bets")
+      .select("*")
+      .eq("status", "open")
+      .limit(100);
+    if (w) q = q.eq("wallet", w);
+    const { data, error } = await q;
+    if (!error && data) {
+      const mapped = data.map(rowToBet);
+      for (const b of mapped) cacheBet(b);
+      return mapped;
+    }
+    if (error && !isSchemaGap(error)) {
+      throw new Error(error.message || "open bets load failed");
+    }
+  }
+  return bets().filter((b) => b.status === "open" && (!w || b.wallet === w));
+}
+
 export async function settleOpenBets(wallet?: string): Promise<{
   settled: MatchBet[];
   balances: MatchBalances | null;
 }> {
   const w = wallet ? norm(wallet) : null;
-  let open = bets().filter((b) => b.status === "open" && (!w || b.wallet === w));
-
-  if (!open.length) {
-    const client = await db();
-    if (client) {
-      let q = client
-        .from("near_match_bets")
-        .select("*")
-        .eq("status", "open")
-        .limit(100);
-      if (w) q = q.eq("wallet", w);
-      const { data } = await q;
-      open = (data || []).map(rowToBet);
-      for (const b of open) {
-        if (!bets().some((x) => x.id === b.id)) bets().unshift(b);
-      }
-    }
-  }
+  const open = await loadOpenBets(w);
 
   if (!open.length) {
     return {
       settled: [],
-      balances: w ? await getMatchBalances(w) : null,
+      balances: w ? await getMatchBalances(w, { fresh: true }) : null,
     };
   }
 
@@ -368,33 +578,36 @@ export async function settleOpenBets(wallet?: string): Promise<{
     const score = pickResult(bet, results);
     if (!score) continue;
     const outcome = outcomeOf(score);
+    const status: "won" | "lost" = outcome === bet.pick ? "won" : "lost";
+    const settledAt = now();
+
+    const claimed = await claimBetSettlement(bet.id, {
+      status,
+      scoreHome: score.home,
+      scoreAway: score.away,
+      settledAt,
+    });
+    if (!claimed) continue;
+
+    bet.status = status;
     bet.scoreHome = score.home;
     bet.scoreAway = score.away;
-    bet.settledAt = now();
-    if (outcome === bet.pick) {
-      bet.status = "won";
-      const bal = await getMatchBalances(bet.wallet);
-      if (bet.currency === "supra") {
-        bal.supra =
-          Math.round((bal.supra + bet.potentialWin) * 1000) / 1000;
-      } else {
-        bal.jiy = Math.round((bal.jiy + bet.potentialWin) * 1e6) / 1e6;
-      }
-      await persistBalance(bal);
+    bet.settledAt = settledAt;
+    cacheBet(bet);
+
+    if (status === "won") {
+      await creditBalance(bet.wallet, bet.currency, bet.potentialWin);
       touchedWallets.add(bet.wallet);
-    } else {
-      bet.status = "lost";
     }
-    await persistBet(bet);
     settled.push(bet);
   }
 
   return {
     settled,
     balances: w
-      ? await getMatchBalances(w)
+      ? await getMatchBalances(w, { fresh: true })
       : touchedWallets.size === 1
-        ? await getMatchBalances([...touchedWallets][0]!)
+        ? await getMatchBalances([...touchedWallets][0]!, { fresh: true })
         : null,
   };
 }
