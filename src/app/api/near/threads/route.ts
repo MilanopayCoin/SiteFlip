@@ -72,7 +72,6 @@ export async function POST(request: Request) {
 
     if (body.text && (body.threadId || body.peerWallet)) {
       let threadId = body.threadId;
-      let peer = body.peerWallet || null;
       if (!threadId && body.peerWallet) {
         const thread = await getOrCreateThread(wallet, body.peerWallet);
         threadId = thread.id;
@@ -80,7 +79,9 @@ export async function POST(request: Request) {
       if (!threadId) {
         return Response.json({ error: "threadId required" }, { status: 400 });
       }
-      if (!peer) peer = await peerFromThread(threadId, wallet);
+      // Always derive peer from the thread — never trust client peerWallet
+      // for the mutual-Selam gate (spoof would bypass MUTUAL_WAVE_REQUIRED).
+      const peer = await peerFromThread(threadId, wallet);
       if (!peer || !(await isMutualWave(wallet, peer))) {
         return Response.json(
           {

@@ -146,6 +146,49 @@ export async function setCallStatus(
   return call;
 }
 
+const CALL_SIGNAL_TTL_MS = 5 * 60_000;
+const CALL_SIGNAL_MAX_PAYLOAD_BYTES = 16_384;
+const CALL_SIGNAL_RING_MAX = 200;
+
+function assertCallPayloadSize(payload: unknown): unknown {
+  const value = payload ?? {};
+  let encoded: string;
+  try {
+    encoded = JSON.stringify(value);
+  } catch {
+    throw new Error("Geçersiz signal payload");
+  }
+  if (encoded.length > CALL_SIGNAL_MAX_PAYLOAD_BYTES) {
+    throw new Error("Signal payload çok büyük");
+  }
+  return value;
+}
+
+async function pruneCallSignals(callId: string): Promise<void> {
+  const cutoffIso = new Date(Date.now() - CALL_SIGNAL_TTL_MS).toISOString();
+  const client = await db();
+  if (client) {
+    const { error } = await client
+      .from("near_call_signals")
+      .delete()
+      .eq("call_id", callId)
+      .lt("created_at", cutoffIso);
+    if (error) {
+      console.error("pruneCallSignals", error.message);
+    }
+  }
+  const cutoff = Date.now() - CALL_SIGNAL_TTL_MS;
+  const list = (signals().get(callId) || []).filter(
+    (s) => Date.parse(s.createdAt) >= cutoff
+  );
+  signals().set(
+    callId,
+    list.length > CALL_SIGNAL_RING_MAX
+      ? list.slice(-CALL_SIGNAL_RING_MAX)
+      : list
+  );
+}
+
 export async function pushSignal(input: {
   callId: string;
   fromWallet: string;
@@ -158,17 +201,26 @@ export async function pushSignal(input: {
   if (call.fromWallet !== w && call.toWallet !== w) {
     throw new Error("Not a participant");
   }
+
+  await pruneCallSignals(input.callId);
+  const safePayload = assertCallPayloadSize(input.payload);
+
   const sig: NearCallSignal = {
     id: nextId(),
     callId: input.callId,
     fromWallet: w,
     kind: input.kind,
-    payload: input.payload,
+    payload: safePayload,
     createdAt: now(),
   };
   const list = signals().get(input.callId) || [];
   list.push(sig);
-  signals().set(input.callId, list);
+  signals().set(
+    input.callId,
+    list.length > CALL_SIGNAL_RING_MAX
+      ? list.slice(-CALL_SIGNAL_RING_MAX)
+      : list
+  );
 
   if (input.kind === "hangup") {
     await setCallStatus(input.callId, "ended");
@@ -184,7 +236,7 @@ export async function pushSignal(input: {
         call_id: input.callId,
         from_wallet: w,
         kind: input.kind,
-        payload: input.payload,
+        payload: safePayload,
         created_at: sig.createdAt,
       })
       .select("id")
@@ -206,6 +258,8 @@ export async function pullSignals(
     throw new Error("Not a participant");
   }
 
+  await pruneCallSignals(callId);
+
   const mem = (signals().get(callId) || []).filter(
     (s) => s.id > afterId && s.fromWallet !== w
   );
@@ -219,6 +273,10 @@ export async function pullSignals(
     .eq("call_id", callId)
     .gt("id", afterId)
     .neq("from_wallet", w)
+    .gte(
+      "created_at",
+      new Date(Date.now() - CALL_SIGNAL_TTL_MS).toISOString()
+    )
     .order("id", { ascending: true })
     .limit(50);
 
