@@ -22,7 +22,7 @@ export type StarkeySendTxParams = {
   options?: { waitForTransaction?: boolean };
 };
 
-/** Move / SupraMVM provider — JIY FA gifts use sendTransaction. */
+/** Move / SupraMVM provider — JIY FA gifts use sendTransaction / signMessage. */
 export type StarkeySupraProvider = {
   connect: (opts?: {
     chainId?: string;
