@@ -65,6 +65,11 @@ export async function ensureCloudflareEnv(): Promise<void> {
       "DATABASE_URL",
       "MIGRATE_TOKEN",
       "SITEFLIP_ALLOW_MIGRATE",
+      "NEAR_SESSION_SECRET",
+      "JIY_NEAR_TURN_URIS",
+      "JIY_NEAR_TURN_SECRET",
+      "JIY_NEAR_TURN_TTL_SEC",
+      "JIY_NEAR_ICE_TRANSPORT_POLICY",
       "MOLLIE_API_KEY",
       "Mollie_api", // legacy Worker secret name
       "MOLLIE_WEBHOOK_URL",

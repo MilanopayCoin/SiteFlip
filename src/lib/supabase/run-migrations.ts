@@ -15,6 +15,23 @@ export const MIGRATION_FILES = [
   "004_mollie_payments.sql",
   "005_fix_profiles_rls_recursion.sql",
   "006_marketplace_core.sql",
+  "007_quote_orders.sql",
+  "008_qr_menus.sql",
+  "009_qr_menu_venue.sql",
+  "010_near.sql",
+  "011_near_calls_pots.sql",
+  "012_near_rooms.sql",
+  "013_near_waves.sql",
+  "014_near_claims.sql",
+  "015_near_duels.sql",
+  "016_near_move_address.sql",
+  "017_near_spent_move_txs.sql",
+  "018_near_move_address_unique.sql",
+  "019_near_voice.sql",
+  "020_near_tx_hash_canonical.sql",
+  "021_near_match_bets.sql",
+  "022_near_spent_tx_bet_purpose.sql",
+  "023_near_pot_draws.sql",
 ] as const;
 
 export const MARKETPLACE_CORE_TABLES = [

@@ -1,0 +1,274 @@
+"use client";
+
+import { stringToHex } from "viem";
+import {
+  ensureSupraEvmDevnet,
+  getStarkeyEthereum,
+} from "@/lib/starkey/provider";
+import { getGift, weiToHex } from "@/lib/near/gifts";
+import { formatJiy, isMoveAddress, jiyToUnits } from "@/lib/near/jiy-token";
+import {
+  connectMoveAccount,
+  getJiyBalance,
+  getMoveAccount,
+  sendJiyFungibleAsset,
+  signMoveLinkMessage,
+} from "@/lib/near/send-jiy";
+import { SUPRA_EVM_DEVNET } from "@/lib/starkey/networks";
+
+const TOKEN_KEY = "jiy-near-session";
+
+export function getNearToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setNearToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export async function nearFetch(path: string, init?: RequestInit) {
+  const token = getNearToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  if (init?.body && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+  const res = await fetch(path, { ...init, headers, cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+/** StarKey personal_sign → Near session. */
+export async function signInWithStarkey(wallet: string): Promise<string> {
+  const provider = getStarkeyEthereum();
+  if (!provider) throw new Error("StarKey not installed");
+
+  // Drop legacy memory-session tokens before minting HMAC session
+  setNearToken(null);
+
+  const challenge = await nearFetch(
+    `/api/near/session?wallet=${encodeURIComponent(wallet)}`
+  );
+  // StarKey (ethers) requires hex-encoded UTF-8 for personal_sign — plain
+  // strings throw INVALID_ARGUMENT / invalid BytesLike value.
+  const hexMessage = stringToHex(challenge.message as string);
+  const signature = (await provider.request({
+    method: "personal_sign",
+    params: [hexMessage, wallet],
+  })) as string;
+
+  const { session } = await nearFetch("/api/near/session", {
+    method: "POST",
+    body: JSON.stringify({
+      wallet,
+      nonce: challenge.nonce,
+      issuedAt: challenge.issuedAt,
+      signature,
+    }),
+  });
+  setNearToken(session.token);
+  return session.token as string;
+}
+
+/**
+ * Send catalog gift as JIY Move FA when both sides have Move addresses.
+ * Server verifies the mainnet tx; ledger-only only when peer has no Move link.
+ */
+export async function sendGiftOnChain(input: {
+  from: string;
+  to: string;
+  giftId: string;
+}): Promise<{ txHash: string | null; mode: "jiy" | "ledger" }> {
+  const gift = getGift(input.giftId);
+  if (!gift) throw new Error("Unknown gift");
+
+  let txHash: string | null = null;
+
+  const peer = await nearFetch(
+    `/api/near/profile?peer=${encodeURIComponent(input.to)}`
+  ).catch(() => null);
+  const peerMove =
+    (peer?.profile?.moveAddress as string | undefined)?.toLowerCase() || null;
+
+  // Sender Move account is used only for this transfer — never auto-link
+  // without Ed25519 proof (see linkMoveAddressWithProof).
+  let myMove = await getMoveAccount();
+  if (!myMove && peerMove) {
+    myMove = await connectMoveAccount();
+  }
+
+  if (peerMove) {
+    if (!myMove) throw new Error("Move bağlantısı gerekli (mainnet JIY)");
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < gift.amountJiy) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${gift.amountJiy}`
+      );
+    }
+    txHash = await sendJiyFungibleAsset({
+      fromMove: myMove,
+      toMove: peerMove,
+      amountJiy: gift.amountJiy,
+    });
+  }
+
+  const data = await nearFetch("/api/near/gifts", {
+    method: "POST",
+    body: JSON.stringify({
+      toWallet: input.to,
+      giftId: input.giftId,
+      txHash,
+    }),
+  });
+  const mode = (data.mode as "jiy" | "ledger") || (txHash ? "jiy" : "ledger");
+  return { txHash: (data.gift?.txHash as string | null) ?? txHash, mode };
+}
+
+/**
+ * Contribute to the local place pot.
+ * Prefer Move JIY FA → `NEXT_PUBLIC_JIY_NEAR_POT_MOVE_ADDRESS` (64-hex).
+ * Fallback: EVM Devnet native → `NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS` (40-hex).
+ * Otherwise ledger-only. Amounts recorded in JIY base units.
+ */
+export async function contributePlacePot(input: {
+  from: string;
+  giftId: string;
+}): Promise<{ txHash: string | null; mode: "jiy" | "evm" | "ledger" }> {
+  const gift = getGift(input.giftId);
+  if (!gift) throw new Error("Unknown gift");
+  const potMove = (
+    process.env.NEXT_PUBLIC_JIY_NEAR_POT_MOVE_ADDRESS || ""
+  ).toLowerCase();
+  const potEvm = process.env.NEXT_PUBLIC_JIY_NEAR_POT_ADDRESS || "";
+
+  let txHash: string | null = null;
+  let mode: "jiy" | "evm" | "ledger" = "ledger";
+
+  if (isMoveAddress(potMove)) {
+    let myMove = await getMoveAccount();
+    if (!myMove) myMove = await connectMoveAccount();
+    if (!myMove) throw new Error("Move bağlantısı gerekli (yer kasası JIY)");
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < gift.amountJiy) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${gift.amountJiy}`
+      );
+    }
+    txHash = await sendJiyFungibleAsset({
+      fromMove: myMove,
+      toMove: potMove,
+      amountJiy: gift.amountJiy,
+    });
+    mode = "jiy";
+  } else if (/^0x[a-fA-F0-9]{40}$/.test(potEvm)) {
+    const provider = getStarkeyEthereum();
+    if (!provider) throw new Error("StarKey not installed");
+    await ensureSupraEvmDevnet(provider);
+    txHash = (await provider.request({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: input.from,
+          to: potEvm,
+          value: weiToHex(jiyToUnits(gift.amountJiy)),
+          chainId: SUPRA_EVM_DEVNET.chainId,
+        },
+      ],
+    })) as string;
+    mode = "evm";
+  }
+
+  await nearFetch("/api/near/pots", {
+    method: "POST",
+    body: JSON.stringify({ giftId: input.giftId, txHash }),
+  });
+  return { txHash, mode };
+}
+
+/** Connect Move + prove possession, then persist moveAddress on profile. */
+export async function linkMoveAddressWithProof(): Promise<string> {
+  const addr = await connectMoveAccount();
+  if (!addr) throw new Error("Move bağlantısı iptal");
+  const challenge = await nearFetch(
+    `/api/near/profile?move=challenge&moveAddress=${encodeURIComponent(addr)}`
+  );
+  const signed = await signMoveLinkMessage(challenge.message as string);
+  const signedAddr = (signed.address || "").toLowerCase();
+  if (signedAddr && signedAddr !== addr) {
+    throw new Error("StarKey imza adresi bağlı Move hesabıyla uyuşmuyor");
+  }
+  const data = await nearFetch("/api/near/profile", {
+    method: "PUT",
+    body: JSON.stringify({
+      moveAddress: addr,
+      moveProof: {
+        nonce: challenge.nonce,
+        issuedAt: challenge.issuedAt,
+        signature: signed.signature,
+        publicKey: signed.publicKey,
+        signedAddress: signed.address || addr,
+      },
+    }),
+  });
+  return (data.profile?.moveAddress as string) || addr;
+}
+
+/**
+ * Place a match bet. For JIY with treasury Move address, sends FA then POSTs.
+ * SUPRA uses in-app ledger balance.
+ */
+export async function placeMatchBetOnChain(input: {
+  matchId: string;
+  pick: "home" | "draw" | "away";
+  stake: number;
+  currency: "jiy" | "supra";
+  treasuryMove?: string | null;
+}): Promise<{
+  bet: unknown;
+  balances: unknown;
+  network: string;
+}> {
+  let txHash: string | null = null;
+  if (input.currency === "jiy" && isMoveAddress(input.treasuryMove || null)) {
+    let myMove = await getMoveAccount();
+    if (!myMove) myMove = await connectMoveAccount();
+    if (!myMove) throw new Error("Move bağlantısı gerekli");
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < input.stake) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${input.stake}`
+      );
+    }
+    txHash = await sendJiyFungibleAsset({
+      fromMove: myMove,
+      toMove: input.treasuryMove!,
+      amountJiy: input.stake,
+    });
+  }
+
+  return nearFetch("/api/near/bets", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "place",
+      matchId: input.matchId,
+      pick: input.pick,
+      stake: input.stake,
+      currency: input.currency,
+      txHash,
+    }),
+  });
+}
+
+export { connectMoveAccount, getJiyBalance, getMoveAccount };
