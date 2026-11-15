@@ -79,7 +79,7 @@ export async function contributeToPot(input: {
   if (!gift) throw new Error("Unknown gift");
   const key = input.geohash.slice(0, 5);
   const pot = await getPot(key);
-  const amountWei = supraToWei(gift.amountSupra);
+  const amountWei = supraToWei(gift.amountJiy);
   pot.totalWei = (BigInt(pot.totalWei) + BigInt(amountWei)).toString();
   pot.giftCount += 1;
   pot.updatedAt = now();

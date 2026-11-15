@@ -156,7 +156,7 @@ export function NearLanding() {
               {
                 icon: Gift,
                 title: "3D hediyeler",
-                body: "TikTok vibe SUPRA gift’ler — full-screen 3D show, gece tahtı.",
+                body: "TikTok vibe JIY gift’ler — full-screen 3D show, gece tahtı.",
               },
             ].map((item, i) => (
               <motion.li
@@ -212,7 +212,7 @@ export function NearLanding() {
               {[
                 "StarKey personal_sign → oturum",
                 "Check-in → ephemeral presence",
-                "Gift / pot → SupraEVM SUPRA",
+                "Gift → Supra Move JIY FA",
                 "Görüntülü → WebRTC + imzalı sinyal",
               ].map((line) => (
                 <li

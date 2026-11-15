@@ -24,6 +24,7 @@ export const MIGRATION_FILES = [
   "013_near_waves.sql",
   "014_near_claims.sql",
   "015_near_duels.sql",
+  "016_near_move_address.sql",
 ] as const;
 
 export const MARKETPLACE_CORE_TABLES = [

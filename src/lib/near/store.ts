@@ -80,12 +80,23 @@ function pairKey(a: string, b: string): [string, string] {
 export async function upsertProfile(
   wallet: string,
   patch: Partial<
-    Pick<NearProfile, "displayName" | "mood" | "bio" | "avatarEmoji">
+    Pick<
+      NearProfile,
+      "displayName" | "mood" | "bio" | "avatarEmoji" | "moveAddress"
+    >
   >
 ): Promise<NearProfile> {
   const w = normWallet(wallet);
   const ts = now();
   const existing = await getProfile(w);
+  let moveAddress = existing?.moveAddress ?? null;
+  if (patch.moveAddress !== undefined) {
+    const raw = patch.moveAddress?.trim().toLowerCase() || null;
+    if (raw && !/^0x[a-f0-9]{64}$/.test(raw)) {
+      throw new Error("Geçerli Move adresi gerekli (0x + 64 hex)");
+    }
+    moveAddress = raw;
+  }
   const profile: NearProfile = {
     wallet: w,
     displayName:
@@ -97,6 +108,7 @@ export async function upsertProfile(
       0,
       8
     ),
+    moveAddress,
     createdAt: existing?.createdAt || ts,
     updatedAt: ts,
   };
@@ -104,7 +116,7 @@ export async function upsertProfile(
 
   const client = await db();
   if (client) {
-    const { error } = await client.from("near_profiles").upsert({
+    const row: Record<string, unknown> = {
       wallet: profile.wallet,
       display_name: profile.displayName,
       mood: profile.mood,
@@ -112,7 +124,11 @@ export async function upsertProfile(
       avatar_emoji: profile.avatarEmoji,
       created_at: profile.createdAt,
       updated_at: profile.updatedAt,
-    });
+    };
+    if (profile.moveAddress !== undefined) {
+      row.move_address = profile.moveAddress;
+    }
+    const { error } = await client.from("near_profiles").upsert(row);
     if (error && !isSchemaGap(error)) throw new Error(error.message);
   }
   return profile;
@@ -137,6 +153,7 @@ export async function getProfile(wallet: string): Promise<NearProfile | null> {
     mood: data.mood || "",
     bio: data.bio || "",
     avatarEmoji: data.avatar_emoji || "✨",
+    moveAddress: data.move_address || null,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };
@@ -270,6 +287,7 @@ export async function listNearby(
       wallet: p.wallet,
       displayName: `${p.wallet.slice(0, 6)}…`,
       mood: "",
+      moveAddress: null as string | null,
       bio: "",
       avatarEmoji: "✨",
       createdAt: p.updatedAt,
@@ -669,7 +687,8 @@ export async function listGiftInbox(
       giftId: g.giftId,
       giftLabel: catalog?.label || g.giftId,
       giftEmoji: catalog?.emoji || "🎁",
-      amountSupra: catalog?.amountSupra ?? 0,
+      amountJiy: catalog?.amountJiy ?? 0,
+      amountSupra: catalog?.amountJiy ?? 0,
       txHash: g.txHash,
       createdAt: g.createdAt,
     });

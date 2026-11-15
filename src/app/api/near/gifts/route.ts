@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     if (body.toWallet.toLowerCase() === wallet) {
       return Response.json({ error: "Cannot gift yourself" }, { status: 400 });
     }
-    const amountWei = supraToWei(gift.amountSupra);
+    const amountWei = supraToWei(gift.amountJiy);
     const rec = await recordGift({
       fromWallet: wallet,
       toWallet: body.toWallet,

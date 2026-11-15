@@ -100,7 +100,7 @@ export function NearGiftFxLayer({
             >
               {gift.label}
               <span className="ml-2 text-sm font-normal text-white/70">
-                · {gift.amountSupra} SUPRA
+                · {gift.amountJiy} JIY
               </span>
             </motion.p>
             {event.fromLabel ? (
