@@ -4,16 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { nearFetch } from "@/lib/near/client";
+import { fetchNearRtcConfiguration } from "@/lib/near/ice-client";
 import { nearMediaStreamConstraints } from "@/lib/near/media";
 import { shortAddress } from "@/lib/starkey";
 import type { NearCall, NearCallSignal } from "@/lib/near/types";
-
-const ICE: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
 
 export function VideoCallPanel({
   myWallet,
@@ -60,7 +54,8 @@ export function VideoCallPanel({
 
   const ensurePc = useCallback(async () => {
     if (pcRef.current) return pcRef.current;
-    const pc = new RTCPeerConnection(ICE);
+    const ice = await fetchNearRtcConfiguration();
+    const pc = new RTCPeerConnection(ice);
     pcRef.current = pc;
 
     pc.onicecandidate = (ev) => {
@@ -311,83 +306,101 @@ export function VideoCallAnswer({
 
   useEffect(() => {
     let stop = false;
-    const pc = new RTCPeerConnection(ICE);
-    pcRef.current = pc;
+    let poll: number | undefined;
 
-    pc.onicecandidate = (ev) => {
-      if (!ev.candidate) return;
-      void nearFetch("/api/near/calls", {
-        method: "POST",
-        body: JSON.stringify({
-          callId,
-          kind: "ice",
-          payload: ev.candidate.toJSON(),
-        }),
-      });
-    };
-    pc.ontrack = (ev) => {
-      if (remoteRef.current) remoteRef.current.srcObject = ev.streams[0] || null;
-      setStatus("Bağlandı");
-    };
-
-    (async () => {
+    void (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(
-          nearMediaStreamConstraints({ audio: true, video: true })
-        );
+        const ice = await fetchNearRtcConfiguration();
         if (stop) return;
-        streamRef.current = stream;
-        if (localRef.current) localRef.current.srcObject = stream;
-        for (const track of stream.getTracks()) pc.addTrack(track, stream);
+        const pc = new RTCPeerConnection(ice);
+        pcRef.current = pc;
+
+        pc.onicecandidate = (ev) => {
+          if (!ev.candidate) return;
+          void nearFetch("/api/near/calls", {
+            method: "POST",
+            body: JSON.stringify({
+              callId,
+              kind: "ice",
+              payload: ev.candidate.toJSON(),
+            }),
+          });
+        };
+        pc.ontrack = (ev) => {
+          if (remoteRef.current)
+            remoteRef.current.srcObject = ev.streams[0] || null;
+          setStatus("Bağlandı");
+        };
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(
+            nearMediaStreamConstraints({ audio: true, video: true })
+          );
+          if (stop) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          streamRef.current = stream;
+          if (localRef.current) localRef.current.srcObject = stream;
+          for (const track of stream.getTracks()) pc.addTrack(track, stream);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Kamera/mikrofon yok");
+        }
+
+        poll = window.setInterval(() => {
+          if (stop || !pcRef.current) return;
+          void (async () => {
+            const live = pcRef.current;
+            if (!live) return;
+            try {
+              const data = await nearFetch(
+                `/api/near/calls?callId=${encodeURIComponent(callId)}&after=${afterIdRef.current}`
+              );
+              for (const sig of data.signals || []) {
+                afterIdRef.current = Math.max(afterIdRef.current, sig.id);
+                if (sig.kind === "offer") {
+                  await live.setRemoteDescription(
+                    sig.payload as RTCSessionDescriptionInit
+                  );
+                  const answer = await live.createAnswer();
+                  await live.setLocalDescription(answer);
+                  await nearFetch("/api/near/calls", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      callId,
+                      kind: "answer",
+                      payload: answer,
+                    }),
+                  });
+                  setStatus("Cevaplandı");
+                } else if (sig.kind === "ice") {
+                  try {
+                    await live.addIceCandidate(
+                      sig.payload as RTCIceCandidateInit
+                    );
+                  } catch {
+                    // ignore
+                  }
+                } else if (sig.kind === "hangup") {
+                  setStatus("Kapandı");
+                  await cleanup(false);
+                }
+              }
+            } catch {
+              // ignore
+            }
+          })();
+        }, 1000);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Kamera/mikrofon yok");
+        if (!stop) {
+          setError(e instanceof Error ? e.message : "ICE yapılandırılamadı");
+        }
       }
     })();
 
-    const poll = window.setInterval(() => {
-      if (stop) return;
-      void (async () => {
-        try {
-          const data = await nearFetch(
-            `/api/near/calls?callId=${encodeURIComponent(callId)}&after=${afterIdRef.current}`
-          );
-          for (const sig of data.signals || []) {
-            afterIdRef.current = Math.max(afterIdRef.current, sig.id);
-            if (sig.kind === "offer") {
-              await pc.setRemoteDescription(
-                sig.payload as RTCSessionDescriptionInit
-              );
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              await nearFetch("/api/near/calls", {
-                method: "POST",
-                body: JSON.stringify({
-                  callId,
-                  kind: "answer",
-                  payload: answer,
-                }),
-              });
-              setStatus("Cevaplandı");
-            } else if (sig.kind === "ice") {
-              try {
-                await pc.addIceCandidate(sig.payload as RTCIceCandidateInit);
-              } catch {
-                // ignore
-              }
-            } else if (sig.kind === "hangup") {
-              setStatus("Kapandı");
-              await cleanup(false);
-            }
-          }
-        } catch {
-          // ignore
-        }
-      })();
-    }, 1000);
-
     return () => {
       stop = true;
-      window.clearInterval(poll);
+      if (poll !== undefined) window.clearInterval(poll);
       void cleanup(true);
     };
   }, [callId, cleanup]);

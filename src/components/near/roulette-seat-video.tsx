@@ -2,14 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { nearFetch } from "@/lib/near/client";
+import { fetchNearRtcConfiguration } from "@/lib/near/ice-client";
 import { nearMediaStreamConstraints } from "@/lib/near/media";
-
-const ICE: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
 
 /**
  * Mesh: polite peer = lexicographically smaller wallet.
@@ -77,7 +71,8 @@ export function RouletteSeatVideo({
 
     const ensurePc = async () => {
       if (pcRef.current) return pcRef.current;
-      const pc = new RTCPeerConnection(ICE);
+      const ice = await fetchNearRtcConfiguration();
+      const pc = new RTCPeerConnection(ice);
       pcRef.current = pc;
       pc.onicecandidate = (ev) => {
         if (!ev.candidate) return;
