@@ -1,11 +1,14 @@
 /**
- * Near WebRTC ICE config — STUN always, TURN when server env is set.
+ * Near WebRTC ICE config — STUN always; TURN via coturn REST (time-limited).
  *
- * Env (server-only — never NEXT_PUBLIC for credentials):
+ * Env (server-only):
  *   JIY_NEAR_TURN_URIS=turn:host:3478,turns:host:5349
- *   JIY_NEAR_TURN_USERNAME=…
- *   JIY_NEAR_TURN_CREDENTIAL=…
+ *   JIY_NEAR_TURN_SECRET=…   # coturn `static-auth-secret` / use-auth-secret
+ *   JIY_NEAR_TURN_TTL_SEC=600
  * Optional force relay: JIY_NEAR_ICE_TRANSPORT_POLICY=relay
+ *
+ * Static long-lived USERNAME/CREDENTIAL are intentionally not returned to
+ * clients (bandwidth-theft risk). Use TURN_SECRET for ephemeral creds.
  */
 
 export const NEAR_DEFAULT_STUN: RTCIceServer[] = [
@@ -28,15 +31,52 @@ function splitUris(raw: string): string[] {
     .filter(Boolean);
 }
 
-/** Build ICE servers from process env (Node / Workers). */
-export function buildNearIcePayload(): NearIcePayload {
+function b64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+}
+
+/** coturn REST: username=`expiry:user`, credential=HMAC-SHA1(secret, username). */
+async function turnRestCredential(
+  secret: string,
+  username: string
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(username)
+  );
+  return b64(sig);
+}
+
+/**
+ * Build ICE servers for an authenticated wallet.
+ * Ephemeral TURN only when URIs + TURN_SECRET are set.
+ */
+export async function buildNearIcePayload(
+  wallet: string
+): Promise<NearIcePayload> {
   const iceServers: RTCIceServer[] = [...NEAR_DEFAULT_STUN];
   const uris = splitUris(process.env.JIY_NEAR_TURN_URIS || "");
-  const username = (process.env.JIY_NEAR_TURN_USERNAME || "").trim();
-  const credential = (process.env.JIY_NEAR_TURN_CREDENTIAL || "").trim();
+  const secret = (process.env.JIY_NEAR_TURN_SECRET || "").trim();
+  const ttlSecRaw = Number(process.env.JIY_NEAR_TURN_TTL_SEC || 600);
+  const ttlSec = Math.min(3600, Math.max(60, Number.isFinite(ttlSecRaw) ? ttlSecRaw : 600));
 
   let turnConfigured = false;
-  if (uris.length && username && credential) {
+  if (uris.length && secret) {
+    const expiry = Math.floor(Date.now() / 1000) + ttlSec;
+    const w = wallet.toLowerCase().replace(/^0x/, "").slice(0, 40);
+    const username = `${expiry}:${w || "near"}`;
+    const credential = await turnRestCredential(secret, username);
     iceServers.push({
       urls: uris.length === 1 ? uris[0]! : uris,
       username,
@@ -55,7 +95,7 @@ export function buildNearIcePayload(): NearIcePayload {
     iceServers,
     iceTransportPolicy,
     turnConfigured,
-    ttlSec: turnConfigured ? 600 : 3600,
+    ttlSec: turnConfigured ? Math.max(60, ttlSec - 30) : 3600,
   };
 }
 

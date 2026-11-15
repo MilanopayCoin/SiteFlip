@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 /**
  * Authenticated ICE config for voice / video / roulette mesh.
- * TURN credentials stay server-side (JIY_NEAR_TURN_*).
+ * Ephemeral TURN via coturn REST (JIY_NEAR_TURN_SECRET) — no static password leak.
  */
 export async function GET(request: Request) {
   await ensureCloudflareEnv();
@@ -17,10 +17,10 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = buildNearIcePayload();
+  const payload = await buildNearIcePayload(wallet);
   return Response.json(payload, {
     headers: {
-      "cache-control": "private, max-age=60",
+      "cache-control": "private, max-age=30",
     },
   });
 }

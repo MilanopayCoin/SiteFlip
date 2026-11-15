@@ -3,6 +3,7 @@ import { verifyMessage } from "viem";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const SIGNIN_TTL_MS = 1000 * 60 * 10;
+const DEV_FALLBACK_SECRET = "jiy-near-dev-session-secret";
 
 export function buildSignMessage(
   wallet: string,
@@ -35,13 +36,27 @@ export async function issueNonce(wallet: string): Promise<{
   };
 }
 
-function sessionSecret(): string {
+function isNearProductionRuntime(): boolean {
   return (
-    process.env.NEAR_SESSION_SECRET ||
-    process.env.QR_MENU_BOOTSTRAP_TOKEN ||
-    process.env.MIGRATE_TOKEN ||
-    "jiy-near-dev-session-secret"
+    process.env.NODE_ENV === "production" ||
+    process.env.VERCEL_ENV === "production" ||
+    process.env.CF_PAGES === "1"
   );
+}
+
+/**
+ * Dedicated HMAC key only — never reuse migrate/bootstrap tokens.
+ * Production fail-closed when NEAR_SESSION_SECRET is missing.
+ */
+export function nearSessionSecret(): string {
+  const dedicated = (process.env.NEAR_SESSION_SECRET || "").trim();
+  if (dedicated) return dedicated;
+  if (isNearProductionRuntime()) {
+    throw new Error(
+      "NEAR_SESSION_SECRET is required in production (no migrate/bootstrap fallback)"
+    );
+  }
+  return DEV_FALLBACK_SECRET;
 }
 
 function b64url(data: ArrayBuffer | Uint8Array | string): string {
@@ -70,7 +85,7 @@ function fromB64url(s: string): Uint8Array<ArrayBuffer> {
 async function hmacKey(): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(sessionSecret()),
+    new TextEncoder().encode(nearSessionSecret()),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
@@ -120,6 +135,9 @@ export async function verifyAndCreateSession(input: {
   issuedAt: string;
   signature: `0x${string}`;
 }): Promise<{ token: string; wallet: string; expiresAt: string } | null> {
+  // Fail closed early if production secret is missing.
+  nearSessionSecret();
+
   const normalized = input.wallet.toLowerCase();
   const issuedMs = Date.parse(input.issuedAt);
   if (!Number.isFinite(issuedMs) || Math.abs(Date.now() - issuedMs) > SIGNIN_TTL_MS) {

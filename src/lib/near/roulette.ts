@@ -650,6 +650,22 @@ export async function tickTable(tableId: string): Promise<RoulettePublic> {
   return toPublic(t);
 }
 
+const ROULETTE_SIGNAL_MAX_PAYLOAD_BYTES = 16_384;
+
+function assertRoulettePayloadSize(payload: unknown): unknown {
+  const value = payload ?? {};
+  let encoded: string;
+  try {
+    encoded = JSON.stringify(value);
+  } catch {
+    throw new Error("Geçersiz signal payload");
+  }
+  if (encoded.length > ROULETTE_SIGNAL_MAX_PAYLOAD_BYTES) {
+    throw new Error("Signal payload çok büyük");
+  }
+  return value;
+}
+
 export function pushRouletteSignal(input: {
   tableId: string;
   fromWallet: string;
@@ -657,14 +673,24 @@ export function pushRouletteSignal(input: {
   kind: RouletteSignal["kind"];
   payload: unknown;
 }): RouletteSignal {
+  const table = tables().get(input.tableId);
+  if (!table) throw new Error("Masa bulunamadı");
+  const from = norm(input.fromWallet);
+  const to = norm(input.toWallet);
+  const fromSeated = table.seats.some((s) => s?.wallet === from);
+  const toSeated = table.seats.some((s) => s?.wallet === to);
+  if (!fromSeated || !toSeated) {
+    throw new Error("Signal için her iki cüzdan da koltukta olmalı");
+  }
+
   if (!g.__jiyRouletteSigSeq) g.__jiyRouletteSigSeq = 1;
   const sig: RouletteSignal = {
     id: g.__jiyRouletteSigSeq++,
     tableId: input.tableId,
-    fromWallet: norm(input.fromWallet),
-    toWallet: norm(input.toWallet),
+    fromWallet: from,
+    toWallet: to,
     kind: input.kind,
-    payload: input.payload,
+    payload: assertRoulettePayloadSize(input.payload),
     createdAt: now(),
   };
   signals().unshift(sig);

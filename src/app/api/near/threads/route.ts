@@ -31,6 +31,11 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const threadId = url.searchParams.get("threadId");
     if (threadId) {
+      // Participant check — listMessages uses service role (no RLS).
+      const peer = await peerFromThread(threadId, wallet);
+      if (!peer) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
       const messages = await listMessages(threadId, 200);
       return Response.json({ messages });
     }
