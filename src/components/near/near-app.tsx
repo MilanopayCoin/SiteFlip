@@ -904,8 +904,8 @@ export function NearApp() {
       giftFx.fire(giftId, "Sen gönderdin");
       setGiftFlash(
         result.mode === "jiy"
-          ? `${item?.emoji || "🎁"} ${item?.label || "Hediye"} · ${item?.amountJiy ?? ""} JIY zincirde`
-          : `${item?.emoji || "🎁"} ${item?.label || "Hediye"} kaydedildi · peer Move adresi yok (JIY ledger)`
+          ? `${item?.emoji || "🎁"} ${item?.label || "Hediye"} · ${item?.amountJiy ?? ""} JIY · Move mainnet`
+          : `${item?.emoji || "🎁"} ${item?.label || "Hediye"} · sosyal ledger (Move yok)`
       );
       window.setTimeout(() => setGiftFlash(null), 2800);
       await refreshBoard();
@@ -1468,7 +1468,7 @@ export function NearApp() {
                           <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-muted">
                             {item.giftLabel} ·{" "}
                             {item.amountJiy ?? item.amountSupra} JIY
-                            {item.txHash ? (
+                            {item.mode === "jiy" && item.txHash ? (
                               <a
                                 href={jiyTxExplorerUrl(item.txHash)}
                                 target="_blank"
@@ -1476,7 +1476,7 @@ export function NearApp() {
                                 className="text-accent underline-offset-2 hover:underline"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                zincir
+                                mainnet
                               </a>
                             ) : (
                               <span className="text-[9px] uppercase tracking-wide opacity-70">
@@ -1493,7 +1493,7 @@ export function NearApp() {
                 {checkedIn && board.length > 0 ? (
                   <div className="rounded-xl border border-border bg-surface/50 p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
-                      Gece tahtı · hediye skoru
+                      Gece tahtı · Move mainnet JIY
                     </p>
                     <ol className="mt-2 space-y-1.5">
                       {board.slice(0, 5).map((row, i) => (

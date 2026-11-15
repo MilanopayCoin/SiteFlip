@@ -519,13 +519,43 @@ export async function listMessages(
   return list;
 }
 
+export async function findGiftByTxHash(
+  txHash: string
+): Promise<NearGiftRecord | null> {
+  const h = txHash.trim().toLowerCase();
+  if (!h) return null;
+  const mem = gifts().find((g) => (g.txHash || "").toLowerCase() === h);
+  if (mem) return mem;
+  const client = await db();
+  if (!client) return null;
+  const { data } = await client
+    .from("near_gifts")
+    .select("*")
+    .eq("tx_hash", h)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: data.id,
+    fromWallet: data.from_wallet,
+    toWallet: data.to_wallet,
+    giftId: data.gift_id,
+    amountWei: data.amount_wei,
+    txHash: data.tx_hash,
+    mode: data.tx_hash ? "jiy" : "ledger",
+    createdAt: data.created_at,
+  };
+}
+
 export async function recordGift(input: {
   fromWallet: string;
   toWallet: string;
   giftId: string;
   amountWei: string;
   txHash: string | null;
+  mode?: "jiy" | "ledger";
 }): Promise<NearGiftRecord> {
+  const mode =
+    input.mode || (input.txHash ? ("jiy" as const) : ("ledger" as const));
   const rec: NearGiftRecord = {
     id: nanoid(16),
     fromWallet: normWallet(input.fromWallet),
@@ -533,6 +563,7 @@ export async function recordGift(input: {
     giftId: input.giftId,
     amountWei: input.amountWei,
     txHash: input.txHash,
+    mode,
     createdAt: now(),
   };
   gifts().unshift(rec);
@@ -586,8 +617,14 @@ export async function listGiftsFor(wallet: string, limit = 30) {
     giftId: row.gift_id,
     amountWei: row.amount_wei,
     txHash: row.tx_hash,
+    mode: row.tx_hash ? "jiy" : "ledger",
     createdAt: row.created_at,
   })) as NearGiftRecord[];
+}
+
+function giftMode(g: NearGiftRecord): "jiy" | "ledger" {
+  if (g.mode) return g.mode;
+  return g.txHash ? "jiy" : "ledger";
 }
 
 async function loadRecentGifts(limit = 400): Promise<NearGiftRecord[]> {
@@ -607,6 +644,7 @@ async function loadRecentGifts(limit = 400): Promise<NearGiftRecord[]> {
     giftId: row.gift_id,
     amountWei: row.amount_wei,
     txHash: row.tx_hash,
+    mode: row.tx_hash ? "jiy" : "ledger",
     createdAt: row.created_at,
   })) as NearGiftRecord[];
   // Prefer memory for same-isolate freshness, then DB.
@@ -614,22 +652,27 @@ async function loadRecentGifts(limit = 400): Promise<NearGiftRecord[]> {
   return [...mem, ...rows.filter((r) => !seen.has(r.id))].slice(0, limit);
 }
 
-/** Top gift receivers — powers radar boost + night board UI. */
+/** Top gift receivers — night board counts verified Move mainnet gifts only. */
 export async function listGiftLeaderboard(
   limit = 15
 ): Promise<NearGiftBoardRow[]> {
   const all = await loadRecentGifts(500);
   const agg = new Map<
     string,
-    { count: number; wei: bigint; score: number }
+    { count: number; onChain: number; wei: bigint; score: number }
   >();
   for (const g of all) {
+    const onChain = giftMode(g) === "jiy";
+    // Radar boost / night board: only verified JIY FA transfers.
+    if (!onChain) continue;
     const cur = agg.get(g.toWallet) || {
       count: 0,
+      onChain: 0,
       wei: BigInt(0),
       score: 0,
     };
     cur.count += 1;
+    cur.onChain += 1;
     try {
       cur.wei += BigInt(g.amountWei || "0");
     } catch {
@@ -657,6 +700,7 @@ export async function listGiftLeaderboard(
         receivedCount: a.count,
         receivedWei: a.wei.toString(),
         score: a.score,
+        onChainCount: a.onChain,
       } satisfies NearGiftBoardRow;
     })
     .sort((a, b) => b.score - a.score || b.receivedCount - a.receivedCount)
@@ -690,6 +734,7 @@ export async function listGiftInbox(
       amountJiy: catalog?.amountJiy ?? 0,
       amountSupra: catalog?.amountJiy ?? 0,
       txHash: g.txHash,
+      mode: giftMode(g),
       createdAt: g.createdAt,
     });
   }
