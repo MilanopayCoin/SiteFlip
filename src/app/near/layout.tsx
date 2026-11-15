@@ -15,15 +15,15 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   title: {
-    default: "JIY Near",
-    template: "%s · JIY Near",
+    default: "JIY Outcomes",
+    template: "%s · JIY Outcomes",
   },
   description:
-    "Şu an yakınındakilerle StarKey sohbet, görüntülü ve JIY hediyeler. Ephemeral radar — kaçırırsan yok.",
+    "JIY Outcomes — OKX-style sports markets, fair odds, betslip & positions. SUPRA + JIY. Near sosyal yanında.",
   openGraph: {
-    title: "JIY Near",
+    title: "JIY Outcomes",
     description:
-      "Yakınlık ekonomisi: check-in, chat, görüntülü, zincir üstü hediye.",
+      "Fair odds 1X2 markets · StarKey · SUPRA ledger + Move JIY. Near live social.",
   },
 };
 

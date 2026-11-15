@@ -377,11 +377,14 @@ export function MatchBetsApp() {
         ) : null}
 
         {!sessionReady ? (
-          <section className="mb-4 rounded-xl border border-[#1f1f1f] bg-[#111113] p-5">
-            <p className="text-lg font-semibold">Connect to trade outcomes</p>
+          <section className="mb-4 border border-[#1f1f1f] bg-[#111113] p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-[#00d4aa]">
+              JIY Outcomes
+            </p>
+            <p className="mt-2 text-lg font-semibold">Connect to trade markets</p>
             <p className="mt-2 text-sm text-[#9ca3af]">
-              TipsAudit fair odds · market fill 1X2 · SUPRA ledger veya JIY Move
-              treasury. OKX Outcomes tarzı pozisyon + betslip.
+              TipsAudit fair odds · 1X2 market fill · SUPRA ledger veya JIY Move
+              treasury. Betslip, pozisyonlar, settle.
             </p>
             {starkey.status === "missing" ? (
               <a

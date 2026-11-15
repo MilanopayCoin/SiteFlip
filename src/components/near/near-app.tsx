@@ -1152,20 +1152,23 @@ export function NearApp() {
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
             <Link
-              href="/near"
+              href="/near/bahis"
               className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent"
             >
-              JIY Near · Live Social
+              JIY Outcomes · Markets
             </Link>
             <p className="font-display text-xl font-semibold tracking-tight">
               Şu an yakınımda
             </p>
             <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
-              <Link href="/near/bahis" className="hover:text-accent">
-                Bahis
+              <Link
+                href="/near/bahis"
+                className="font-semibold text-accent hover:opacity-90"
+              >
+                Outcomes →
               </Link>
               <Link href="/near/rulet" className="hover:text-accent">
-                Rulet →
+                Rulet
               </Link>
               <button
                 type="button"
