@@ -2,9 +2,10 @@ import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { walletFromAuthHeader } from "@/lib/near/auth";
 import { isMoveAddress } from "@/lib/near/jiy-token";
 import {
+  commitMatchBet,
   getMatchBalances,
   listMatchBets,
-  placeMatchBet,
+  prepareMatchBet,
   settleOpenBets,
   type BetCurrency,
   type BetPick,
@@ -108,8 +109,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate match/pick/stake/kickoff BEFORE irreversible Move spend.
+    const prepared = await prepareMatchBet({
+      wallet,
+      matchId: body.matchId,
+      pick: body.pick,
+      stake: body.stake,
+      currency: body.currency,
+    });
+
     let txHash: string | null = null;
-    if (body.currency === "jiy") {
+    if (prepared.currency === "jiy") {
       const treasury = betTreasury();
       const rawTx = body.txHash?.trim() || null;
       if (treasury) {
@@ -141,33 +151,34 @@ export async function POST(request: Request) {
           txHash: rawTx,
           fromMove,
           toMove: treasury,
-          amountJiy: body.stake,
+          amountJiy: prepared.stake,
         });
+        // Claim spend only after prepare succeeded (match still open, stake ok).
         txHash = await consumeMoveTx(verified.txHash, "bet");
       }
     }
 
-    const placed = await placeMatchBet({
-      wallet,
-      matchId: body.matchId,
-      pick: body.pick,
-      stake: body.stake,
-      currency: body.currency,
-      txHash,
-    });
+    // persistBet throws on DB errors; ledger debits refund on persist failure.
+    const placed = await commitMatchBet(prepared, txHash);
     return Response.json({
       ...placed,
       network:
-        body.currency === "jiy"
+        prepared.currency === "jiy"
           ? txHash
             ? "supra-move-mainnet"
             : "jiy-ledger"
           : "supra-ledger",
     });
   } catch (e) {
-    return Response.json(
-      { error: e instanceof Error ? e.message : "Bet failed" },
-      { status: 500 }
-    );
+    const msg = e instanceof Error ? e.message : "Bet failed";
+    const status =
+      msg.includes("bulunamadı") ||
+      msg.includes("kapalı") ||
+      msg.includes("Geçersiz") ||
+      msg.includes("Max ") ||
+      msg.includes("Yetersiz")
+        ? 400
+        : 500;
+    return Response.json({ error: msg }, { status });
   }
 }

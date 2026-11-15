@@ -286,8 +286,13 @@ async function persistBet(bet: MatchBet): Promise<void> {
     created_at: bet.createdAt,
     settled_at: bet.settledAt,
   });
-  if (error && !isSchemaGap(error)) {
-    console.error("near_match_bets", error.message);
+  if (error && isSchemaGap(error)) return;
+  if (error) {
+    // Roll back in-memory cache — caller must not treat this as placed.
+    const list = bets();
+    const idx = list.findIndex((b) => b.id === bet.id);
+    if (idx >= 0) list.splice(idx, 1);
+    throw new Error(error.message || "Bahis kaydı yazılamadı");
   }
 }
 
@@ -390,14 +395,27 @@ function rowToBet(row: Record<string, unknown>): MatchBet {
   };
 }
 
-export async function placeMatchBet(input: {
+export type PreparedMatchBet = {
+  wallet: string;
+  match: MatchOdds;
+  pick: BetPick;
+  stake: number;
+  currency: BetCurrency;
+  odds: number;
+  potentialWin: number;
+};
+
+/**
+ * Validate pick/stake/match/kickoff before any Move spend or ledger debit.
+ * Call this before verify/consumeMoveTx so a failed quote cannot burn a tx.
+ */
+export async function prepareMatchBet(input: {
   wallet: string;
   matchId: string;
   pick: BetPick;
   stake: number;
   currency: BetCurrency;
-  txHash?: string | null;
-}): Promise<{ bet: MatchBet; balances: MatchBalances }> {
+}): Promise<PreparedMatchBet> {
   if (!["home", "draw", "away"].includes(input.pick)) {
     throw new Error("Geçersiz seçim (1/X/2)");
   }
@@ -414,11 +432,12 @@ export async function placeMatchBet(input: {
     throw new Error("Max 50.000 SUPRA");
   }
 
-  let match = getCachedMatch(input.matchId);
-  if (!match) {
-    const { matches } = await fetchMatchOdds(80);
-    match = matches.find((m) => m.id === input.matchId) || null;
-  }
+  // Always refresh odds for placement — avoid stale cache removing the match
+  // between client pay and server place.
+  const { matches } = await fetchMatchOdds(80);
+  const match =
+    matches.find((m) => m.id === input.matchId) ||
+    getCachedMatch(input.matchId);
   if (!match) throw new Error("Maç bulunamadı / oranlar yenilendi");
 
   const kickoff = new Date(match.kickoffUtc).getTime();
@@ -429,42 +448,87 @@ export async function placeMatchBet(input: {
   const odds = match.odds[input.pick];
   if (!odds || odds < 1.01) throw new Error("Oran geçersiz");
 
-  let bal: MatchBalances;
-  if (input.currency === "supra") {
-    bal = await debitBalance(input.wallet, "supra", input.stake);
-  } else if (!input.txHash) {
-    bal = await debitBalance(input.wallet, "jiy", input.stake);
-  } else {
-    // On-chain JIY already paid to treasury — don't also debit ledger.
-    bal = await getMatchBalances(input.wallet, { fresh: true });
-  }
-
   const potentialWin =
     Math.round(input.stake * odds * (input.currency === "jiy" ? 1e6 : 1000)) /
     (input.currency === "jiy" ? 1e6 : 1000);
 
-  const bet: MatchBet = {
-    id: nanoid(14),
+  return {
     wallet: norm(input.wallet),
-    matchId: match.id,
-    league: match.league,
-    home: match.home,
-    away: match.away,
-    kickoffUtc: match.kickoffUtc,
+    match,
     pick: input.pick,
-    odds,
     stake: input.stake,
     currency: input.currency,
+    odds,
     potentialWin,
+  };
+}
+
+/** Debit ledger (if needed) and persist. Refunds ledger debit if persist fails. */
+export async function commitMatchBet(
+  prepared: PreparedMatchBet,
+  txHash?: string | null
+): Promise<{ bet: MatchBet; balances: MatchBalances }> {
+  let bal: MatchBalances;
+  let ledgerDebit: { currency: BetCurrency; amount: number } | null = null;
+  if (prepared.currency === "supra") {
+    bal = await debitBalance(prepared.wallet, "supra", prepared.stake);
+    ledgerDebit = { currency: "supra", amount: prepared.stake };
+  } else if (!txHash) {
+    bal = await debitBalance(prepared.wallet, "jiy", prepared.stake);
+    ledgerDebit = { currency: "jiy", amount: prepared.stake };
+  } else {
+    bal = await getMatchBalances(prepared.wallet, { fresh: true });
+  }
+
+  const bet: MatchBet = {
+    id: nanoid(14),
+    wallet: prepared.wallet,
+    matchId: prepared.match.id,
+    league: prepared.match.league,
+    home: prepared.match.home,
+    away: prepared.match.away,
+    kickoffUtc: prepared.match.kickoffUtc,
+    pick: prepared.pick,
+    odds: prepared.odds,
+    stake: prepared.stake,
+    currency: prepared.currency,
+    potentialWin: prepared.potentialWin,
     status: "open",
     scoreHome: null,
     scoreAway: null,
-    txHash: input.txHash || null,
+    txHash: txHash || null,
     createdAt: now(),
     settledAt: null,
   };
-  await persistBet(bet);
+  try {
+    await persistBet(bet);
+  } catch (err) {
+    if (ledgerDebit) {
+      try {
+        await creditBalance(
+          prepared.wallet,
+          ledgerDebit.currency,
+          ledgerDebit.amount
+        );
+      } catch (refundErr) {
+        console.error("bet persist refund failed", refundErr);
+      }
+    }
+    throw err;
+  }
   return { bet, balances: bal };
+}
+
+export async function placeMatchBet(input: {
+  wallet: string;
+  matchId: string;
+  pick: BetPick;
+  stake: number;
+  currency: BetCurrency;
+  txHash?: string | null;
+}): Promise<{ bet: MatchBet; balances: MatchBalances }> {
+  const prepared = await prepareMatchBet(input);
+  return commitMatchBet(prepared, input.txHash);
 }
 
 type InferResult = {
