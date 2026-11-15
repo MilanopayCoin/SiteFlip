@@ -1,6 +1,6 @@
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
-import { normalizeTxHash } from "@/lib/near/jiy-token";
+import { normalizeTxHash, txHashLookupForms } from "@/lib/near/jiy-token";
 
 export type SpentTxPurpose = "gift" | "pot";
 
@@ -39,10 +39,19 @@ function isUniqueViolation(err: { code?: string; message?: string } | null) {
   );
 }
 
+function markSpentAliases(h: string, purpose: SpentTxPurpose) {
+  for (const form of txHashLookupForms(h)) mem().set(form, purpose);
+}
+
+function clearSpentAliases(h: string) {
+  for (const form of txHashLookupForms(h)) mem().delete(form);
+}
+
 /** True if this canonical hash was already used for a gift or pot credit. */
 export async function isMoveTxSpent(txHash: string): Promise<boolean> {
   const h = normalizeTxHash(txHash);
-  if (mem().has(h)) return true;
+  const forms = txHashLookupForms(h);
+  if (forms.some((f) => mem().has(f))) return true;
 
   const client = await db();
   if (!client) return false;
@@ -50,10 +59,11 @@ export async function isMoveTxSpent(txHash: string): Promise<boolean> {
   const { data: spent, error: spentErr } = await client
     .from("near_spent_move_txs")
     .select("tx_hash")
-    .eq("tx_hash", h)
+    .in("tx_hash", forms)
+    .limit(1)
     .maybeSingle();
   if (!spentErr && spent) {
-    mem().set(h, "gift");
+    markSpentAliases(h, "gift");
     return true;
   }
   if (spentErr && isSchemaGap(spentErr)) {
@@ -65,20 +75,22 @@ export async function isMoveTxSpent(txHash: string): Promise<boolean> {
   const { data: gift } = await client
     .from("near_gifts")
     .select("id")
-    .eq("tx_hash", h)
+    .in("tx_hash", forms)
+    .limit(1)
     .maybeSingle();
   if (gift) {
-    mem().set(h, "gift");
+    markSpentAliases(h, "gift");
     return true;
   }
 
   const { data: pot } = await client
     .from("near_place_pot_events")
     .select("id")
-    .eq("tx_hash", h)
+    .in("tx_hash", forms)
+    .limit(1)
     .maybeSingle();
   if (pot) {
-    mem().set(h, "pot");
+    markSpentAliases(h, "pot");
     return true;
   }
 
@@ -94,12 +106,12 @@ export async function consumeMoveTx(
   purpose: SpentTxPurpose
 ): Promise<string> {
   const h = normalizeTxHash(txHash);
-  if (mem().has(h)) {
+  if (txHashLookupForms(h).some((f) => mem().has(f))) {
     throw new Error("Bu txHash zaten kullanıldı");
   }
 
   // Reserve in-process before await to shrink same-isolate races.
-  mem().set(h, purpose);
+  markSpentAliases(h, purpose);
 
   const client = await db();
   if (!client) {
@@ -114,7 +126,7 @@ export async function consumeMoveTx(
   });
 
   if (error) {
-    mem().delete(h);
+    clearSpentAliases(h);
     if (isSchemaGap(error)) {
       throw new Error(
         "near_spent_move_txs yok — migration 017 uygula (Move tx spend zorunlu)"

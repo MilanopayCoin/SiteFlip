@@ -4,7 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { coarseCoord, distanceMeters, encodeGeohash } from "@/lib/near/geohash";
 import { creditDuelGift } from "@/lib/near/duels";
 import { getGift, giftScore } from "@/lib/near/gifts";
-import { normalizeTxHash } from "@/lib/near/jiy-token";
+import { normalizeTxHash, txHashLookupForms } from "@/lib/near/jiy-token";
 import { recordWave } from "@/lib/near/waves";
 import type {
   NearGiftBoardRow,
@@ -553,16 +553,23 @@ export async function findGiftByTxHash(
   } catch {
     return null;
   }
-  const memHit = gifts().find(
-    (g) => g.txHash && g.txHash.toLowerCase() === h
-  );
+  const forms = txHashLookupForms(h);
+  const memHit = gifts().find((g) => {
+    if (!g.txHash) return false;
+    try {
+      return normalizeTxHash(g.txHash) === h;
+    } catch {
+      return false;
+    }
+  });
   if (memHit) return memHit;
   const client = await db();
   if (!client) return null;
   const { data } = await client
     .from("near_gifts")
     .select("*")
-    .eq("tx_hash", h)
+    .in("tx_hash", forms)
+    .limit(1)
     .maybeSingle();
   if (!data) return null;
   return {

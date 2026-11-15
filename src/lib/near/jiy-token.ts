@@ -84,6 +84,16 @@ export function normalizeTxHash(h: string): string {
   return with0x;
 }
 
+/**
+ * Lookup forms for legacy rows that may store bare hex or `0x` + hex.
+ * Always store new rows with {@link normalizeTxHash}.
+ */
+export function txHashLookupForms(txHash: string): string[] {
+  const canonical = normalizeTxHash(txHash);
+  const bare = canonical.slice(2);
+  return [canonical, bare];
+}
+
 /** Pad Move address to 0x + 64 hex. */
 export function normalizeMoveArgAddress(raw: string): string {
   const s = raw.trim().toLowerCase();
