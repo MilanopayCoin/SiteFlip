@@ -9,6 +9,7 @@ import {
   lastDraw,
   recentPotEvents,
 } from "@/lib/near/pots";
+import { creditWalletJiy, debitWalletJiy } from "@/lib/near/match-bets";
 import { consumeMoveTx, isMoveTxSpent } from "@/lib/near/spent-tx";
 import { getPresence, getProfile } from "@/lib/near/store";
 import { verifyJiyGiftTransfer } from "@/lib/near/verify-jiy-tx";
@@ -135,18 +136,43 @@ export async function POST(request: Request) {
     txHash = await consumeMoveTx(verified.txHash, "pot");
     mode = "jiy";
   } else {
-    // No Move treasury: ledger pot only. Never persist a caller-supplied hash —
-    // unverified hashes would poison isMoveTxSpent via near_place_pot_events
-    // and let an attacker burn someone else's real Move payment.
+    // No Move treasury: ledger pot only. Debit claimable JIY so draws cannot
+    // mint unfunded balances. Never persist caller-supplied hashes.
+    try {
+      await debitWalletJiy(wallet, gift.amountJiy);
+    } catch (e) {
+      return Response.json(
+        {
+          error: e instanceof Error ? e.message : "Yetersiz JIY bakiyesi",
+          code: "INSUFFICIENT_JIY",
+        },
+        { status: 400 }
+      );
+    }
     txHash = null;
     mode = "ledger";
   }
 
-  const pot = await contributeToPot({
-    geohash: presence.geohash,
-    fromWallet: wallet,
-    giftId: gift.id,
-    txHash,
-  });
-  return Response.json({ pot: potPayload(pot), mode, network: mode });
+  try {
+    const pot = await contributeToPot({
+      geohash: presence.geohash,
+      fromWallet: wallet,
+      giftId: gift.id,
+      txHash,
+    });
+    return Response.json({ pot: potPayload(pot), mode, network: mode });
+  } catch (e) {
+    // Refund ledger debit if pot write failed after debit.
+    if (mode === "ledger") {
+      try {
+        await creditWalletJiy(wallet, gift.amountJiy);
+      } catch (refundErr) {
+        console.error("pot contribute refund failed", refundErr);
+      }
+    }
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Pot contribute failed" },
+      { status: 400 }
+    );
+  }
 }

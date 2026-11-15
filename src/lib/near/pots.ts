@@ -85,6 +85,10 @@ export async function getPot(geohash: string): Promise<NearPlacePot> {
   return empty;
 }
 
+/**
+ * CAS contribute: only writes if total_wei/gift_count still match the read.
+ * Prevents a stale contribute from restoring a drawn pot.
+ */
 export async function contributeToPot(input: {
   geohash: string;
   fromWallet: string;
@@ -94,35 +98,114 @@ export async function contributeToPot(input: {
   const gift = getGift(input.giftId);
   if (!gift) throw new Error("Unknown gift");
   const key = input.geohash.slice(0, 5);
-  const pot = await getPot(key);
   const amountWei = supraToWei(gift.amountJiy);
-  pot.totalWei = (BigInt(pot.totalWei) + BigInt(amountWei)).toString();
-  pot.giftCount += 1;
-  pot.updatedAt = now();
-  pots().set(key, pot);
 
-  const ev = {
-    id: nanoid(16),
-    geohash: key,
-    fromWallet: input.fromWallet.toLowerCase(),
-    giftId: input.giftId,
-    amountWei,
-    txHash: input.txHash,
-    createdAt: pot.updatedAt,
-  };
-  events().unshift(ev);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const pot = await getPot(key);
+    const prevWei = pot.totalWei;
+    const prevCount = pot.giftCount;
+    const nextWei = (BigInt(prevWei) + BigInt(amountWei)).toString();
+    const nextCount = prevCount + 1;
+    const updatedAt = now();
 
-  const client = await db();
-  if (client) {
-    const { error: potErr } = await client.from("near_place_pots").upsert({
+    const ev = {
+      id: nanoid(16),
       geohash: key,
-      total_wei: pot.totalWei,
-      gift_count: pot.giftCount,
-      updated_at: pot.updatedAt,
-    });
-    if (potErr && !isSchemaGap(potErr)) {
-      throw new Error(potErr.message || "pot upsert failed");
+      fromWallet: input.fromWallet.toLowerCase(),
+      giftId: input.giftId,
+      amountWei,
+      txHash: input.txHash,
+      createdAt: updatedAt,
+    };
+
+    const client = await db();
+    if (!client) {
+      const next: NearPlacePot = {
+        geohash: key,
+        totalWei: nextWei,
+        giftCount: nextCount,
+        updatedAt,
+      };
+      pots().set(key, next);
+      events().unshift(ev);
+      return next;
     }
+
+    // Ensure row exists for CAS update.
+    if (prevCount === 0 && prevWei === "0") {
+      const { data: existing } = await client
+        .from("near_place_pots")
+        .select("geohash")
+        .eq("geohash", key)
+        .maybeSingle();
+      if (!existing) {
+        const { error: insErr } = await client.from("near_place_pots").insert({
+          geohash: key,
+          total_wei: nextWei,
+          gift_count: nextCount,
+          updated_at: updatedAt,
+        });
+        if (insErr && !isSchemaGap(insErr) && insErr.code !== "23505") {
+          throw new Error(insErr.message || "pot insert failed");
+        }
+        if (insErr?.code === "23505") continue; // raced create — retry CAS
+        if (!insErr || isSchemaGap(insErr)) {
+          if (!isSchemaGap(insErr || null)) {
+            const { error: evErr } = await client
+              .from("near_place_pot_events")
+              .insert({
+                id: ev.id,
+                geohash: key,
+                from_wallet: ev.fromWallet,
+                gift_id: ev.giftId,
+                amount_wei: ev.amountWei,
+                tx_hash: ev.txHash,
+                created_at: ev.createdAt,
+              });
+            if (evErr && !isSchemaGap(evErr)) {
+              throw new Error(evErr.message || "pot event insert failed");
+            }
+          }
+          const next: NearPlacePot = {
+            geohash: key,
+            totalWei: nextWei,
+            giftCount: nextCount,
+            updatedAt,
+          };
+          pots().set(key, next);
+          events().unshift(ev);
+          return next;
+        }
+      }
+    }
+
+    const { data, error } = await client
+      .from("near_place_pots")
+      .update({
+        total_wei: nextWei,
+        gift_count: nextCount,
+        updated_at: updatedAt,
+      })
+      .eq("geohash", key)
+      .eq("total_wei", prevWei)
+      .eq("gift_count", prevCount)
+      .select("*")
+      .maybeSingle();
+
+    if (error && isSchemaGap(error)) {
+      const next: NearPlacePot = {
+        geohash: key,
+        totalWei: nextWei,
+        giftCount: nextCount,
+        updatedAt,
+      };
+      pots().set(key, next);
+      events().unshift(ev);
+      return next;
+    }
+    if (error) throw new Error(error.message || "pot CAS failed");
+    if (!data) continue; // lost race — retry
+
     const { error: evErr } = await client.from("near_place_pot_events").insert({
       id: ev.id,
       geohash: key,
@@ -133,10 +216,31 @@ export async function contributeToPot(input: {
       created_at: ev.createdAt,
     });
     if (evErr && !isSchemaGap(evErr)) {
+      // Best-effort rollback of pot increment
+      await client
+        .from("near_place_pots")
+        .update({
+          total_wei: prevWei,
+          gift_count: prevCount,
+          updated_at: now(),
+        })
+        .eq("geohash", key)
+        .eq("total_wei", nextWei)
+        .eq("gift_count", nextCount);
       throw new Error(evErr.message || "pot event insert failed");
     }
+
+    const next: NearPlacePot = {
+      geohash: key,
+      totalWei: String(data.total_wei),
+      giftCount: Number(data.gift_count),
+      updatedAt: data.updated_at,
+    };
+    pots().set(key, next);
+    events().unshift(ev);
+    return next;
   }
-  return pot;
+  throw new Error("Kasa meşgul — katkıyı tekrar dene");
 }
 
 export type PotEvent = {
@@ -148,6 +252,18 @@ export type PotEvent = {
   txHash: string | null;
   createdAt: string;
 };
+
+function mapEventRow(row: Record<string, unknown>): PotEvent {
+  return {
+    id: String(row.id),
+    geohash: String(row.geohash),
+    fromWallet: String(row.from_wallet).toLowerCase(),
+    giftId: String(row.gift_id),
+    amountWei: String(row.amount_wei),
+    txHash: (row.tx_hash as string | null) || null,
+    createdAt: String(row.created_at),
+  };
+}
 
 export async function recentPotEvents(
   geohash: string,
@@ -163,25 +279,43 @@ export async function recentPotEvents(
       .order("created_at", { ascending: false })
       .limit(limit);
     if (!error && data) {
-      const rows = data.map((row) => ({
-        id: row.id as string,
-        geohash: row.geohash as string,
-        fromWallet: String(row.from_wallet).toLowerCase(),
-        giftId: row.gift_id as string,
-        amountWei: String(row.amount_wei),
-        txHash: (row.tx_hash as string | null) || null,
-        createdAt: row.created_at as string,
-      }));
-      for (const r of rows) {
-        if (!events().some((e) => e.id === r.id)) events().unshift(r);
-      }
-      return rows;
+      return data.map((row) => mapEventRow(row as Record<string, unknown>));
     }
     if (error && !isSchemaGap(error)) {
       throw new Error(error.message || "pot events load failed");
     }
   }
   return events().filter((e) => e.geohash === key).slice(0, limit);
+}
+
+/** Load every contribution for a pot (paginated) — required for fair weighted draw. */
+export async function allPotEvents(geohash: string): Promise<PotEvent[]> {
+  const key = geohash.slice(0, 5);
+  const client = await db();
+  if (client) {
+    const out: PotEvent[] = [];
+    const page = 500;
+    for (let offset = 0; offset < 20_000; offset += page) {
+      const { data, error } = await client
+        .from("near_place_pot_events")
+        .select("*")
+        .eq("geohash", key)
+        .order("created_at", { ascending: true })
+        .range(offset, offset + page - 1);
+      if (error) {
+        if (isSchemaGap(error)) break;
+        throw new Error(error.message || "pot events page failed");
+      }
+      const rows = data || [];
+      for (const row of rows) out.push(mapEventRow(row as Record<string, unknown>));
+      if (rows.length < page) break;
+    }
+    if (out.length) return out;
+  }
+  return events()
+    .filter((e) => e.geohash === key)
+    .slice()
+    .reverse();
 }
 
 export type PotDrawResult = {
@@ -192,7 +326,6 @@ export type PotDrawResult = {
   totalWei: string;
   payoutJiy: number;
   drawnAt: string;
-  /** commit-reveal now; supra-dvrf when oracle wired. */
   entropySource: "commit-reveal" | "supra-dvrf";
   seedCommit: string;
   seedReveal: string;
@@ -201,6 +334,7 @@ export type PotDrawResult = {
     totalWeight: string;
     winnerWeight: string;
     roll: string;
+    eventCount: number;
   };
   payoutStatus: "credited" | "pending_move" | "failed";
 };
@@ -262,7 +396,11 @@ function pickWeighted(
   };
 }
 
-async function resetPot(key: string, expectedWei: string, expectedCount: number) {
+async function resetPot(
+  key: string,
+  expectedWei: string,
+  expectedCount: number
+): Promise<void> {
   const empty: NearPlacePot = {
     geohash: key,
     totalWei: "0",
@@ -295,6 +433,38 @@ async function resetPot(key: string, expectedWei: string, expectedCount: number)
   await client.from("near_place_pot_events").delete().eq("geohash", key);
 }
 
+async function restorePot(
+  key: string,
+  snapshot: NearPlacePot,
+  snapshotEvents: PotEvent[]
+): Promise<void> {
+  pots().set(key, snapshot);
+  for (const e of snapshotEvents) {
+    if (!events().some((x) => x.id === e.id)) events().unshift(e);
+  }
+  const client = await db();
+  if (!client) return;
+  await client.from("near_place_pots").upsert({
+    geohash: key,
+    total_wei: snapshot.totalWei,
+    gift_count: snapshot.giftCount,
+    updated_at: snapshot.updatedAt,
+  });
+  if (snapshotEvents.length) {
+    await client.from("near_place_pot_events").upsert(
+      snapshotEvents.map((e) => ({
+        id: e.id,
+        geohash: e.geohash,
+        from_wallet: e.fromWallet,
+        gift_id: e.giftId,
+        amount_wei: e.amountWei,
+        tx_hash: e.txHash,
+        created_at: e.createdAt,
+      }))
+    );
+  }
+}
+
 async function persistDraw(draw: PotDrawResult): Promise<void> {
   drawLog().unshift(draw);
   const client = await db();
@@ -321,35 +491,58 @@ async function persistDraw(draw: PotDrawResult): Promise<void> {
 /**
  * Weighted night draw among pot contributors.
  * Entropy: commit-reveal (sha256) shaped for future Supra dVRF swap.
- * Winner receives claimable ledger JIY; pot resets.
+ * Winner receives claimable ledger JIY; pot resets after successful credit.
  */
 export async function drawPotWinner(geohash: string): Promise<PotDrawResult> {
   const key = geohash.slice(0, 5);
-  const list = await recentPotEvents(key, 500);
+  const list = await allPotEvents(key);
   const weights = weightByContribution(list);
   if (weights.length < 2) {
     throw new Error("Çekiliş için en az 2 katılımcı gerekli");
   }
 
   const pot = await getPot(key);
-  if (BigInt(pot.totalWei || "0") <= BigInt(0) || pot.giftCount < 1) {
+  const potWei = BigInt(pot.totalWei || "0");
+  if (potWei <= BigInt(0) || pot.giftCount < 1) {
     throw new Error("Kasa boş");
+  }
+
+  const weightSum = weights.reduce((a, r) => a + r.weight, BigInt(0));
+  if (weightSum !== potWei) {
+    throw new Error(
+      "Kasa / katkı tutarsız — çekiliş iptal (tüm event’ler pot total ile eşleşmeli)"
+    );
+  }
+  if (list.length !== pot.giftCount) {
+    throw new Error(
+      `Kasa sayacı tutarsız (${list.length} event / ${pot.giftCount} count)`
+    );
   }
 
   const seed = randomBytes(32).toString("hex");
   const seedCommit = sha256Hex(seed, true);
   const picked = pickWeighted(weights, seed);
   const payoutJiy = unitsToJiy(pot.totalWei);
+  const snapshot: NearPlacePot = { ...pot };
+  const snapshotEvents = list.slice();
 
-  // Reset pot first (CAS) so a second draw cannot double-pay the same pool.
+  // Claim pot (CAS) before credit so a second draw cannot pay the same pool.
   await resetPot(key, pot.totalWei, pot.giftCount);
 
-  let payoutStatus: PotDrawResult["payoutStatus"] = "credited";
   try {
     await creditWalletJiy(picked.winner, payoutJiy);
   } catch (err) {
-    console.error("pot payout credit failed", err);
-    payoutStatus = "failed";
+    console.error("pot payout credit failed — restoring pot", err);
+    try {
+      await restorePot(key, snapshot, snapshotEvents);
+    } catch (restoreErr) {
+      console.error("pot restore failed", restoreErr);
+    }
+    throw new Error(
+      err instanceof Error
+        ? `Ödeme başarısız — kasa geri yüklendi: ${err.message}`
+        : "Ödeme başarısız — kasa geri yüklendi"
+    );
   }
 
   const result: PotDrawResult = {
@@ -368,8 +561,9 @@ export async function drawPotWinner(geohash: string): Promise<PotDrawResult> {
       totalWeight: picked.total.toString(),
       winnerWeight: picked.winnerWeight.toString(),
       roll: picked.roll.toString(),
+      eventCount: list.length,
     },
-    payoutStatus,
+    payoutStatus: "credited",
   };
   await persistDraw(result);
   return result;

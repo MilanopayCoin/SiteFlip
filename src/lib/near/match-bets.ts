@@ -223,6 +223,14 @@ export async function creditWalletJiy(
   return creditBalance(wallet, "jiy", amount);
 }
 
+/** Debit claimable JIY (ledger pot contributions when Move treasury unset). */
+export async function debitWalletJiy(
+  wallet: string,
+  amount: number
+): Promise<MatchBalances> {
+  return debitBalance(wallet, "jiy", amount);
+}
+
 async function creditBalance(
   wallet: string,
   currency: BetCurrency,
