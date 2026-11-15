@@ -9,6 +9,7 @@ import {
   lastDraw,
   recentPotEvents,
 } from "@/lib/near/pots";
+import { consumeMoveTx, isMoveTxSpent } from "@/lib/near/spent-tx";
 import { getPresence, getProfile } from "@/lib/near/store";
 import { verifyJiyGiftTransfer } from "@/lib/near/verify-jiy-tx";
 
@@ -119,13 +120,19 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    if (await isMoveTxSpent(rawTx)) {
+      return Response.json(
+        { error: "Bu txHash zaten kullanıldı", code: "TX_REPLAY" },
+        { status: 409 }
+      );
+    }
     const verified = await verifyJiyGiftTransfer({
       txHash: rawTx,
       fromMove,
       toMove: treasury,
       amountJiy: gift.amountJiy,
     });
-    txHash = verified.txHash;
+    txHash = await consumeMoveTx(verified.txHash, "pot");
     mode = "jiy";
   } else if (rawTx) {
     // No Move treasury configured — accept EVM/legacy hash as opaque proof only

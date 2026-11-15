@@ -3,6 +3,8 @@ import {
   isMoveAddress,
   JIY_TOKEN,
   jiyToUnits,
+  normalizeMoveArgAddress,
+  normalizeTxHash,
   SUPRA_MOVE_MAINNET,
 } from "@/lib/near/jiy-token";
 
@@ -21,14 +23,7 @@ export type VerifiedJiyGiftTx = {
   status: string;
 };
 
-function normHash(h: string): string {
-  const s = h.trim().toLowerCase();
-  return s.startsWith("0x") ? s : `0x${s}`;
-}
-
-function normAddr(a: string): string {
-  return a.trim().toLowerCase();
-}
+export { normalizeMoveArgAddress, normalizeTxHash };
 
 function isSuccessStatus(status: unknown): boolean {
   const s = String(status || "");
@@ -103,38 +98,36 @@ function argToString(arg: unknown): string {
   return "";
 }
 
-function normalizeMoveArgAddress(raw: string): string {
-  const s = raw.trim().toLowerCase();
-  if (!s) return "";
-  if (s.startsWith("0x") && s.length === 66) return s;
-  if (s.startsWith("0x")) {
-    const hex = s.slice(2).padStart(64, "0");
-    return `0x${hex}`;
-  }
-  return `0x${s.padStart(64, "0")}`;
+function normalizeFunctionFull(fn: string): string {
+  const parts = fn.toLowerCase().split("::");
+  if (parts.length < 3) return fn.toLowerCase();
+  const addr = normalizeMoveArgAddress(parts[0]!);
+  return `${addr}::${parts.slice(1).join("::")}`;
 }
+
+const ALLOWED_FA_TRANSFER = normalizeFunctionFull(
+  "0x1::primary_fungible_store::transfer"
+);
 
 /**
  * Verify a Supra Move mainnet JIY FA transfer matches expected gift.
- * Uses RPC `/rpc/v3/transactions/{hash}` (+ SDK detail when available).
+ * Strict: only `0x1::primary_fungible_store::transfer` with JIY metadata,
+ * exact recipient, and exact amount — all required (no empty skip).
  */
 export async function verifyJiyGiftTransfer(
   proof: JiyGiftTxProof
 ): Promise<VerifiedJiyGiftTx> {
-  const txHash = normHash(proof.txHash);
-  const fromMove = normAddr(proof.fromMove);
-  const toMove = normAddr(proof.toMove);
-  if (!/^0x[a-f0-9]{64}$/.test(txHash)) {
-    throw new Error("Geçersiz tx hash");
-  }
+  const txHash = normalizeTxHash(proof.txHash);
+  const fromMove = normalizeMoveArgAddress(proof.fromMove);
+  const toMove = normalizeMoveArgAddress(proof.toMove);
   if (!isMoveAddress(fromMove) || !isMoveAddress(toMove)) {
     throw new Error("Move adresleri gerekli");
   }
   const expectedUnits = jiyToUnits(proof.amountJiy);
+  const jiyMeta = normalizeMoveArgAddress(JIY_TOKEN.address);
 
   const client = await SupraClient.init(SUPRA_MOVE_MAINNET.rpcUrl);
 
-  // Prefer SDK detail (parses status + insights).
   let detail: Awaited<ReturnType<SupraClient["getTransactionDetail"]>> = null;
   try {
     detail = await client.getTransactionDetail(
@@ -145,12 +138,10 @@ export async function verifyJiyGiftTransfer(
     detail = null;
   }
 
-  const status = detail?.status;
-  if (detail && !isSuccessStatus(status)) {
-    throw new Error(`JIY tx başarısız (${String(status)})`);
+  if (detail && !isSuccessStatus(detail.status)) {
+    throw new Error(`JIY tx başarısız (${String(detail.status)})`);
   }
 
-  // Raw RPC for entry-function args (FA transfer not always in coin insights).
   const rpcRes = await fetch(
     `${SUPRA_MOVE_MAINNET.rpcUrl}/rpc/v3/transactions/${txHash}`,
     { cache: "no-store" }
@@ -166,12 +157,9 @@ export async function verifyJiyGiftTransfer(
   const rawStatus =
     raw.status ||
     (raw.header as { status?: string } | undefined)?.status ||
-    status;
-  if (!isSuccessStatus(rawStatus) && rawStatus !== undefined) {
-    // Some nodes return executed without Success enum — allow SDK Success only.
-    if (!detail || !isSuccessStatus(detail.status)) {
-      throw new Error(`JIY tx henüz onaylı değil (${String(rawStatus)})`);
-    }
+    detail?.status;
+  if (!isSuccessStatus(rawStatus)) {
+    throw new Error(`JIY tx henüz onaylı değil (${String(rawStatus)})`);
   }
 
   const header = (raw.header || {}) as Record<string, unknown>;
@@ -181,7 +169,7 @@ export async function verifyJiyGiftTransfer(
     detail?.sender ||
     "";
   const sender = normalizeMoveArgAddress(String(senderRaw));
-  if (sender !== fromMove) {
+  if (!sender || sender !== fromMove) {
     throw new Error("Tx gönderen Move adresi eşleşmiyor");
   }
 
@@ -189,48 +177,56 @@ export async function verifyJiyGiftTransfer(
   if (!parsed?.functionFull) {
     throw new Error("Tx payload okunamadı");
   }
-  const fn = parsed.functionFull.toLowerCase();
-  const isFaTransfer =
-    fn.includes("primary_fungible_store::transfer") ||
-    fn.endsWith("::transfer");
-  if (!isFaTransfer) {
-    throw new Error("Tx JIY FA transfer değil");
+  const fn = normalizeFunctionFull(parsed.functionFull);
+  if (fn !== ALLOWED_FA_TRANSFER) {
+    throw new Error(
+      "Tx yalnızca 0x1::primary_fungible_store::transfer olmalı"
+    );
   }
 
-  const args = parsed.args.map(argToString);
-  // Common layouts: [metadata, to, amount] or [to, metadata, amount]
-  let meta = "";
-  let recipient = "";
-  let amount = "";
-  if (args.length >= 3) {
-    const a0 = normalizeMoveArgAddress(args[0]!);
-    const a1 = normalizeMoveArgAddress(args[1]!);
-    if (a0 === JIY_TOKEN.address.toLowerCase()) {
-      meta = a0;
-      recipient = a1;
-      amount = args[2]!;
-    } else if (a1 === JIY_TOKEN.address.toLowerCase()) {
-      recipient = a0;
-      meta = a1;
-      amount = args[2]!;
-    } else {
-      // Prefer first 64-hex as meta if matches length
-      meta = a0;
-      recipient = a1;
-      amount = args[2]!;
+  // Type arg should be fungible_asset::Metadata when present.
+  if (parsed.typeArgs.length > 0) {
+    const joined = parsed.typeArgs.map((t) => String(t).toLowerCase()).join(" ");
+    if (!joined.includes("fungible_asset::metadata")) {
+      throw new Error("Tx Metadata type arg eksik");
     }
   }
 
-  if (meta && meta !== JIY_TOKEN.address.toLowerCase()) {
-    throw new Error("Tx JIY metadata adresi değil");
-  }
-  if (recipient && recipient !== toMove) {
-    throw new Error("Tx alıcı Move adresi eşleşmiyor");
+  if (parsed.args.length < 3) {
+    throw new Error("Tx FA transfer argümanları eksik");
   }
 
-  let units = amount.replace(/^0+/, "") || "0";
+  const a0 = normalizeMoveArgAddress(argToString(parsed.args[0]));
+  const a1 = normalizeMoveArgAddress(argToString(parsed.args[1]));
+  const amountRaw = argToString(parsed.args[2]);
+
+  // Canonical layout: [metadata, recipient, amount]
+  let meta = "";
+  let recipient = "";
+  if (a0 === jiyMeta) {
+    meta = a0;
+    recipient = a1;
+  } else if (a1 === jiyMeta) {
+    // Rare alternate layout — still require JIY meta present.
+    meta = a1;
+    recipient = a0;
+  } else {
+    throw new Error("Tx JIY metadata adresi değil");
+  }
+
+  if (!meta || meta !== jiyMeta) {
+    throw new Error("Tx JIY metadata adresi değil");
+  }
+  if (!recipient || recipient !== toMove) {
+    throw new Error("Tx alıcı Move adresi eşleşmiyor");
+  }
+  if (!amountRaw) {
+    throw new Error("Tx miktarı okunamadı");
+  }
+
+  let units: string;
   try {
-    units = BigInt(amount).toString();
+    units = BigInt(amountRaw).toString();
   } catch {
     throw new Error("Tx miktarı okunamadı");
   }
@@ -245,6 +241,6 @@ export async function verifyJiyGiftTransfer(
     fromMove,
     toMove,
     amountUnits: units,
-    status: String(rawStatus || status || "Success"),
+    status: String(rawStatus || "Success"),
   };
 }

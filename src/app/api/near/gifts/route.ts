@@ -2,8 +2,8 @@ import { ensureCloudflareEnv } from "@/lib/supabase/env";
 import { walletFromAuthHeader } from "@/lib/near/auth";
 import { GIFT_CATALOG, getGift, supraToWei } from "@/lib/near/gifts";
 import { isMoveAddress } from "@/lib/near/jiy-token";
+import { consumeMoveTx, isMoveTxSpent } from "@/lib/near/spent-tx";
 import {
-  findGiftByTxHash,
   getProfile,
   listGiftInbox,
   listGiftLeaderboard,
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      if (await findGiftByTxHash(rawTx)) {
+      if (await isMoveTxSpent(rawTx)) {
         return Response.json(
           { error: "Bu txHash zaten kullanıldı", code: "TX_REPLAY" },
           { status: 409 }
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         toMove: toMove as string,
         amountJiy: gift.amountJiy,
       });
-      txHash = verified.txHash;
+      txHash = await consumeMoveTx(verified.txHash, "gift");
       mode = "jiy";
     } else {
       // Peer (or self) missing Move → social ledger only; reject fake hashes.

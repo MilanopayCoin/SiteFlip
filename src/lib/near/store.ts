@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { coarseCoord, distanceMeters, encodeGeohash } from "@/lib/near/geohash";
 import { creditDuelGift } from "@/lib/near/duels";
 import { getGift, giftScore } from "@/lib/near/gifts";
+import { normalizeTxHash } from "@/lib/near/jiy-token";
 import { recordWave } from "@/lib/near/waves";
 import type {
   NearGiftBoardRow,
@@ -522,10 +523,16 @@ export async function listMessages(
 export async function findGiftByTxHash(
   txHash: string
 ): Promise<NearGiftRecord | null> {
-  const h = txHash.trim().toLowerCase();
-  if (!h) return null;
-  const mem = gifts().find((g) => (g.txHash || "").toLowerCase() === h);
-  if (mem) return mem;
+  let h: string;
+  try {
+    h = normalizeTxHash(txHash);
+  } catch {
+    return null;
+  }
+  const memHit = gifts().find(
+    (g) => g.txHash && g.txHash.toLowerCase() === h
+  );
+  if (memHit) return memHit;
   const client = await db();
   if (!client) return null;
   const { data } = await client
