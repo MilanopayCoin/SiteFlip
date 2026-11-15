@@ -35,16 +35,19 @@ export async function GET(request: Request) {
       request.headers.get("authorization")
     );
     const sp = new URL(request.url).searchParams;
-    const limit = Math.min(Number(sp.get("limit") || 40) || 40, 80);
+    const limit = Math.min(Number(sp.get("limit") || 80) || 80, 120);
 
     const odds = await fetchMatchOdds(limit);
+    const publicPayload = {
+      matches: odds.matches,
+      leagues: odds.leagues,
+      overview: odds.overview,
+      attribution: odds.attribution,
+      fetchedAt: odds.fetchedAt,
+      cached: odds.cached,
+    };
     if (!wallet) {
-      return Response.json({
-        matches: odds.matches,
-        attribution: odds.attribution,
-        fetchedAt: odds.fetchedAt,
-        cached: odds.cached,
-      });
+      return Response.json(publicPayload);
     }
 
     if (sp.get("settle") === "1") {
@@ -53,16 +56,23 @@ export async function GET(request: Request) {
 
     const [balances, myBets] = await Promise.all([
       getMatchBalances(wallet),
-      listMatchBets(wallet, 50),
+      listMatchBets(wallet, 80),
     ]);
 
+    const openBets = myBets.filter((b) => b.status === "open");
+    const positions = {
+      open: openBets.length,
+      openStake: openBets.reduce((a, b) => a + b.stake, 0),
+      openToWin: openBets.reduce((a, b) => a + b.potentialWin, 0),
+      won: myBets.filter((b) => b.status === "won").length,
+      lost: myBets.filter((b) => b.status === "lost").length,
+    };
+
     return Response.json({
-      matches: odds.matches,
-      attribution: odds.attribution,
-      fetchedAt: odds.fetchedAt,
-      cached: odds.cached,
+      ...publicPayload,
       balances,
       bets: myBets,
+      positions,
       treasuryMove: betTreasury(),
     });
   } catch (e) {
