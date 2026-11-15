@@ -2,7 +2,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { normalizeTxHash, txHashLookupForms } from "@/lib/near/jiy-token";
 
-export type SpentTxPurpose = "gift" | "pot";
+export type SpentTxPurpose = "gift" | "pot" | "bet";
 
 const g = globalThis as unknown as {
   __jiyNearSpentTxs?: Map<string, SpentTxPurpose>;

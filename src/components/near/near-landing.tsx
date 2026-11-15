@@ -55,6 +55,12 @@ export function NearLanding() {
         </p>
         <div className="flex items-center gap-4">
           <Link
+            href="/near/bahis"
+            className="text-sm text-[#a1a1aa] transition-colors hover:text-[#f2f2f0]"
+          >
+            Bahis
+          </Link>
+          <Link
             href="/near/rulet"
             className="text-sm text-[#a1a1aa] transition-colors hover:text-[#f2f2f0]"
           >

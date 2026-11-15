@@ -225,4 +225,50 @@ export async function linkMoveAddressWithProof(): Promise<string> {
   return (data.profile?.moveAddress as string) || addr;
 }
 
+/**
+ * Place a match bet. For JIY with treasury Move address, sends FA then POSTs.
+ * SUPRA uses in-app ledger balance.
+ */
+export async function placeMatchBetOnChain(input: {
+  matchId: string;
+  pick: "home" | "draw" | "away";
+  stake: number;
+  currency: "jiy" | "supra";
+  treasuryMove?: string | null;
+}): Promise<{
+  bet: unknown;
+  balances: unknown;
+  network: string;
+}> {
+  let txHash: string | null = null;
+  if (input.currency === "jiy" && isMoveAddress(input.treasuryMove || null)) {
+    let myMove = await getMoveAccount();
+    if (!myMove) myMove = await connectMoveAccount();
+    if (!myMove) throw new Error("Move bağlantısı gerekli");
+    const bal = await getJiyBalance(myMove);
+    if (bal.amountJiy + 1e-9 < input.stake) {
+      throw new Error(
+        `Yetersiz JIY · bakiye ${formatJiy(bal.amountJiy, 4)}, gerekli ${input.stake}`
+      );
+    }
+    txHash = await sendJiyFungibleAsset({
+      fromMove: myMove,
+      toMove: input.treasuryMove!,
+      amountJiy: input.stake,
+    });
+  }
+
+  return nearFetch("/api/near/bets", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "place",
+      matchId: input.matchId,
+      pick: input.pick,
+      stake: input.stake,
+      currency: input.currency,
+      txHash,
+    }),
+  });
+}
+
 export { connectMoveAccount, getJiyBalance, getMoveAccount };

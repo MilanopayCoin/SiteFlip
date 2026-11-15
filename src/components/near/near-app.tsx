@@ -1153,6 +1153,9 @@ export function NearApp() {
               Şu an yakınımda
             </p>
             <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+              <Link href="/near/bahis" className="hover:text-accent">
+                Bahis
+              </Link>
               <Link href="/near/rulet" className="hover:text-accent">
                 Rulet →
               </Link>
