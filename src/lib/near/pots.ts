@@ -396,10 +396,16 @@ function pickWeighted(
   };
 }
 
+/**
+ * Claim the drawn pot: CAS totals to zero, then delete ONLY the drawn
+ * event ids. Never `delete().eq(geohash)` — a concurrent contribute after
+ * the zero-CAS can insert a new event that must survive.
+ */
 async function resetPot(
   key: string,
   expectedWei: string,
-  expectedCount: number
+  expectedCount: number,
+  drawnEventIds: string[]
 ): Promise<void> {
   const empty: NearPlacePot = {
     geohash: key,
@@ -407,8 +413,11 @@ async function resetPot(
     giftCount: 0,
     updatedAt: now(),
   };
+  const drawn = new Set(drawnEventIds);
   pots().set(key, empty);
-  g.__jiyNearPotEvents = events().filter((e) => e.geohash !== key);
+  g.__jiyNearPotEvents = events().filter(
+    (e) => e.geohash !== key || !drawn.has(e.id)
+  );
 
   const client = await db();
   if (!client) return;
@@ -430,26 +439,118 @@ async function resetPot(
   if (error) throw new Error(error.message || "pot reset failed");
   if (!data) throw new Error("Kasa değişti — çekilişi tekrar dene");
 
-  await client.from("near_place_pot_events").delete().eq("geohash", key);
+  if (drawnEventIds.length) {
+    // Chunk to stay under PostgREST URL/body limits.
+    const chunk = 200;
+    for (let i = 0; i < drawnEventIds.length; i += chunk) {
+      const ids = drawnEventIds.slice(i, i + chunk);
+      const { error: delErr } = await client
+        .from("near_place_pot_events")
+        .delete()
+        .in("id", ids);
+      if (delErr && !isSchemaGap(delErr)) {
+        throw new Error(delErr.message || "pot event cleanup failed");
+      }
+    }
+  }
 }
 
+/**
+ * Restore a failed payout. Prefer CAS on the post-draw empty state so a
+ * concurrent post-draw deposit is not overwritten; if the pot already
+ * moved, merge snapshot wei/count onto the live totals and re-upsert only
+ * the drawn event rows.
+ */
 async function restorePot(
   key: string,
   snapshot: NearPlacePot,
   snapshotEvents: PotEvent[]
 ): Promise<void> {
-  pots().set(key, snapshot);
   for (const e of snapshotEvents) {
     if (!events().some((x) => x.id === e.id)) events().unshift(e);
   }
+
   const client = await db();
-  if (!client) return;
-  await client.from("near_place_pots").upsert({
-    geohash: key,
-    total_wei: snapshot.totalWei,
-    gift_count: snapshot.giftCount,
-    updated_at: snapshot.updatedAt,
-  });
+  if (!client) {
+    const live = pots().get(key);
+    if (
+      !live ||
+      (live.totalWei === "0" && live.giftCount === 0)
+    ) {
+      pots().set(key, snapshot);
+    } else {
+      pots().set(key, {
+        geohash: key,
+        totalWei: (
+          BigInt(live.totalWei) + BigInt(snapshot.totalWei)
+        ).toString(),
+        giftCount: live.giftCount + snapshot.giftCount,
+        updatedAt: now(),
+      });
+    }
+    return;
+  }
+
+  // Fast path: pot still empty after our reset — restore snapshot via CAS.
+  const { data: restored, error: casErr } = await client
+    .from("near_place_pots")
+    .update({
+      total_wei: snapshot.totalWei,
+      gift_count: snapshot.giftCount,
+      updated_at: snapshot.updatedAt,
+    })
+    .eq("geohash", key)
+    .eq("total_wei", "0")
+    .eq("gift_count", 0)
+    .select("*")
+    .maybeSingle();
+
+  if (casErr && !isSchemaGap(casErr)) {
+    throw new Error(casErr.message || "pot restore CAS failed");
+  }
+
+  if (!restored && !casErr) {
+    // Concurrent contribute after reset — fold snapshot into live totals.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const live = await getPot(key);
+      const nextWei = (
+        BigInt(live.totalWei) + BigInt(snapshot.totalWei)
+      ).toString();
+      const nextCount = live.giftCount + snapshot.giftCount;
+      const updatedAt = now();
+      const { data, error } = await client
+        .from("near_place_pots")
+        .update({
+          total_wei: nextWei,
+          gift_count: nextCount,
+          updated_at: updatedAt,
+        })
+        .eq("geohash", key)
+        .eq("total_wei", live.totalWei)
+        .eq("gift_count", live.giftCount)
+        .select("*")
+        .maybeSingle();
+      if (error && isSchemaGap(error)) break;
+      if (error) throw new Error(error.message || "pot restore merge failed");
+      if (data) {
+        pots().set(key, {
+          geohash: key,
+          totalWei: String(data.total_wei),
+          giftCount: Number(data.gift_count),
+          updatedAt: data.updated_at,
+        });
+        break;
+      }
+    }
+  } else if (restored) {
+    pots().set(key, {
+      geohash: key,
+      totalWei: String(restored.total_wei),
+      giftCount: Number(restored.gift_count),
+      updatedAt: restored.updated_at,
+    });
+  }
+
   if (snapshotEvents.length) {
     await client.from("near_place_pot_events").upsert(
       snapshotEvents.map((e) => ({
@@ -527,7 +628,13 @@ export async function drawPotWinner(geohash: string): Promise<PotDrawResult> {
   const snapshotEvents = list.slice();
 
   // Claim pot (CAS) before credit so a second draw cannot pay the same pool.
-  await resetPot(key, pot.totalWei, pot.giftCount);
+  // Delete only drawn event ids — concurrent post-reset deposits stay intact.
+  await resetPot(
+    key,
+    pot.totalWei,
+    pot.giftCount,
+    list.map((e) => e.id)
+  );
 
   try {
     await creditWalletJiy(picked.winner, payoutJiy);
